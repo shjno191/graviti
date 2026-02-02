@@ -56,12 +56,24 @@ export const SettingsTab: React.FC = () => {
             const result = await invoke<string>('test_connection', { config: configToTest });
             setTestMessage(result);
             setStatus('success');
-            // If success, update the verified status in the editing config
-            setEditingConfig({ ...configToTest, verified: true });
+
+            const updatedConfig = { ...configToTest, verified: true };
+            setEditingConfig(updatedConfig);
+
+            // Auto save verified status to list
+            const updatedConnections = connections.map(c => c.id === updatedConfig.id ? updatedConfig : c);
+            await invoke('save_db_settings', {
+                settings: {
+                    connections: updatedConnections,
+                    global_log_path: globalLogPath
+                }
+            });
+            setConnections(updatedConnections);
         } catch (error: any) {
             setTestMessage(error || 'Kết nối thất bại');
             setStatus('error');
-            setEditingConfig({ ...configToTest, verified: false });
+            const updatedConfig = { ...configToTest, verified: false };
+            setEditingConfig(updatedConfig);
         }
     };
 

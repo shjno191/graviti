@@ -8,12 +8,42 @@ interface ResultSetTableProps {
 export const ResultSetTable: React.FC<ResultSetTableProps> = ({ result }) => {
     if (!result || !result.columns.length) return null;
 
+    const [copyStatus, setCopyStatus] = React.useState(false);
+    const [menuPos, setMenuPos] = React.useState<{ x: number, y: number, rowIndex: number } | null>(null);
+
+    React.useEffect(() => {
+        const handleClick = () => setMenuPos(null);
+        window.addEventListener('click', handleClick);
+        return () => window.removeEventListener('click', handleClick);
+    }, []);
+
     const copyToExcel = () => {
         const header = result.columns.join('\t');
         const rows = result.rows.map(row => row.join('\t')).join('\n');
         const text = `${header}\n${rows}`;
         navigator.clipboard.writeText(text);
-        alert('Copied to clipboard (TSV format, ready for Excel)');
+        setCopyStatus(true);
+        setTimeout(() => setCopyStatus(false), 2000);
+    };
+
+    const handleCopyRow = (rowIndex: number) => {
+        const row = result.rows[rowIndex];
+        const text = result.columns.map((col, i) => `${col}: ${row[i]}`).join('\n');
+        navigator.clipboard.writeText(text);
+        setMenuPos(null);
+    };
+
+    const handleGenerateInsert = (rowIndex: number) => {
+        const row = result.rows[rowIndex];
+        const tableName = "TABLE_NAME";
+        const cols = result.columns.join(', ');
+        const values = row.map(v => {
+            if (v === null || v === 'NULL') return 'NULL';
+            return `'${String(v).replace(/'/g, "''")}'`;
+        }).join(', ');
+        const sql = `INSERT INTO ${tableName} (${cols})\nVALUES (${values});`;
+        navigator.clipboard.writeText(sql);
+        setMenuPos(null);
     };
 
     return (
@@ -22,9 +52,13 @@ export const ResultSetTable: React.FC<ResultSetTableProps> = ({ result }) => {
                 <span className="text-sm font-semibold text-gray-700">{result.rows.length} rows found</span>
                 <button
                     onClick={copyToExcel}
-                    className="text-xs px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 transition-colors flex items-center gap-2"
+                    className={`text-xs px-4 py-2 rounded-xl font-black transition-all flex items-center gap-2 shadow-lg ${copyStatus ? 'bg-green-500 text-white' : 'bg-gray-900 text-white hover:bg-black'}`}
                 >
-                    <span>📋</span> Copy to Excel
+                    {copyStatus ? (
+                        <><span>✅</span> COPIED</>
+                    ) : (
+                        <><span>📊</span> CLICK TO EXCEL</>
+                    )}
                 </button>
             </div>
             <div className="overflow-x-auto max-h-[500px]">
@@ -40,7 +74,14 @@ export const ResultSetTable: React.FC<ResultSetTableProps> = ({ result }) => {
                     </thead>
                     <tbody>
                         {result.rows.map((row, rowIndex) => (
-                            <tr key={rowIndex} className="hover:bg-blue-50/50 transition-colors">
+                            <tr
+                                key={rowIndex}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    setMenuPos({ x: e.clientX, y: e.clientY, rowIndex });
+                                }}
+                                className="hover:bg-blue-50/50 transition-colors group cursor-default"
+                            >
                                 {row.map((cell, cellIndex) => (
                                     <td key={cellIndex} className="px-3 py-1.5 border-r border-b border-gray-200 font-mono text-xs text-gray-600 whitespace-pre">
                                         {cell}
@@ -51,6 +92,38 @@ export const ResultSetTable: React.FC<ResultSetTableProps> = ({ result }) => {
                     </tbody>
                 </table>
             </div>
+
+            {menuPos && (
+                <div
+                    className="fixed z-[1000] bg-white border border-gray-100 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] py-3 min-w-[240px] animate-in zoom-in-95 duration-100 overflow-hidden"
+                    style={{ left: menuPos.x, top: menuPos.y }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="px-4 py-1 mb-2">
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Record Options</span>
+                    </div>
+                    <button
+                        onClick={() => handleCopyRow(menuPos.rowIndex)}
+                        className="w-full px-5 py-3 text-left text-sm font-bold text-gray-700 hover:bg-primary/5 hover:text-primary transition-all flex items-center gap-4 group"
+                    >
+                        <span className="text-xl group-hover:scale-125 transition-transform">📋</span>
+                        <div className="flex flex-col">
+                            <span>Copy Record</span>
+                            <span className="text-[10px] text-gray-400 font-medium">Copy all columns of this row</span>
+                        </div>
+                    </button>
+                    <button
+                        onClick={() => handleGenerateInsert(menuPos.rowIndex)}
+                        className="w-full px-5 py-3 text-left text-sm font-bold text-gray-700 hover:bg-primary/5 hover:text-primary transition-all flex items-center gap-4 group"
+                    >
+                        <span className="text-xl group-hover:scale-125 transition-transform">📝</span>
+                        <div className="flex flex-col">
+                            <span>Generate INSERT</span>
+                            <span className="text-[10px] text-gray-400 font-medium">Create SQL INSERT statement</span>
+                        </div>
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

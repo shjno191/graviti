@@ -16,7 +16,8 @@ export const LabTab: React.FC = () => {
     const [stmt2, setStmt2] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
     const [searchTerm, setSearchTerm] = useState('');
     const [priorityCols, setPriorityCols] = useState('');
-    const [menuPos, setMenuPos] = useState<{ x: number, y: number, content: string } | null>(null);
+    const [menuPos, setMenuPos] = useState<{ x: number, y: number, type: 'col' | 'row', content?: string, rowIndex?: number, idx?: 1 | 2 } | null>(null);
+    const [copyStatus, setCopyStatus] = useState<{ [key: string]: boolean }>({});
 
     const scrollRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
@@ -60,6 +61,41 @@ export const LabTab: React.FC = () => {
         if (!parts.includes(col.toUpperCase())) {
             setPriorityCols(prev => prev ? `${prev}, ${col}` : col);
         }
+        setMenuPos(null);
+    };
+
+    const copyToExcel = (idx: 1 | 2) => {
+        const state = idx === 1 ? stmt1 : stmt2;
+        if (!state.result) return;
+        const header = state.result.columns.join('\t');
+        const rows = state.result.rows.map(row => row.join('\t')).join('\n');
+        const text = `${header}\n${rows}`;
+        navigator.clipboard.writeText(text);
+        setCopyStatus(prev => ({ ...prev, [idx]: true }));
+        setTimeout(() => setCopyStatus(prev => ({ ...prev, [idx]: false })), 2000);
+    };
+
+    const handleCopyRow = (idx: 1 | 2, rowIndex: number) => {
+        const state = idx === 1 ? stmt1 : stmt2;
+        if (!state.result) return;
+        const row = state.result.rows[rowIndex];
+        const text = state.result.columns.map((col, i) => `${col}: ${row[i]}`).join('\n');
+        navigator.clipboard.writeText(text);
+        setMenuPos(null);
+    };
+
+    const handleGenerateInsert = (idx: 1 | 2, rowIndex: number) => {
+        const state = idx === 1 ? stmt1 : stmt2;
+        if (!state.result) return;
+        const row = state.result.rows[rowIndex];
+        const tableName = "TABLE_NAME";
+        const cols = state.result.columns.join(', ');
+        const values = row.map(v => {
+            if (v === null || v === 'NULL') return 'NULL';
+            return `'${String(v).replace(/'/g, "''")}'`;
+        }).join(', ');
+        const sql = `INSERT INTO ${tableName} (${cols})\nVALUES (${values});`;
+        navigator.clipboard.writeText(sql);
         setMenuPos(null);
     };
 
@@ -118,7 +154,11 @@ export const LabTab: React.FC = () => {
                             {activeCols.map(col => (
                                 <th
                                     key={col}
-                                    onContextMenu={(e) => { e.preventDefault(); setMenuPos({ x: e.clientX, y: e.clientY, content: col }); e.stopPropagation(); }}
+                                    onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        setMenuPos({ x: e.clientX, y: e.clientY, type: 'col', content: col });
+                                        e.stopPropagation();
+                                    }}
                                     className="px-4 py-3 font-black text-gray-600 text-[10px] border-r border-gray-100 uppercase"
                                     style={{ width: 160 }}
                                 >
@@ -138,6 +178,11 @@ export const LabTab: React.FC = () => {
                                     return (
                                         <td
                                             key={col}
+                                            onContextMenu={(e) => {
+                                                e.preventDefault();
+                                                setMenuPos({ x: e.clientX, y: e.clientY, type: 'row', rowIndex: state.result!.rows.indexOf(row), idx });
+                                                e.stopPropagation();
+                                            }}
                                             className={`px-4 py-2 border-r border-gray-50 last:border-0 truncate font-mono text-[11px] ${diff ? 'bg-red-50 text-red-600 font-bold' : 'text-gray-700'
                                                 }`}
                                             style={{ width: 160 }}
@@ -258,7 +303,15 @@ export const LabTab: React.FC = () => {
                                 {connections.find(c => c.id === stmt1.connectionId)?.name || 'Unknown'}
                             </span>
                         </div>
-                        <span className="text-[10px] font-black text-orange-600">{stmt1.result?.rows.length || 0} ROWS</span>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => copyToExcel(1)}
+                                className={`text-[9px] px-3 py-1 rounded font-black transition-all flex items-center gap-2 ${copyStatus[1] ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+                            >
+                                {copyStatus[1] ? '✅ COPIED' : '📊 CLICK TO EXCEL'}
+                            </button>
+                            <span className="text-[10px] font-black text-orange-600">{stmt1.result?.rows.length || 0} ROWS</span>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-hidden p-2">
                         {renderTable(1, stmt1, stmt2)}
@@ -272,7 +325,15 @@ export const LabTab: React.FC = () => {
                                 {connections.find(c => c.id === stmt2.connectionId)?.name || 'Unknown'}
                             </span>
                         </div>
-                        <span className="text-[10px] font-black text-orange-600">{stmt2.result?.rows.length || 0} ROWS</span>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => copyToExcel(2)}
+                                className={`text-[9px] px-3 py-1 rounded font-black transition-all flex items-center gap-2 ${copyStatus[2] ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+                            >
+                                {copyStatus[2] ? '✅ COPIED' : '📊 CLICK TO EXCEL'}
+                            </button>
+                            <span className="text-[10px] font-black text-orange-600">{stmt2.result?.rows.length || 0} ROWS</span>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-hidden p-2">
                         {renderTable(2, stmt2, stmt1)}
@@ -286,12 +347,31 @@ export const LabTab: React.FC = () => {
                     className="fixed z-[100] bg-white border border-gray-200 rounded-2xl shadow-2xl py-2 min-w-[200px] animate-in slide-in-from-top-1 duration-150"
                     style={{ left: menuPos.x, top: menuPos.y }}
                 >
-                    <button onClick={() => { navigator.clipboard.writeText(menuPos.content); setMenuPos(null); }} className="w-full px-4 py-2.5 text-left text-sm font-bold text-gray-700 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-3">
-                        <span className="text-lg">📋</span> Copy Column
-                    </button>
-                    <button onClick={() => handleAddPriority(menuPos.content)} className="w-full px-4 py-2.5 text-left text-sm font-bold text-gray-700 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-3">
-                        <span className="text-lg text-orange-500">⚡</span> Priority
-                    </button>
+                    {menuPos.type === 'col' ? (
+                        <>
+                            <div className="px-4 py-1 mb-1 border-b border-gray-50">
+                                <span className="text-[9px] font-black text-gray-400 font-mono italic uppercase">Column: {menuPos.content}</span>
+                            </div>
+                            <button onClick={() => { navigator.clipboard.writeText(menuPos.content!); setMenuPos(null); }} className="w-full px-4 py-2.5 text-left text-sm font-bold text-gray-700 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-3">
+                                <span className="text-lg">📋</span> Copy Column Name
+                            </button>
+                            <button onClick={() => handleAddPriority(menuPos.content!)} className="w-full px-4 py-2.5 text-left text-sm font-bold text-gray-700 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-3">
+                                <span className="text-lg text-orange-500">⚡</span> Set as Priority
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <div className="px-4 py-1 mb-1 border-b border-gray-50">
+                                <span className="text-[9px] font-black text-gray-400 font-mono italic uppercase">Record Options (Row {menuPos.rowIndex! + 1})</span>
+                            </div>
+                            <button onClick={() => handleCopyRow(menuPos.idx!, menuPos.rowIndex!)} className="w-full px-4 py-2.5 text-left text-sm font-bold text-gray-700 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-3">
+                                <span className="text-lg">📋</span> Copy Record
+                            </button>
+                            <button onClick={() => handleGenerateInsert(menuPos.idx!, menuPos.rowIndex!)} className="w-full px-4 py-2.5 text-left text-sm font-bold text-gray-700 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-3 font-mono">
+                                <span className="text-lg">📝</span> Generate INSERT
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
         </div>
