@@ -7,17 +7,19 @@ interface LabStatement {
     result?: QueryResult;
     loading: boolean;
     error?: string;
+    connectionId: string | null;
 }
 
 export const LabTab: React.FC = () => {
-    const { dbConfig } = useAppStore();
-    const [stmt1, setStmt1] = useState<LabStatement>({ sql: '', loading: false });
-    const [stmt2, setStmt2] = useState<LabStatement>({ sql: '', loading: false });
+    const { connections } = useAppStore();
+    const [stmt1, setStmt1] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
+    const [stmt2, setStmt2] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
     const [searchTerm, setSearchTerm] = useState('');
     const [priorityCols, setPriorityCols] = useState('');
     const [menuPos, setMenuPos] = useState<{ x: number, y: number, content: string } | null>(null);
 
     const scrollRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+
 
     useEffect(() => {
         const handleClick = () => setMenuPos(null);
@@ -30,11 +32,21 @@ export const LabTab: React.FC = () => {
         const setStmt = idx === 1 ? setStmt1 : setStmt2;
 
         if (!stmt.sql.trim()) return;
+        const conn = connections.find(c => c.id === stmt.connectionId) || connections[0];
+        if (!conn) {
+            alert('No database connection selected.');
+            return;
+        }
+
+        if (!conn.verified) {
+            alert('Kết nối này chưa được xác thực (Verified). Vui lòng vào Cài đặt và TEST CONNECT thành công trước khi sử dụng.');
+            return;
+        }
 
         setStmt(prev => ({ ...prev, loading: true, error: undefined }));
         try {
             const res = await invoke<QueryResult>('execute_query', {
-                config: dbConfig,
+                config: conn,
                 query: stmt.sql
             });
             setStmt(prev => ({ ...prev, loading: false, result: res }));
@@ -174,44 +186,64 @@ export const LabTab: React.FC = () => {
 
                 <div className="px-4 py-2 bg-gray-100 rounded-xl flex items-center gap-3">
                     <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{dbConfig.database || 'NO DB SELECTED'}</span>
+                    <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{connections.length} Connections Loaded</span>
                 </div>
             </div>
 
             {/* SQL Inputs */}
-            <div className="grid grid-cols-2 gap-6 h-[200px] shrink-0">
+            <div className="grid grid-cols-2 gap-6 h-[250px] shrink-0">
                 <div className="flex flex-col gap-2">
-                    <div className="flex justify-between items-center px-2">
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Statement A</span>
+                    <div className="flex justify-between items-center px-4 bg-gray-900 py-2 rounded-t-2xl">
+                        <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Statement A</span>
+                            <select
+                                value={stmt1.connectionId || ''}
+                                onChange={e => setStmt1(prev => ({ ...prev, connectionId: e.target.value }))}
+                                className={`bg-white/10 text-[10px] font-bold border-0 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-orange-500 transition-colors ${connections.find(c => c.id === stmt1.connectionId)?.verified ? 'text-white' : 'text-red-400'}`}
+                            >
+                                {connections.map(c => <option key={c.id} value={c.id} className="text-black">{c.verified ? '🛡️' : '⚠️'} {c.name}</option>)}
+                            </select>
+                        </div>
                         <button
                             onClick={() => runQuery(1)}
-                            className="px-4 py-1.5 bg-gray-900 text-white text-[10px] font-black rounded-lg hover:bg-orange-600 transition-colors shadow-lg"
+                            disabled={stmt1.loading || !(connections.find(c => c.id === stmt1.connectionId)?.verified)}
+                            className={`px-4 py-1 text-[10px] font-black rounded transition-all shadow-lg disabled:opacity-50 ${connections.find(c => c.id === stmt1.connectionId)?.verified ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-gray-700 text-gray-400'}`}
                         >
-                            RUN STMT A
+                            RUN A
                         </button>
                     </div>
                     <textarea
                         value={stmt1.sql}
                         onChange={e => setStmt1(prev => ({ ...prev, sql: e.target.value }))}
                         placeholder="Paste SQL for Statement A..."
-                        className="flex-1 bg-white border border-gray-200 rounded-2xl p-4 font-mono text-xs outline-none focus:ring-2 focus:ring-primary shadow-sm resize-none"
+                        className="flex-1 bg-white border border-gray-200 rounded-b-2xl p-4 font-mono text-xs outline-none focus:ring-2 focus:ring-primary shadow-inner resize-none border-t-0"
                     />
                 </div>
                 <div className="flex flex-col gap-2">
-                    <div className="flex justify-between items-center px-2">
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Statement B</span>
+                    <div className="flex justify-between items-center px-4 bg-gray-900 py-2 rounded-t-2xl">
+                        <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Statement B</span>
+                            <select
+                                value={stmt2.connectionId || ''}
+                                onChange={e => setStmt2(prev => ({ ...prev, connectionId: e.target.value }))}
+                                className={`bg-white/10 text-[10px] font-bold border-0 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-orange-500 transition-colors ${connections.find(c => c.id === stmt2.connectionId)?.verified ? 'text-white' : 'text-red-400'}`}
+                            >
+                                {connections.map(c => <option key={c.id} value={c.id} className="text-black">{c.verified ? '🛡️' : '⚠️'} {c.name}</option>)}
+                            </select>
+                        </div>
                         <button
                             onClick={() => runQuery(2)}
-                            className="px-4 py-1.5 bg-gray-900 text-white text-[10px] font-black rounded-lg hover:bg-orange-600 transition-colors shadow-lg"
+                            disabled={stmt2.loading || !(connections.find(c => c.id === stmt2.connectionId)?.verified)}
+                            className={`px-4 py-1 text-[10px] font-black rounded transition-all shadow-lg disabled:opacity-50 ${connections.find(c => c.id === stmt2.connectionId)?.verified ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-gray-700 text-gray-400'}`}
                         >
-                            RUN STMT B
+                            RUN B
                         </button>
                     </div>
                     <textarea
                         value={stmt2.sql}
                         onChange={e => setStmt2(prev => ({ ...prev, sql: e.target.value }))}
                         placeholder="Paste SQL for Statement B..."
-                        className="flex-1 bg-white border border-gray-200 rounded-2xl p-4 font-mono text-xs outline-none focus:ring-2 focus:ring-primary shadow-sm resize-none"
+                        className="flex-1 bg-white border border-gray-200 rounded-b-2xl p-4 font-mono text-xs outline-none focus:ring-2 focus:ring-primary shadow-inner resize-none border-t-0"
                     />
                 </div>
             </div>
@@ -220,7 +252,12 @@ export const LabTab: React.FC = () => {
             <div className="flex-1 grid grid-cols-2 gap-6 overflow-hidden bg-gray-50/50 p-2 rounded-3xl border border-gray-100 shadow-inner">
                 <div className="flex flex-col overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100">
                     <div className="p-3 bg-gray-50 border-b border-gray-100 flex justify-between items-center px-5">
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Results A</span>
+                        <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Results A</span>
+                            <span className="text-[9px] bg-gray-200 px-2 py-0.5 rounded font-bold text-gray-600">
+                                {connections.find(c => c.id === stmt1.connectionId)?.name || 'Unknown'}
+                            </span>
+                        </div>
                         <span className="text-[10px] font-black text-orange-600">{stmt1.result?.rows.length || 0} ROWS</span>
                     </div>
                     <div className="flex-1 overflow-hidden p-2">
@@ -229,7 +266,12 @@ export const LabTab: React.FC = () => {
                 </div>
                 <div className="flex flex-col overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100">
                     <div className="p-3 bg-gray-50 border-b border-gray-100 flex justify-between items-center px-5">
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Results B</span>
+                        <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Results B</span>
+                            <span className="text-[9px] bg-gray-200 px-2 py-0.5 rounded font-bold text-gray-600">
+                                {connections.find(c => c.id === stmt2.connectionId)?.name || 'Unknown'}
+                            </span>
+                        </div>
                         <span className="text-[10px] font-black text-orange-600">{stmt2.result?.rows.length || 0} ROWS</span>
                     </div>
                     <div className="flex-1 overflow-hidden p-2">

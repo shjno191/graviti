@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use encoding_rs::SHIFT_JIS;
 use serde::{Deserialize, Serialize};
 use sqlx::{Column, Row as SqlxRow, Connection};
-use tiberius::{Client, Config, AuthMethod, QueryItem};
+use tiberius::{Client, Config, AuthMethod, QueryItem, EncryptionLevel};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 use futures::StreamExt;
@@ -14,17 +14,23 @@ use chrono;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DbConfig {
+    pub id: String,
+    pub name: String,
     pub db_type: String, // "mssql", "mysql", "postgres"
     pub host: String,
     pub port: u16,
     pub user: String,
     pub password: String,
     pub database: String,
-    pub use_connection_string: Option<bool>,
-    pub connection_string: Option<String>,
     pub trust_server_certificate: Option<bool>,
     pub encrypt: Option<bool>,
-    pub log_file_path: Option<String>,
+    pub verified: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AppSettings {
+    pub connections: Vec<DbConfig>,
+    pub global_log_path: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -52,89 +58,38 @@ fn read_log_file(path: String) -> Result<String, String> {
     Ok(decoded.to_string())
 }
 
-fn build_db_url(config: &DbConfig) -> Result<String, String> {
-    if config.use_connection_string.unwrap_or(false) && config.connection_string.is_some() {
-        let mut url = config.connection_string.clone().unwrap();
-        
-        // Map JDBC to SQLX/Tiberius format for MSSQL if detected
-        if config.db_type == "mssql" && url.starts_with("jdbc:sqlserver://") {
-            url = url.replace("jdbc:sqlserver://", "mssql://");
-            
-            let host_port: String;
-            let mut db_name = String::new();
-            let mut user = config.user.clone();
-            let mut pass = config.password.clone();
-            let mut query_params = Vec::new();
+fn build_mssql_config(config: &DbConfig) -> Result<Config, String> {
+    let mut c = Config::new();
+    c.host(&config.host);
+    c.port(config.port);
+    c.database(&config.database);
+    let mut tiberius_config = c;
 
-            // Split into base and properties
-            if let Some(semi_pos) = url.find(';') {
-                let base = &url[..semi_pos];
-                host_port = base.strip_prefix("mssql://").unwrap_or(base).to_string();
-                
-                let props = &url[semi_pos + 1..];
-                for part in props.split(';') {
-                    let p_low = part.to_lowercase();
-                    if p_low.starts_with("database=") || p_low.starts_with("databasename=") {
-                        if let Some(eq) = part.find('=') {
-                            db_name = part[eq + 1..].to_string();
-                        }
-                    } else if p_low.starts_with("user=") || p_low.starts_with("username=") {
-                        if user.is_empty() { // Only use from string if override is empty
-                            if let Some(eq) = part.find('=') {
-                                user = part[eq + 1..].to_string();
-                            }
-                        }
-                    } else if p_low.starts_with("password=") {
-                        if pass.is_empty() { // Only use from string if override is empty
-                            if let Some(eq) = part.find('=') {
-                                pass = part[eq + 1..].to_string();
-                            }
-                        }
-                    } else if !part.is_empty() {
-                        query_params.push(part.to_string());
-                    }
-                }
-            } else {
-                host_port = url.strip_prefix("mssql://").unwrap_or(&url).to_string();
-                db_name = config.database.clone();
-            }
-
-            // Build final authority string
-            let authority = if !user.is_empty() {
-                if !pass.is_empty() {
-                    format!("{}:{}@", urlencoding::encode(&user), urlencoding::encode(&pass))
-                } else {
-                    format!("{}@", urlencoding::encode(&user))
-                }
-            } else {
-                String::new()
-            };
-
-            // Reconstruct URL
-            let mut final_url = format!("mssql://{}{}", authority, host_port);
-            if !db_name.is_empty() {
-                final_url = format!("{}/{}", final_url.trim_end_matches('/'), urlencoding::encode(&db_name));
-            }
-
-            // Add trustServerCertificate if not present in string but set in config
-            if config.trust_server_certificate.unwrap_or(true) {
-                if !query_params.iter().any(|p| p.to_lowercase().contains("trustservercertificate")) {
-                    query_params.push("trustServerCertificate=true".to_string());
-                }
-            }
-
-            if !query_params.is_empty() {
-                final_url = format!("{}?{}", final_url, query_params.join("&"));
-            }
-            
-            return Ok(final_url);
-        }
-        
-        // If not JDBC or other DB type, just return as is (but maybe we should inject here too?)
-        return Ok(url);
+    // Apply credentials from separate fields if provided (overrides URL if conflict)
+    if !config.user.trim().is_empty() {
+        tiberius_config.authentication(AuthMethod::sql_server(&config.user, &config.password));
     }
 
-    // Manual input logic
+    // Handle Encryption
+    if let Some(encrypt) = config.encrypt {
+        if encrypt {
+            tiberius_config.encryption(EncryptionLevel::Required);
+        } else {
+            tiberius_config.encryption(EncryptionLevel::NotSupported);
+        }
+    } else {
+        tiberius_config.encryption(EncryptionLevel::Off);
+    }
+
+    // Handle Trust Certificate
+    if config.trust_server_certificate.unwrap_or(true) {
+        tiberius_config.trust_cert();
+    }
+
+    Ok(tiberius_config)
+}
+
+fn build_db_url(config: &DbConfig) -> Result<String, String> {
     let user_enc = urlencoding::encode(&config.user);
     let pass_enc = urlencoding::encode(&config.password);
     
@@ -164,30 +119,22 @@ fn build_db_url(config: &DbConfig) -> Result<String, String> {
 #[tauri::command]
 async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, String> {
     if config.db_type == "mssql" {
-        let mut tiberius_config = Config::new();
-        tiberius_config.host(&config.host);
-        tiberius_config.port(config.port);
-        tiberius_config.database(&config.database);
-        tiberius_config.authentication(AuthMethod::sql_server(&config.user, &config.password));
+        let tiberius_config = build_mssql_config(&config)?;
         
-        if config.trust_server_certificate.unwrap_or(true) {
-            tiberius_config.trust_cert();
-        }
+        let tcp = TcpStream::connect(tiberius_config.get_addr()).await.map_err(|e: std::io::Error| format!("Lỗi kết nối mạng (TCP): {}", e))?;
+        tcp.set_nodelay(true).map_err(|e: std::io::Error| e.to_string())?;
 
-        let tcp = TcpStream::connect(tiberius_config.get_addr()).await.map_err(|e| e.to_string())?;
-        tcp.set_nodelay(true).map_err(|e| e.to_string())?;
-
-        let mut client = Client::connect(tiberius_config, tcp.compat_write()).await.map_err(|e| e.to_string())?;
+        let mut client = Client::connect(tiberius_config, tcp.compat_write()).await.map_err(|e: tiberius::error::Error| format!("Lỗi đăng nhập Database: {}", e))?;
         
         // Execute query
-        let mut results = client.query(query, &[]).await.map_err(|e| e.to_string())?;
+        let mut results = client.query(query, &[]).await.map_err(|e: tiberius::error::Error| e.to_string())?;
         
         let mut columns = Vec::new();
         let mut rows = Vec::new();
         let mut first_row = true;
 
         while let Some(item) = results.next().await {
-            match item.map_err(|e| e.to_string())? {
+            match item.map_err(|e: tiberius::error::Error| e.to_string())? {
                 QueryItem::Row(row) => {
                     if first_row {
                         for col in row.columns() {
@@ -233,8 +180,8 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
     let mut columns = Vec::new();
     let mut rows = Vec::new();
 
-    let mut conn = sqlx::AnyConnection::connect(&url).await.map_err(|e| e.to_string())?;
-    let results = sqlx::query(&query).fetch_all(&mut conn).await.map_err(|e| e.to_string())?;
+    let mut conn = sqlx::AnyConnection::connect(&url).await.map_err(|e: sqlx::Error| e.to_string())?;
+    let results = sqlx::query(&query).fetch_all(&mut conn).await.map_err(|e: sqlx::Error| e.to_string())?;
 
     if !results.is_empty() {
         for col in results[0].columns() {
@@ -262,27 +209,19 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
 #[tauri::command]
 async fn test_connection(config: DbConfig) -> Result<String, String> {
     if config.db_type == "mssql" {
-        let mut tiberius_config = Config::new();
-        tiberius_config.host(&config.host);
-        tiberius_config.port(config.port);
-        tiberius_config.database(&config.database);
-        tiberius_config.authentication(AuthMethod::sql_server(&config.user, &config.password));
-        if config.trust_server_certificate.unwrap_or(true) {
-            tiberius_config.trust_cert();
-        }
-
-        let tcp = TcpStream::connect(tiberius_config.get_addr()).await.map_err(|e| e.to_string())?;
-        let _client = Client::connect(tiberius_config, tcp.compat_write()).await.map_err(|e| e.to_string())?;
-        return Ok("Kết nối thành công (MSSQL via Tiberius)!".to_string());
+        let tiberius_config = build_mssql_config(&config)?;
+        let tcp = TcpStream::connect(tiberius_config.get_addr()).await.map_err(|e: std::io::Error| format!("Lỗi kết nối mạng: {}", e))?;
+        let _client = Client::connect(tiberius_config, tcp.compat_write()).await.map_err(|e: tiberius::error::Error| format!("Lỗi đăng nhập: {}", e))?;
+        return Ok("Kết nối thành công (MSSQL)!".to_string());
     }
 
     let url = build_db_url(&config)?;
     match config.db_type.as_str() {
         "mysql" => {
-            sqlx::mysql::MySqlConnection::connect(&url).await.map_err(|e| e.to_string())?;
+            sqlx::mysql::MySqlConnection::connect(&url).await.map_err(|e: sqlx::Error| e.to_string())?;
         },
         "postgres" => {
-            sqlx::postgres::PgConnection::connect(&url).await.map_err(|e| e.to_string())?;
+            sqlx::postgres::PgConnection::connect(&url).await.map_err(|e: sqlx::Error| e.to_string())?;
         },
         _ => return Err("Unsupported database type".to_string()),
     }
@@ -291,40 +230,44 @@ async fn test_connection(config: DbConfig) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn save_db_settings(handle: tauri::AppHandle, config: DbConfig) -> Result<(), String> {
+fn save_db_settings(handle: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
     let path = handle.path_resolver().app_config_dir().ok_or("Could not find app config dir")?;
-    fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&path).map_err(|e: std::io::Error| e.to_string())?;
     let config_path = path.join("db_settings.json");
-    let content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    let mut file = File::create(config_path).map_err(|e| e.to_string())?;
-    file.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
+    let content = serde_json::to_string_pretty(&settings).map_err(|e: serde_json::Error| e.to_string())?;
+    let mut file = File::create(config_path).map_err(|e: std::io::Error| e.to_string())?;
+    file.write_all(content.as_bytes()).map_err(|e: std::io::Error| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-fn load_db_settings(handle: tauri::AppHandle) -> Result<DbConfig, String> {
+fn load_db_settings(handle: tauri::AppHandle) -> Result<AppSettings, String> {
     let path = handle.path_resolver().app_config_dir().ok_or("Could not find app config dir")?;
     let config_path = path.join("db_settings.json");
     if !config_path.exists() {
-        return Ok(DbConfig {
-            db_type: "mssql".to_string(),
-            host: "localhost".to_string(),
-            port: 1433,
-            user: "sa".to_string(),
-            password: "".to_string(),
-            database: "".to_string(),
-            use_connection_string: Some(false),
-            connection_string: Some("".to_string()),
-            trust_server_certificate: Some(true),
-            encrypt: Some(false),
-            log_file_path: Some("".to_string()),
+        let default_id = "default".to_string();
+        return Ok(AppSettings {
+            connections: vec![DbConfig {
+                id: default_id.clone(),
+                name: "Default Connection".to_string(),
+                db_type: "mssql".to_string(),
+                host: "localhost".to_string(),
+                port: 1433,
+                user: "sa".to_string(),
+                password: "".to_string(),
+                database: "".to_string(),
+                trust_server_certificate: Some(true),
+                encrypt: Some(false),
+                verified: Some(false),
+            }],
+            global_log_path: Some("".to_string()),
         });
     }
-    let mut file = File::open(config_path).map_err(|e| e.to_string())?;
+    let mut file = File::open(config_path).map_err(|e: std::io::Error| e.to_string())?;
     let mut content = String::new();
-    file.read_to_string(&mut content).map_err(|e| e.to_string())?;
-    let config: DbConfig = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-    Ok(config)
+    file.read_to_string(&mut content).map_err(|e: std::io::Error| e.to_string())?;
+    let settings: AppSettings = serde_json::from_str(&content).map_err(|e: serde_json::Error| e.to_string())?;
+    Ok(settings)
 }
 
 fn main() {

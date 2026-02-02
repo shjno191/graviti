@@ -3,16 +3,44 @@ import { useAppStore, DbConfig } from '../store/useAppStore';
 import { invoke } from '@tauri-apps/api/tauri';
 
 export const SettingsTab: React.FC = () => {
-    const { dbConfig, setDbConfig } = useAppStore();
-    const [config, setConfig] = useState<DbConfig>(dbConfig);
+    const { connections, setConnections, globalLogPath } = useAppStore();
+    const [editingConfig, setEditingConfig] = useState<DbConfig | null>(null);
     const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error' | 'testing'>('idle');
     const [testMessage, setTestMessage] = useState<string>('');
 
-    const handleSave = async () => {
+    const handleAddConnection = () => {
+        const newConn: DbConfig = {
+            id: Math.random().toString(36).substr(2, 9),
+            name: `New Connection ${connections.length + 1}`,
+            db_type: 'mssql',
+            host: 'localhost',
+            port: 1433,
+            user: 'sa',
+            password: '',
+            database: '',
+            trust_server_certificate: true,
+            encrypt: false
+        };
+        setConnections([...connections, newConn]);
+        setEditingConfig(newConn);
+    };
+
+    const handleSave = async (configToSave: DbConfig) => {
         setStatus('saving');
         try {
-            await invoke('save_db_settings', { config });
-            setDbConfig(config);
+            const updatedConnections = connections.map(c => c.id === configToSave.id ? configToSave : c);
+            if (!updatedConnections.find(c => c.id === configToSave.id)) {
+                updatedConnections.push(configToSave);
+            }
+
+            await invoke('save_db_settings', {
+                settings: {
+                    connections: updatedConnections,
+                    global_log_path: globalLogPath
+                }
+            });
+
+            setConnections(updatedConnections);
             setStatus('success');
             setTimeout(() => setStatus('idle'), 3000);
         } catch (error) {
@@ -21,229 +49,215 @@ export const SettingsTab: React.FC = () => {
         }
     };
 
-    const handleTestConnection = async () => {
+    const handleTest = async (configToTest: DbConfig) => {
         setStatus('testing');
         setTestMessage('');
         try {
-            const result = await invoke<string>('test_connection', { config });
+            const result = await invoke<string>('test_connection', { config: configToTest });
             setTestMessage(result);
             setStatus('success');
-            setTimeout(() => setStatus('idle'), 5000);
+            // If success, update the verified status in the editing config
+            setEditingConfig({ ...configToTest, verified: true });
         } catch (error: any) {
-            setTestMessage(typeof error === 'string' ? error : JSON.stringify(error));
+            setTestMessage(error || 'Kết nối thất bại');
             setStatus('error');
+            setEditingConfig({ ...configToTest, verified: false });
         }
     };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-        const { name, value, type } = e.target as any;
-        const val = type === 'checkbox' ? (e.target as HTMLInputElement).checked : (name === 'port' ? parseInt(value) || 0 : value);
-        setConfig(prev => ({
-            ...prev,
-            [name]: val
-        }));
+    const handleDelete = async (id: string) => {
+        if (!confirm('Are you sure you want to delete this connection?')) return;
+        const updatedConnections = connections.filter(c => c.id !== id);
+        await invoke('save_db_settings', {
+            settings: {
+                connections: updatedConnections,
+                global_log_path: globalLogPath
+            }
+        });
+        setConnections(updatedConnections);
     };
 
     return (
-        <div className="p-10 max-w-2xl mx-auto pb-20">
-            <div className="bg-white rounded-xl shadow-xl p-8 border border-gray-100">
-                <h2 className="text-2xl font-bold mb-8 text-gray-800 flex items-center gap-3">
-                    <span className="p-2 bg-primary/10 rounded-lg text-primary">⚙️</span>
-                    Database Configuration
-                </h2>
+        <div className="p-6 flex flex-col gap-6 max-w-5xl mx-auto animate-in fade-in duration-300">
+            <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-black text-gray-800 uppercase tracking-tight">Database Connections</h2>
+                <button
+                    onClick={handleAddConnection}
+                    className="px-4 py-2 bg-primary text-white rounded-xl font-bold hover:bg-secondary transition-all shadow-md flex items-center gap-2"
+                >
+                    <span className="text-xl">+</span> Add Connection
+                </button>
+            </div>
 
-                <div className="flex flex-col gap-6">
-                    <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-100">
-                        <input
-                            type="checkbox"
-                            name="use_connection_string"
-                            id="use_conn"
-                            checked={config.use_connection_string}
-                            onChange={handleChange}
-                            className="w-5 h-5 text-primary rounded"
-                        />
-                        <label htmlFor="use_conn" className="font-semibold text-blue-800 cursor-pointer">
-                            Use custom connection string (JDBC / URL)
-                        </label>
-                    </div>
-
-                    {config.use_connection_string ? (
-                        <div className="animate-in fade-in slide-in-from-top-2 duration-300 flex flex-col gap-4">
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Connection String</label>
-                                <textarea
-                                    name="connection_string"
-                                    value={config.connection_string || ''}
-                                    onChange={handleChange}
-                                    placeholder="jdbc:sqlserver://172.16.0.196:1435;database=DEVTANAWARI002;..."
-                                    className="w-full p-4 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all h-32 font-mono text-sm"
-                                />
-                                <p className="mt-2 text-xs text-gray-500">
-                                    Tip: You can paste a full JDBC string here.
-                                </p>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Override Username (Optional)</label>
-                                    <input
-                                        type="text"
-                                        name="user"
-                                        value={config.user}
-                                        onChange={handleChange}
-                                        placeholder="Username"
-                                        className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Override Password (Optional)</label>
-                                    <input
-                                        type="password"
-                                        name="password"
-                                        value={config.password}
-                                        onChange={handleChange}
-                                        placeholder="Password"
-                                        className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                    />
+            <div className="grid grid-cols-[300px_1fr] gap-8">
+                {/* List of Connections */}
+                <div className="flex flex-col gap-3">
+                    {connections.map(conn => (
+                        <div
+                            key={conn.id}
+                            onClick={() => setEditingConfig(conn)}
+                            className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${editingConfig?.id === conn.id
+                                ? 'border-primary bg-primary/5 shadow-md'
+                                : 'border-gray-100 bg-white hover:border-gray-200 shadow-sm'
+                                } relative group`}
+                        >
+                            <div className="flex justify-between items-start mb-1">
+                                <div className="flex gap-1 items-center">
+                                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${conn.db_type === 'mssql' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'
+                                        }`}>
+                                        {conn.db_type}
+                                    </span>
+                                    {conn.verified ? (
+                                        <span className="text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded shadow-sm" title="Verified">🛡️</span>
+                                    ) : (
+                                        <span className="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded" title="Not Verified">⚠️</span>
+                                    )}
                                 </div>
                             </div>
+                            <h3 className="font-bold text-gray-800 truncate">{conn.name}</h3>
+                            <p className="text-[11px] text-gray-400 font-mono truncate">{conn.host}:{conn.port}</p>
+
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleDelete(conn.id); }}
+                                className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-600 shadow-lg"
+                            >
+                                ×
+                            </button>
                         </div>
-                    ) : (
-                        <div className="grid grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                            <div className="col-span-2">
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Database Type</label>
-                                <select
-                                    name="db_type"
-                                    value={config.db_type}
-                                    onChange={handleChange}
-                                    className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all bg-gray-50"
-                                >
-                                    <option value="mssql">SQL Server (MSSQL)</option>
-                                    <option value="mysql">MySQL</option>
-                                    <option value="postgres">PostgreSQL</option>
-                                </select>
-                            </div>
-
-                            <div className="col-span-2 md:col-span-1">
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Host</label>
-                                <input
-                                    type="text"
-                                    name="host"
-                                    value={config.host}
-                                    onChange={handleChange}
-                                    placeholder="localhost or 127.0.0.1"
-                                    className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                />
-                            </div>
-
-                            <div className="col-span-2 md:col-span-1">
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Port</label>
-                                <input
-                                    type="number"
-                                    name="port"
-                                    value={config.port}
-                                    onChange={handleChange}
-                                    className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                />
-                            </div>
-
-                            <div className="col-span-2 md:col-span-1">
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Username</label>
-                                <input
-                                    type="text"
-                                    name="user"
-                                    value={config.user}
-                                    onChange={handleChange}
-                                    className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                />
-                            </div>
-
-                            <div className="col-span-2 md:col-span-1">
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
-                                <input
-                                    type="password"
-                                    name="password"
-                                    value={config.password}
-                                    onChange={handleChange}
-                                    className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                />
-                            </div>
-
-                            <div className="col-span-2">
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Database Name</label>
-                                <input
-                                    type="text"
-                                    name="database"
-                                    value={config.database}
-                                    onChange={handleChange}
-                                    className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {config.db_type === 'mssql' && (
-                        <div className="p-4 bg-orange-50 rounded-lg border border-orange-100 flex flex-col gap-3">
-                            <h3 className="text-sm font-bold text-orange-800 uppercase tracking-wider">SQL Server Advanced Options</h3>
-                            <div className="flex flex-wrap gap-6">
-                                <label className="flex items-center gap-2 cursor-pointer select-none">
-                                    <input
-                                        type="checkbox"
-                                        name="trust_server_certificate"
-                                        checked={config.trust_server_certificate}
-                                        onChange={handleChange}
-                                        className="w-4 h-4 text-primary rounded"
-                                    />
-                                    <span className="text-sm font-medium text-orange-900">Trust Server Certificate</span>
-                                </label>
-                                <label className="flex items-center gap-2 cursor-pointer select-none">
-                                    <input
-                                        type="checkbox"
-                                        name="encrypt"
-                                        checked={config.encrypt}
-                                        onChange={handleChange}
-                                        className="w-4 h-4 text-primary rounded"
-                                    />
-                                    <span className="text-sm font-medium text-orange-900">Encrypt Connection</span>
-                                </label>
-                            </div>
-                            <p className="text-[10px] text-orange-700 mt-1 italic">
-                                * Try checking "Trust Server Certificate" if you get login or certificate errors.
-                            </p>
+                    ))}
+                    {connections.length === 0 && (
+                        <div className="p-10 text-center text-gray-300 border-2 border-dashed border-gray-200 rounded-3xl font-bold uppercase italic">
+                            No connections yet
                         </div>
                     )}
                 </div>
 
-                <div className="mt-10 flex flex-col gap-4">
-                    {testMessage && (
-                        <div className={`p-4 rounded-lg text-sm border ${status === 'error' ? 'bg-red-50 border-red-100 text-red-700' : 'bg-green-50 border-green-100 text-green-700'}`}>
-                            {status === 'error' ? '❌ ' : '✅ '} {testMessage}
+                {/* Edit Form */}
+                <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
+                    {editingConfig ? (
+                        <div className="flex flex-col gap-6">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="col-span-2">
+                                    <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Display Name</label>
+                                    <input
+                                        type="text"
+                                        value={editingConfig.name}
+                                        onChange={e => setEditingConfig({ ...editingConfig, name: e.target.value })}
+                                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-bold text-gray-700 focus:ring-2 focus:ring-primary outline-none transition-all"
+                                    />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Database Type</label>
+                                    <select
+                                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-bold text-gray-700 focus:ring-2 focus:ring-primary outline-none transition-all"
+                                        value={editingConfig.db_type}
+                                        onChange={e => setEditingConfig({ ...editingConfig, db_type: e.target.value, verified: false })}
+                                    >
+                                        <option value="mssql">Microsoft SQL Server</option>
+                                        <option value="mysql">MySQL</option>
+                                        <option value="postgres">PostgreSQL</option>
+                                    </select>
+                                </div>
+                                <div className="col-span-2 grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Host</label>
+                                        <input
+                                            type="text"
+                                            value={editingConfig.host}
+                                            onChange={e => setEditingConfig({ ...editingConfig, host: e.target.value, verified: false })}
+                                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Port</label>
+                                        <input
+                                            type="number"
+                                            value={editingConfig.port}
+                                            onChange={e => setEditingConfig({ ...editingConfig, port: parseInt(e.target.value) || 0, verified: false })}
+                                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Username</label>
+                                        <input
+                                            type="text"
+                                            value={editingConfig.user}
+                                            onChange={e => setEditingConfig({ ...editingConfig, user: e.target.value, verified: false })}
+                                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-bold text-gray-700 focus:ring-2 focus:ring-primary outline-none transition-all"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Password</label>
+                                        <input
+                                            type="password"
+                                            value={editingConfig.password}
+                                            onChange={e => setEditingConfig({ ...editingConfig, password: e.target.value, verified: false })}
+                                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-bold text-gray-700 focus:ring-2 focus:ring-primary outline-none transition-all"
+                                        />
+                                    </div>
+                                    <div className="col-span-2">
+                                        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Database Name</label>
+                                        <input
+                                            type="text"
+                                            value={editingConfig.database}
+                                            onChange={e => setEditingConfig({ ...editingConfig, database: e.target.value, verified: false })}
+                                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-bold text-gray-700 focus:ring-2 focus:ring-primary outline-none transition-all"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                <label className="flex items-center gap-3 cursor-pointer group">
+                                    <input
+                                        type="checkbox"
+                                        checked={editingConfig.trust_server_certificate}
+                                        onChange={e => setEditingConfig({ ...editingConfig, trust_server_certificate: e.target.checked, verified: false })}
+                                        className="w-5 h-5 rounded-lg text-primary focus:ring-primary border-gray-200"
+                                    />
+                                    <span className="text-sm font-bold text-gray-600 group-hover:text-primary transition-colors">Trust Server Certificate</span>
+                                </label>
+                                <label className="flex items-center gap-3 cursor-pointer group">
+                                    <input
+                                        type="checkbox"
+                                        checked={editingConfig.encrypt}
+                                        onChange={e => setEditingConfig({ ...editingConfig, encrypt: e.target.checked, verified: false })}
+                                        className="w-5 h-5 rounded-lg text-primary focus:ring-primary border-gray-200"
+                                    />
+                                    <span className="text-sm font-bold text-gray-600 group-hover:text-primary transition-colors">Encrypt Connection</span>
+                                </label>
+                            </div>
+
+                            <div className="flex gap-4 pt-4">
+                                <button
+                                    onClick={() => handleSave(editingConfig)}
+                                    disabled={status === 'saving'}
+                                    className="flex-1 px-6 py-3 bg-primary text-white rounded-2xl font-black shadow-lg hover:shadow-primary/30 transition-all disabled:opacity-50"
+                                >
+                                    {status === 'saving' ? 'SAVING...' : 'SAVE SETTINGS'}
+                                </button>
+                                <button
+                                    onClick={() => handleTest(editingConfig)}
+                                    disabled={status === 'testing'}
+                                    className={`px-6 py-3 rounded-2xl font-black shadow-lg transition-all disabled:opacity-50 ${editingConfig.verified ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-900 hover:bg-black text-white'}`}
+                                >
+                                    {status === 'testing' ? 'TESTING...' : editingConfig.verified ? 'VERIFIED ✓' : 'TEST CONNECT'}
+                                </button>
+                            </div>
+
+                            {testMessage && (
+                                <div className={`p-4 rounded-2xl text-sm font-bold animate-in slide-in-from-top-2 ${status === 'error' ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-green-50 text-green-600 border border-green-100'
+                                    }`}>
+                                    {status === 'error' ? '❌' : '✅'} {testMessage}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-full py-20 text-gray-300 gap-4">
+                            <span className="text-6xl">🔙</span>
+                            <p className="font-bold uppercase tracking-widest">Select a connection to edit</p>
                         </div>
                     )}
-
-                    <div className="flex items-center justify-between">
-                        <div className="text-sm">
-                            {status === 'saving' && <span className="text-gray-500 animate-pulse">Saving settings...</span>}
-                            {status === 'testing' && <span className="text-primary animate-pulse">Testing connection...</span>}
-                            {status === 'success' && !testMessage && <span className="text-green-600 font-medium">✨ Settings saved!</span>}
-                        </div>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={handleTestConnection}
-                                disabled={status === 'testing' || status === 'saving'}
-                                className="px-6 py-3 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200 transition-all disabled:opacity-50"
-                            >
-                                {status === 'testing' ? 'Testing...' : 'Test Connection'}
-                            </button>
-                            <button
-                                onClick={handleSave}
-                                disabled={status === 'saving' || status === 'testing'}
-                                className="px-8 py-3 bg-primary text-white font-bold rounded-lg hover:bg-secondary transition-all shadow-lg hover:shadow-primary/30 disabled:opacity-50"
-                            >
-                                Save Configuration
-                            </button>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>

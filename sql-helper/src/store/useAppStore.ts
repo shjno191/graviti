@@ -1,17 +1,17 @@
 import { create } from 'zustand';
 
 export interface DbConfig {
+    id: string;
+    name: string;
     db_type: string;
     host: string;
     port: number;
     user: string;
     password: string;
     database: string;
-    use_connection_string?: boolean;
-    connection_string?: string;
     trust_server_certificate?: boolean;
     encrypt?: boolean;
-    log_file_path?: string;
+    verified?: boolean;
 }
 
 export interface QueryResult {
@@ -27,6 +27,7 @@ export interface SqlQueryGroup {
     status: 'idle' | 'loading' | 'success' | 'error' | 'running';
     errorMessage?: string;
     result?: QueryResult;
+    isCollapsed?: boolean;
 }
 
 export interface TableScript {
@@ -42,7 +43,6 @@ export interface AppState {
 
     logFileContent: string;
     setLogFileContent: (content: string) => void;
-
 
     autoClipboard: boolean;
     setAutoClipboard: (val: boolean) => void;
@@ -66,8 +66,11 @@ export interface AppState {
     genPriorityColumns: string;
     setGenPriorityColumns: (cols: string) => void;
 
-    dbConfig: DbConfig;
-    setDbConfig: (config: DbConfig) => void;
+    globalLogPath: string;
+    setGlobalLogPath: (path: string) => void;
+
+    connections: DbConfig[];
+    setConnections: (conns: DbConfig[]) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -77,18 +80,18 @@ export const useAppStore = create<AppState>((set) => ({
     logFileContent: '',
     setLogFileContent: (content) => set({ logFileContent: content }),
 
-
     autoClipboard: false,
     setAutoClipboard: (val) => set({ autoClipboard: val }),
 
-    queryGroups: [{ id: '1', sql: '', params: '', statementId: '', status: 'idle' }],
+    queryGroups: [{ id: '1', sql: '', params: '', statementId: '', status: 'idle', isCollapsed: false }],
     addQueryGroup: () => set((state) => ({
         queryGroups: [...state.queryGroups, {
             id: Math.random().toString(36).substr(2, 9),
             sql: '',
             params: '',
             statementId: '',
-            status: 'idle'
+            status: 'idle',
+            isCollapsed: false
         }]
     })),
     updateQueryGroup: (id, updates) => set((state) => ({
@@ -121,18 +124,9 @@ export const useAppStore = create<AppState>((set) => ({
     genPriorityColumns: '',
     setGenPriorityColumns: (val) => set({ genPriorityColumns: val }),
 
-    dbConfig: {
-        db_type: 'mssql',
-        host: 'localhost',
-        port: 1433,
-        user: 'sa',
-        password: '',
-        database: '',
-        use_connection_string: false,
-        connection_string: '',
-        trust_server_certificate: true,
-        encrypt: false,
-        log_file_path: ''
-    },
-    setDbConfig: (config) => set({ dbConfig: config }),
+    globalLogPath: '',
+    setGlobalLogPath: (val) => set({ globalLogPath: val }),
+
+    connections: [],
+    setConnections: (connections) => set({ connections }),
 }));

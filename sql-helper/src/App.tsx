@@ -10,21 +10,21 @@ import { invoke } from '@tauri-apps/api/tauri';
 import { LabTab } from './components/LabTab';
 
 function App() {
-    const { activeTab, setActiveTab, setDbConfig } = useAppStore();
+    const { activeTab, setActiveTab, setConnections } = useAppStore();
 
     useEffect(() => {
         const init = async () => {
             try {
-                const config = await invoke<any>('load_db_settings');
-                if (config) {
-                    setDbConfig(config);
+                const settings = await invoke<any>('load_db_settings');
+                if (settings) {
+                    setConnections(settings.connections);
                 }
             } catch (err) {
                 console.error('Failed to load DB settings:', err);
             }
         };
         init();
-    }, [setDbConfig]);
+    }, [setConnections]);
 
     return (
         <div className="flex flex-col min-h-screen bg-bg font-sans">
@@ -54,11 +54,21 @@ function App() {
             </div>
 
             <main className="flex-1 container mx-auto max-w-full px-5">
-                {activeTab === 'params' && <ParamsTab />}
-                {activeTab === 'lab' && <LabTab />}
-                {activeTab === 'compare' && <SchemaTab />}
-                {activeTab === 'generate' && <GenerateTab />}
-                {activeTab === 'settings' && <SettingsTab />}
+                <div className={clsx(activeTab !== 'params' && 'hidden')}>
+                    <ParamsTab />
+                </div>
+                <div className={clsx(activeTab !== 'lab' && 'hidden')}>
+                    <LabTab />
+                </div>
+                <div className={clsx(activeTab !== 'compare' && 'hidden')}>
+                    <SchemaTab />
+                </div>
+                <div className={clsx(activeTab !== 'generate' && 'hidden')}>
+                    <GenerateTab />
+                </div>
+                <div className={clsx(activeTab !== 'settings' && 'hidden')}>
+                    <SettingsTab />
+                </div>
             </main>
         </div>
     );
