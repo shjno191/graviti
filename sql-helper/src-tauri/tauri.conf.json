@@ -81,7 +81,8 @@
                 "height": 800,
                 "resizable": true,
                 "title": "SQL Helper",
-                "width": 1200
+                "width": 1200,
+                "maximized": true
             }
         ]
     }

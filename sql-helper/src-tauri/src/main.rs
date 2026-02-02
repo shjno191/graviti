@@ -5,7 +5,7 @@ use std::fs::{File, self};
 use std::io::{Read, Write};
 use encoding_rs::SHIFT_JIS;
 use serde::{Deserialize, Serialize};
-use sqlx::{Column, Row as SqlxRow, ColumnIndex, Connection, AnyConnection};
+use sqlx::{Column, Row as SqlxRow, Connection};
 use tiberius::{Client, Config, AuthMethod, QueryItem};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
@@ -59,7 +59,7 @@ fn build_db_url(config: &DbConfig) -> Result<String, String> {
         if config.db_type == "mssql" && url.starts_with("jdbc:sqlserver://") {
             url = url.replace("jdbc:sqlserver://", "mssql://");
             
-            let mut host_port = String::new();
+            let host_port: String;
             let mut db_name = String::new();
             let mut user = config.user.clone();
             let mut pass = config.password.clone();
@@ -209,7 +209,7 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
                                             Ok(Some(b)) => b.to_string(),
                                             _ => match row.try_get::<chrono::NaiveDateTime, usize>(i) {
                                                 Ok(Some(dt)) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
-                                                _ => "NULL".to_string()
+                                                _ => "[NULL]".to_string()
                                             }
                                         }
                                     }
@@ -243,11 +243,11 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
         for row in results {
             let mut row_data = Vec::new();
             for i in 0..columns.len() {
-                let val: String = row.try_get::<Option<String>, usize>(i).map(|s| s.unwrap_or_else(|| "NULL".to_string())).map(|s| s.trim_end().to_string())
-                    .or_else(|_| row.try_get::<Option<i64>, usize>(i).map(|v| v.map(|n| n.to_string()).unwrap_or_else(|| "NULL".to_string())))
-                    .or_else(|_| row.try_get::<Option<i32>, usize>(i).map(|v| v.map(|n| n.to_string()).unwrap_or_else(|| "NULL".to_string())))
-                    .or_else(|_| row.try_get::<Option<f64>, usize>(i).map(|v| v.map(|n| n.to_string()).unwrap_or_else(|| "NULL".to_string())))
-                    .or_else(|_| row.try_get::<Option<bool>, usize>(i).map(|v| v.map(|b| b.to_string()).unwrap_or_else(|| "NULL".to_string())))
+                let val: String = row.try_get::<Option<String>, usize>(i).map(|s| s.unwrap_or_else(|| "[NULL]".to_string())).map(|s| s.trim_end().to_string())
+                    .or_else(|_| row.try_get::<Option<i64>, usize>(i).map(|v| v.map(|n| n.to_string()).unwrap_or_else(|| "[NULL]".to_string())))
+                    .or_else(|_| row.try_get::<Option<i32>, usize>(i).map(|v| v.map(|n| n.to_string()).unwrap_or_else(|| "[NULL]".to_string())))
+                    .or_else(|_| row.try_get::<Option<f64>, usize>(i).map(|v| v.map(|n| n.to_string()).unwrap_or_else(|| "[NULL]".to_string())))
+                    .or_else(|_| row.try_get::<Option<bool>, usize>(i).map(|v| v.map(|b| b.to_string()).unwrap_or_else(|| "[NULL]".to_string())))
                     .unwrap_or_else(|_| "???".to_string());
                 row_data.push(val);
             }

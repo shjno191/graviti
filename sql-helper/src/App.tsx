@@ -50,7 +50,7 @@ function App() {
                 ))}
             </div>
 
-            <main className="flex-1 container mx-auto max-w-7xl">
+            <main className="flex-1 container mx-auto max-w-full px-5">
                 {activeTab === 'params' && <ParamsTab />}
                 {activeTab === 'compare' && <SchemaTab />}
                 {activeTab === 'generate' && <GenerateTab />}

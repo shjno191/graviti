@@ -124,7 +124,11 @@ export const useAppStore = create<AppState>((set) => ({
         port: 1433,
         user: 'sa',
         password: '',
-        database: ''
+        database: '',
+        use_connection_string: false,
+        connection_string: '',
+        trust_server_certificate: true,
+        encrypt: false
     },
     setDbConfig: (config) => set({ dbConfig: config }),
 }));

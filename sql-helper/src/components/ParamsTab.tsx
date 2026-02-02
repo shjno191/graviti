@@ -4,6 +4,7 @@ import { findLogEntriesOptimized, findLastId, replaceParamsInSql } from '../util
 import { open } from '@tauri-apps/api/dialog';
 import { invoke } from '@tauri-apps/api/tauri';
 import { ResultSetTable } from './ResultSetTable';
+import { ComparisonModal } from './ComparisonModal';
 
 export const ParamsTab: React.FC = () => {
     const {
@@ -12,6 +13,7 @@ export const ParamsTab: React.FC = () => {
     } = useAppStore();
 
     const [filePath, setFilePath] = useState<string>('');
+    const [isCompareOpen, setIsCompareOpen] = useState(false);
 
     const handleSelectFile = async () => {
         try {
@@ -35,11 +37,8 @@ export const ParamsTab: React.FC = () => {
         setFilePath('');
     };
 
-
     const readFileContent = async (path: string): Promise<string> => {
         try {
-            // Use Tauri command to read file directly from filesystem
-            // This can read files even when they're being used by other applications
             const content = await invoke<string>('read_log_file', { path });
             return content;
         } catch (error: any) {
@@ -60,9 +59,7 @@ export const ParamsTab: React.FC = () => {
         updateQueryGroup(groupId, { status: 'loading', statementId, errorMessage: undefined });
 
         try {
-            // Read file content using Tauri backend
             const content = await readFileContent(filePath);
-
             const { sql, params } = findLogEntriesOptimized(content, statementId);
 
             if (!sql) {
@@ -111,13 +108,10 @@ export const ParamsTab: React.FC = () => {
 
         updateQueryGroup(groupId, { status: 'loading' });
         try {
-            // Read file content using Tauri backend
             const content = await readFileContent(filePath);
-
             const lastId = findLastId(content);
             if (lastId) {
                 updateQueryGroup(groupId, { statementId: lastId, status: 'idle' });
-                // Auto-process with the last ID
                 processQuery(groupId, lastId);
             } else {
                 updateQueryGroup(groupId, { status: 'error', errorMessage: 'Không tìm thấy statement ID trong file' });
@@ -141,7 +135,7 @@ export const ParamsTab: React.FC = () => {
                         <div className="flex-1 flex gap-2">
                             <button
                                 onClick={handleSelectFile}
-                                className="px-4 py-2 bg-primary text-white text-sm rounded hover:bg-secondary transition-colors font-semibold"
+                                className="px-4 py-2 bg-primary text-white text-sm rounded hover:bg-secondary transition-colors font-semibold shadow-sm"
                             >
                                 📁 Choose File
                             </button>
@@ -168,19 +162,28 @@ export const ParamsTab: React.FC = () => {
                     />
                     <span>Auto Copy</span>
                 </label>
-                <button
-                    onClick={addQueryGroup}
-                    className="mt-6 px-4 py-2 bg-primary text-white rounded font-bold hover:bg-secondary transition-colors shadow-md"
-                >
-                    + Add
-                </button>
+                <div className="flex gap-2 mt-6">
+                    <button
+                        onClick={() => setIsCompareOpen(true)}
+                        className="px-6 py-2 bg-orange-500 text-white rounded-xl font-black hover:bg-orange-600 transition-all shadow-lg hover:shadow-orange-200 flex items-center gap-2 group"
+                    >
+                        <span className="group-hover:scale-125 transition-transform">🔍</span>
+                        LAB COMPARE
+                    </button>
+                    <button
+                        onClick={addQueryGroup}
+                        className="px-4 py-2 bg-primary text-white rounded-xl font-bold hover:bg-secondary transition-colors shadow-md flex items-center gap-2"
+                    >
+                        <span className="text-xl">+</span> Add Fragment
+                    </button>
+                </div>
             </div>
 
             <div className="flex flex-col gap-5 pb-20">
                 {queryGroups.map((group, index) => (
-                    <div key={group.id} className="grid grid-cols-[300px_1fr] gap-5 p-5 border border-gray-200 rounded-lg bg-gray-50 relative shadow-sm hover:shadow-md transition-shadow">
+                    <div key={group.id} className="grid grid-cols-[300px_1fr] gap-5 p-5 border border-gray-200 rounded-lg bg-gray-50 relative shadow-sm hover:shadow-md transition-all">
                         <div className="col-span-full font-bold text-gray-700 border-b border-primary pb-2 flex justify-between items-center">
-                            <span>Query {index + 1}</span>
+                            <span>Query Fragment {index + 1}</span>
                             {group.status === 'running' && (
                                 <span className="text-xs text-primary animate-pulse font-normal">Executing SQL...</span>
                             )}
@@ -229,10 +232,10 @@ export const ParamsTab: React.FC = () => {
                             )}
 
                             <textarea
-                                readOnly
                                 value={group.sql}
+                                onChange={(e) => updateQueryGroup(group.id, { sql: e.target.value })}
                                 placeholder="SQL query will appear here..."
-                                className="w-full min-h-[150px] p-3 border border-gray-300 rounded font-mono text-sm bg-white focus:outline-none focus:border-primary"
+                                className="w-full min-h-[150px] p-3 border border-gray-300 rounded font-mono text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-inner"
                             />
 
                             <div className="flex gap-2">
@@ -254,9 +257,19 @@ export const ParamsTab: React.FC = () => {
                                     </>
                                 )}
                             </div>
-
-                            {group.result && <ResultSetTable result={group.result} />}
                         </div>
+
+                        {group.result && (
+                            <div className="col-span-full mt-4 bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
+                                <div className="p-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                                    <span className="text-sm font-bold text-gray-700">Query Results</span>
+                                    <span className="text-xs text-gray-500">{group.result.rows.length} rows found</span>
+                                </div>
+                                <div className="p-1">
+                                    <ResultSetTable result={group.result} />
+                                </div>
+                            </div>
+                        )}
 
                         {group.status === 'loading' && (
                             <div className="absolute inset-0 bg-white/90 flex items-center justify-center z-10 rounded-lg backdrop-blur-sm">
@@ -269,6 +282,12 @@ export const ParamsTab: React.FC = () => {
                     </div>
                 ))}
             </div>
+
+            <ComparisonModal
+                isOpen={isCompareOpen}
+                onClose={() => setIsCompareOpen(false)}
+                availableGroups={queryGroups.map((g, i) => ({ id: g.id, name: `Fragment ${i + 1}`, result: g.result }))}
+            />
         </div>
     );
 };
