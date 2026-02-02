@@ -1,14 +1,31 @@
 import { create } from 'zustand';
 
-export type Tab = 'params' | 'compare' | 'generate';
+export interface DbConfig {
+    db_type: string;
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    database: string;
+    use_connection_string?: boolean;
+    connection_string?: string;
+    trust_server_certificate?: boolean;
+    encrypt?: boolean;
+}
+
+export interface QueryResult {
+    columns: string[];
+    rows: string[][];
+}
 
 export interface SqlQueryGroup {
     id: string;
     sql: string;
-    params: string; // JSON string or parsed array
+    params: string;
     statementId: string;
-    status: 'idle' | 'loading' | 'success' | 'error';
+    status: 'idle' | 'loading' | 'success' | 'error' | 'running';
     errorMessage?: string;
+    result?: QueryResult;
 }
 
 export interface TableScript {
@@ -19,8 +36,8 @@ export interface TableScript {
 }
 
 export interface AppState {
-    activeTab: Tab;
-    setActiveTab: (tab: Tab) => void;
+    activeTab: 'params' | 'compare' | 'generate' | 'settings';
+    setActiveTab: (tab: 'params' | 'compare' | 'generate' | 'settings') => void;
 
     logFileContent: string;
     setLogFileContent: (content: string) => void;
@@ -46,6 +63,9 @@ export interface AppState {
 
     genPriorityColumns: string;
     setGenPriorityColumns: (cols: string) => void;
+
+    dbConfig: DbConfig;
+    setDbConfig: (config: DbConfig) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -97,4 +117,14 @@ export const useAppStore = create<AppState>((set) => ({
 
     genPriorityColumns: '',
     setGenPriorityColumns: (val) => set({ genPriorityColumns: val }),
+
+    dbConfig: {
+        db_type: 'mssql',
+        host: 'localhost',
+        port: 1433,
+        user: 'sa',
+        password: '',
+        database: ''
+    },
+    setDbConfig: (config) => set({ dbConfig: config }),
 }));

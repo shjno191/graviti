@@ -1,0 +1,203 @@
+﻿cargo :     Checking sql-helper-tauri v0.0.0 (D:\graviti\sql-helper\
+src-tauri)
+At line:1 char:1
++ cargo check 2>&1 | Out-File -Encoding utf8 compile_errors.txt
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Checking sq...lper 
+   \src-tauri):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: unused imports: `AnyConnection` and `ColumnIndex`
+ --> src\main.rs:8:25
+  |
+8 | use sqlx::{Column, Row, ColumnIndex, Connection, AnyConnection};
+  |                         ^^^^^^^^^^^              ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on b
+y default
+
+error[E0599]: no method named `columns` found for enum `QueryItem` i
+n the current scope
+   --> src\main.rs:192:32
+    |
+192 |                 for col in row.columns() {
+    |                                ^^^^^^^ method not found in `Qu
+eryItem`
+
+error[E0282]: type annotations needed
+   --> src\main.rs:193:34
+    |
+193 |                     columns.push(col.name().to_string());
+    |                                  ^^^ cannot infer type
+
+error[E0599]: no method named `try_get` found for enum `QueryItem` i
+n the current scope
+   --> src\main.rs:201:45
+    |
+201 |                 let val: String = match row.try_get::<&str, us
+ize>(i) {
+    |                                             ^^^^^^^ method not
+ found in `QueryItem`
+    |
+note: the method `try_get` exists on the type `tiberius::Row`
+   --> C:\Users\09204113161\.cargo\registry\src\index.crates.io-1949
+cf8c6b5b557f\tiberius-0.12.3\src\row.rs:403:5
+    |
+403 | /     pub fn try_get<'a, R, I>(&'a self, idx: I) -> crate::Res
+ult<Option<R>>
+404 | |     where
+405 | |         R: FromSql<'a>,
+406 | |         I: QueryIdx,
+    | |____________________^
+
+error[E0282]: type annotations needed
+   --> src\main.rs:202:36
+    |
+202 |                     Ok(Some(s)) => s.trim_end().to_string(),
+    |                                    ^ cannot infer type
+
+error[E0599]: no method named `try_get` found for enum `QueryItem` i
+n the current scope
+   --> src\main.rs:203:36
+    |
+203 |                     _ => match row.try_get::<i64, usize>(i) {
+    |                                    ^^^^^^^ method not found in
+ `QueryItem`
+    |
+note: the method `try_get` exists on the type `tiberius::Row`
+   --> C:\Users\09204113161\.cargo\registry\src\index.crates.io-1949
+cf8c6b5b557f\tiberius-0.12.3\src\row.rs:403:5
+    |
+403 | /     pub fn try_get<'a, R, I>(&'a self, idx: I) -> crate::Res
+ult<Option<R>>
+404 | |     where
+405 | |         R: FromSql<'a>,
+406 | |         I: QueryIdx,
+    | |____________________^
+
+error[E0282]: type annotations needed
+   --> src\main.rs:204:40
+    |
+204 |                         Ok(Some(n)) => n.to_string(),
+    |                                        ^ cannot infer type
+
+error[E0599]: no method named `try_get` found for enum `QueryItem` i
+n the current scope
+   --> src\main.rs:205:40
+    |
+205 |                         _ => match row.try_get::<i32, usize>(i
+) {
+    |                                        ^^^^^^^ method not foun
+d in `QueryItem`
+    |
+note: the method `try_get` exists on the type `tiberius::Row`
+   --> C:\Users\09204113161\.cargo\registry\src\index.crates.io-1949
+cf8c6b5b557f\tiberius-0.12.3\src\row.rs:403:5
+    |
+403 | /     pub fn try_get<'a, R, I>(&'a self, idx: I) -> crate::Res
+ult<Option<R>>
+404 | |     where
+405 | |         R: FromSql<'a>,
+406 | |         I: QueryIdx,
+    | |____________________^
+
+error[E0282]: type annotations needed
+   --> src\main.rs:206:44
+    |
+206 | ...                   Ok(Some(n)) => n.to_string(),
+    |                                      ^ cannot infer type
+
+error[E0599]: no method named `try_get` found for enum `QueryItem` i
+n the current scope
+   --> src\main.rs:207:44
+    |
+207 | ...                   _ => match row.try_get::<f64, usize>(i) 
+{
+    |                                      ^^^^^^^ method not found 
+in `QueryItem`
+    |
+note: the method `try_get` exists on the type `tiberius::Row`
+   --> C:\Users\09204113161\.cargo\registry\src\index.crates.io-1949
+cf8c6b5b557f\tiberius-0.12.3\src\row.rs:403:5
+    |
+403 | /     pub fn try_get<'a, R, I>(&'a self, idx: I) -> crate::Res
+ult<Option<R>>
+404 | |     where
+405 | |         R: FromSql<'a>,
+406 | |         I: QueryIdx,
+    | |____________________^
+
+error[E0282]: type annotations needed
+   --> src\main.rs:208:48
+    |
+208 | ...                   Ok(Some(f)) => f.to_string(),
+    |                                      ^ cannot infer type
+
+error[E0599]: no method named `try_get` found for enum `QueryItem` i
+n the current scope
+   --> src\main.rs:209:48
+    |
+209 | ...                   _ => match row.try_get::<bool, usize>(i)
+ {
+    |                                      ^^^^^^^ method not found 
+in `QueryItem`
+    |
+note: the method `try_get` exists on the type `tiberius::Row`
+   --> C:\Users\09204113161\.cargo\registry\src\index.crates.io-1949
+cf8c6b5b557f\tiberius-0.12.3\src\row.rs:403:5
+    |
+403 | /     pub fn try_get<'a, R, I>(&'a self, idx: I) -> crate::Res
+ult<Option<R>>
+404 | |     where
+405 | |         R: FromSql<'a>,
+406 | |         I: QueryIdx,
+    | |____________________^
+
+error[E0282]: type annotations needed
+   --> src\main.rs:210:52
+    |
+210 | ...                   Ok(Some(b)) => b.to_string(),
+    |                                      ^ cannot infer type
+
+error[E0599]: no method named `try_get` found for enum `QueryItem` i
+n the current scope
+   --> src\main.rs:211:52
+    |
+211 | ...                   _ => match row.try_get::<chrono::NaiveDa
+teTime, usize>(i) {
+    |                                      ^^^^^^^ method not found 
+in `QueryItem`
+    |
+note: the method `try_get` exists on the type `tiberius::Row`
+   --> C:\Users\09204113161\.cargo\registry\src\index.crates.io-1949
+cf8c6b5b557f\tiberius-0.12.3\src\row.rs:403:5
+    |
+403 | /     pub fn try_get<'a, R, I>(&'a self, idx: I) -> crate::Res
+ult<Option<R>>
+404 | |     where
+405 | |         R: FromSql<'a>,
+406 | |         I: QueryIdx,
+    | |____________________^
+
+error[E0282]: type annotations needed
+   --> src\main.rs:212:57
+    |
+212 | ...                   Ok(Some(dt)) => dt.to_string(),
+    |                                       ^^ cannot infer type
+
+warning: value assigned to `host_port` is never read
+  --> src\main.rs:62:33
+   |
+62 |             let mut host_port = String::new();
+   |                                 ^^^^^^^^^^^^^
+   |
+   = help: maybe it is overwritten before being read?
+   = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`)
+ on by default
+
+Some errors have detailed explanations: E0282, E0599.
+For more information about an error, try `rustc --explain E0282`.
+warning: `sql-helper-tauri` (bin "sql-helper-tauri") generated 2 war
+nings
+error: could not compile `sql-helper-tauri` (bin "sql-helper-tauri")
+ due to 14 previous errors; 2 warnings emitted
