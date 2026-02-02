@@ -11,6 +11,7 @@ export interface DbConfig {
     connection_string?: string;
     trust_server_certificate?: boolean;
     encrypt?: boolean;
+    log_file_path?: string;
 }
 
 export interface QueryResult {
@@ -36,11 +37,12 @@ export interface TableScript {
 }
 
 export interface AppState {
-    activeTab: 'params' | 'compare' | 'generate' | 'settings';
-    setActiveTab: (tab: 'params' | 'compare' | 'generate' | 'settings') => void;
+    activeTab: 'params' | 'lab' | 'compare' | 'generate' | 'settings';
+    setActiveTab: (tab: 'params' | 'lab' | 'compare' | 'generate' | 'settings') => void;
 
     logFileContent: string;
     setLogFileContent: (content: string) => void;
+
 
     autoClipboard: boolean;
     setAutoClipboard: (val: boolean) => void;
@@ -74,6 +76,7 @@ export const useAppStore = create<AppState>((set) => ({
 
     logFileContent: '',
     setLogFileContent: (content) => set({ logFileContent: content }),
+
 
     autoClipboard: false,
     setAutoClipboard: (val) => set({ autoClipboard: val }),
@@ -128,7 +131,8 @@ export const useAppStore = create<AppState>((set) => ({
         use_connection_string: false,
         connection_string: '',
         trust_server_certificate: true,
-        encrypt: false
+        encrypt: false,
+        log_file_path: ''
     },
     setDbConfig: (config) => set({ dbConfig: config }),
 }));

@@ -24,6 +24,7 @@ pub struct DbConfig {
     pub connection_string: Option<String>,
     pub trust_server_certificate: Option<bool>,
     pub encrypt: Option<bool>,
+    pub log_file_path: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -316,6 +317,7 @@ fn load_db_settings(handle: tauri::AppHandle) -> Result<DbConfig, String> {
             connection_string: Some("".to_string()),
             trust_server_certificate: Some(true),
             encrypt: Some(false),
+            log_file_path: Some("".to_string()),
         });
     }
     let mut file = File::open(config_path).map_err(|e| e.to_string())?;

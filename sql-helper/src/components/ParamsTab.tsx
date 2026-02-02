@@ -1,19 +1,30 @@
-import React, { useState } from 'react';
+import React, { useEffect } from 'react';
 import { useAppStore, QueryResult } from '../store/useAppStore';
 import { findLogEntriesOptimized, findLastId, replaceParamsInSql } from '../utils/sqlParser';
 import { open } from '@tauri-apps/api/dialog';
 import { invoke } from '@tauri-apps/api/tauri';
 import { ResultSetTable } from './ResultSetTable';
-import { ComparisonModal } from './ComparisonModal';
 
 export const ParamsTab: React.FC = () => {
     const {
         queryGroups, addQueryGroup, updateQueryGroup, removeQueryGroup,
-        autoClipboard, setAutoClipboard, dbConfig
+        autoClipboard, setAutoClipboard, dbConfig, setDbConfig
     } = useAppStore();
 
-    const [filePath, setFilePath] = useState<string>('');
-    const [isCompareOpen, setIsCompareOpen] = useState(false);
+    useEffect(() => {
+        const loadInitialLog = async () => {
+            if (dbConfig.log_file_path) {
+                try {
+                    // Just testing if we can read it, or we could pre-fetch it.
+                    // For now, the processQuery reads it on demand using readFileContent.
+                    await invoke<string>('read_log_file', { path: dbConfig.log_file_path });
+                } catch (e) {
+                    console.error('Failed to auto-load log:', e);
+                }
+            }
+        };
+        loadInitialLog();
+    }, [dbConfig.log_file_path]);
 
     const handleSelectFile = async () => {
         try {
@@ -26,7 +37,9 @@ export const ParamsTab: React.FC = () => {
             });
 
             if (selected && typeof selected === 'string') {
-                setFilePath(selected);
+                const newConfig = { ...dbConfig, log_file_path: selected };
+                setDbConfig(newConfig);
+                await invoke('save_db_settings', { config: newConfig });
             }
         } catch (error) {
             console.error('Error selecting file:', error);
@@ -34,7 +47,9 @@ export const ParamsTab: React.FC = () => {
     };
 
     const clearLogFile = () => {
-        setFilePath('');
+        const newConfig = { ...dbConfig, log_file_path: '' };
+        setDbConfig(newConfig);
+        invoke('save_db_settings', { config: newConfig });
     };
 
     const readFileContent = async (path: string): Promise<string> => {
@@ -47,7 +62,7 @@ export const ParamsTab: React.FC = () => {
     };
 
     const processQuery = async (groupId: string, statementId: string) => {
-        if (!filePath) {
+        if (!dbConfig.log_file_path) {
             alert('Vui lòng chọn file log trước');
             return;
         }
@@ -59,7 +74,7 @@ export const ParamsTab: React.FC = () => {
         updateQueryGroup(groupId, { status: 'loading', statementId, errorMessage: undefined });
 
         try {
-            const content = await readFileContent(filePath);
+            const content = await readFileContent(dbConfig.log_file_path);
             const { sql, params } = findLogEntriesOptimized(content, statementId);
 
             if (!sql) {
@@ -101,14 +116,14 @@ export const ParamsTab: React.FC = () => {
     };
 
     const handleGetLastId = async (groupId: string) => {
-        if (!filePath) {
+        if (!dbConfig.log_file_path) {
             alert('Vui lòng chọn file log trước');
             return;
         }
 
         updateQueryGroup(groupId, { status: 'loading' });
         try {
-            const content = await readFileContent(filePath);
+            const content = await readFileContent(dbConfig.log_file_path);
             const lastId = findLastId(content);
             if (lastId) {
                 updateQueryGroup(groupId, { statementId: lastId, status: 'idle' });
@@ -139,9 +154,9 @@ export const ParamsTab: React.FC = () => {
                             >
                                 📁 Choose File
                             </button>
-                            {filePath && (
-                                <div className="flex-1 p-2 border border-gray-300 rounded text-sm bg-gray-50 overflow-hidden text-ellipsis whitespace-nowrap" title={filePath}>
-                                    {filePath}
+                            {dbConfig.log_file_path && (
+                                <div className="flex-1 p-2 border border-gray-300 rounded text-sm bg-gray-50 overflow-hidden text-ellipsis whitespace-nowrap" title={dbConfig.log_file_path}>
+                                    {dbConfig.log_file_path}
                                 </div>
                             )}
                         </div>
@@ -163,13 +178,6 @@ export const ParamsTab: React.FC = () => {
                     <span>Auto Copy</span>
                 </label>
                 <div className="flex gap-2 mt-6">
-                    <button
-                        onClick={() => setIsCompareOpen(true)}
-                        className="px-6 py-2 bg-orange-500 text-white rounded-xl font-black hover:bg-orange-600 transition-all shadow-lg hover:shadow-orange-200 flex items-center gap-2 group"
-                    >
-                        <span className="group-hover:scale-125 transition-transform">🔍</span>
-                        LAB COMPARE
-                    </button>
                     <button
                         onClick={addQueryGroup}
                         className="px-4 py-2 bg-primary text-white rounded-xl font-bold hover:bg-secondary transition-colors shadow-md flex items-center gap-2"
@@ -283,11 +291,6 @@ export const ParamsTab: React.FC = () => {
                 ))}
             </div>
 
-            <ComparisonModal
-                isOpen={isCompareOpen}
-                onClose={() => setIsCompareOpen(false)}
-                availableGroups={queryGroups.map((g, i) => ({ id: g.id, name: `Fragment ${i + 1}`, result: g.result }))}
-            />
         </div>
     );
 };

@@ -7,6 +7,8 @@ import { SettingsTab } from './components/SettingsTab';
 import { clsx } from 'clsx';
 import { invoke } from '@tauri-apps/api/tauri';
 
+import { LabTab } from './components/LabTab';
+
 function App() {
     const { activeTab, setActiveTab, setDbConfig } = useAppStore();
 
@@ -30,28 +32,30 @@ function App() {
                 <h1 className="text-2xl font-bold">SQL Helper</h1>
             </header>
 
-            <div className="flex justify-center border-b border-gray-200 bg-white">
-                {(['params', 'compare', 'generate', 'settings'] as const).map((tab) => (
+            <div className="flex justify-center border-b border-gray-200 bg-white sticky top-0 z-[100] shadow-sm">
+                {(['params', 'lab', 'compare', 'generate', 'settings'] as const).map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
                         className={clsx(
-                            'px-6 py-4 font-medium text-sm transition-colors border-b-2 outline-none capitalize',
+                            'px-6 py-4 font-bold text-sm transition-all border-b-4 outline-none capitalize flex items-center gap-2',
                             activeTab === tab
-                                ? 'text-primary border-primary'
-                                : 'text-gray-500 border-transparent hover:text-gray-700'
+                                ? 'text-primary border-primary bg-primary/5'
+                                : 'text-gray-400 border-transparent hover:text-gray-600 hover:bg-gray-50'
                         )}
                     >
-                        {tab === 'params' && 'Parameter Replacement'}
-                        {tab === 'compare' && 'Schema Comparator'}
-                        {tab === 'generate' && 'Generate SELECT'}
-                        {tab === 'settings' && 'Database Settings'}
+                        {tab === 'params' && <><span>📝</span> Parameter Replacement</>}
+                        {tab === 'lab' && <><span>📊</span> Compare Lab</>}
+                        {tab === 'compare' && <><span>🔍</span> Schema Comparator</>}
+                        {tab === 'generate' && <><span>⚡</span> Generate SELECT</>}
+                        {tab === 'settings' && <><span>⚙️</span> Database Settings</>}
                     </button>
                 ))}
             </div>
 
             <main className="flex-1 container mx-auto max-w-full px-5">
                 {activeTab === 'params' && <ParamsTab />}
+                {activeTab === 'lab' && <LabTab />}
                 {activeTab === 'compare' && <SchemaTab />}
                 {activeTab === 'generate' && <GenerateTab />}
                 {activeTab === 'settings' && <SettingsTab />}
