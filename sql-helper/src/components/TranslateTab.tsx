@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { readBinaryFile } from '@tauri-apps/api/fs';
+import { readBinaryFile, writeBinaryFile } from '@tauri-apps/api/fs';
 import * as XLSX from 'xlsx';
 import { useAppStore } from '../store/useAppStore';
 
@@ -65,6 +65,69 @@ export const TranslateTab: React.FC = () => {
         }
     };
 
+    const handleCleanDuplicates = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const filePath = 'D:\\graviti\\sql-helper\\data\\translate.xlsx';
+            const contents = await readBinaryFile(filePath);
+            const workbook = XLSX.read(contents, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
+
+            if (jsonData.length <= 1) {
+                setLoading(false);
+                return;
+            }
+
+            let startIndex = 0;
+            const firstRowStr = JSON.stringify(jsonData[0]).toLowerCase();
+            if (firstRowStr.includes("japan") || firstRowStr.includes("en") || firstRowStr.includes("vi") || firstRowStr.includes("日")) {
+                startIndex = 1;
+            }
+
+            const header = startIndex > 0 ? jsonData[0] : null;
+            const rows = startIndex > 0 ? jsonData.slice(1) : jsonData;
+
+            const seenKeys = new Set<string>();
+            const uniqueRows = [];
+            let duplicateCount = 0;
+
+            for (const row of rows) {
+                const enValue = String(row[1] || "").trim();
+                const enKey = enValue.toLowerCase();
+
+                if (enKey === "") {
+                    uniqueRows.push(row);
+                } else if (!seenKeys.has(enKey)) {
+                    seenKeys.add(enKey);
+                    uniqueRows.push(row);
+                } else {
+                    duplicateCount++;
+                }
+            }
+
+            if (duplicateCount > 0) {
+                const newJsonData = header ? [header, ...uniqueRows] : uniqueRows;
+                const newWorksheet = XLSX.utils.aoa_to_sheet(newJsonData);
+                const newWorkbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, firstSheetName);
+
+                const excelBuffer = XLSX.write(newWorkbook, { bookType: 'xlsx', type: 'array' });
+                await writeBinaryFile(filePath, new Uint8Array(excelBuffer));
+
+                await loadData();
+            }
+            alert(duplicateCount > 0 ? `Đã dọn dẹp! Đã xóa ${duplicateCount} dòng trùng.` : 'Không có dòng trùng lặp.');
+        } catch (err: any) {
+            console.error('Error cleaning duplicates:', err);
+            setError(`Lỗi khi dọn dẹp: ${err.message || err}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const filteredData = useMemo(() => {
         if (!searchTerm) return data;
         const lowerSearch = searchTerm.toLowerCase();
@@ -105,13 +168,22 @@ export const TranslateTab: React.FC = () => {
                     />
                 </div>
 
-                <button
-                    onClick={loadData}
-                    className="p-2 hover:bg-gray-100 rounded-xl transition-all text-gray-400 hover:text-indigo-600 border border-gray-100 shadow-sm active:scale-95"
-                    title="Reload"
-                >
-                    🔄
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={handleCleanDuplicates}
+                        className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black hover:bg-amber-100 border border-amber-200 transition-all active:scale-95 shadow-sm"
+                        title="Clean Duplicate Keys (EN)"
+                    >
+                        🧹 CLEAN
+                    </button>
+                    <button
+                        onClick={loadData}
+                        className="p-2 hover:bg-gray-100 rounded-xl transition-all text-gray-400 hover:text-indigo-600 border border-gray-100 shadow-sm active:scale-95"
+                        title="Reload"
+                    >
+                        🔄
+                    </button>
+                </div>
             </div>
 
             {/* Table Area - Now 3 Columns */}

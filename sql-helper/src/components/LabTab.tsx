@@ -28,6 +28,14 @@ export const LabTab: React.FC = () => {
         return () => window.removeEventListener('click', handleClick);
     }, []);
 
+    // Sync connection IDs when connections load
+    useEffect(() => {
+        if (connections.length > 0) {
+            setStmt1(prev => ({ ...prev, connectionId: prev.connectionId || connections[0].id }));
+            setStmt2(prev => ({ ...prev, connectionId: prev.connectionId || connections[0].id }));
+        }
+    }, [connections]);
+
     const runQuery = async (idx: 1 | 2) => {
         const stmt = idx === 1 ? stmt1 : stmt2;
         const setStmt = idx === 1 ? setStmt1 : setStmt2;
@@ -200,6 +208,10 @@ export const LabTab: React.FC = () => {
         );
     };
 
+    // Simplified connection resolution to match runQuery logic
+    const activeConn1 = connections.find(c => c.id === stmt1.connectionId) || connections[0];
+    const activeConn2 = connections.find(c => c.id === stmt2.connectionId) || connections[0];
+
     return (
         <div className="flex flex-col h-[calc(100vh-140px)] gap-6 p-6 animate-in fade-in duration-300 overflow-hidden">
             {/* Toolbar */}
@@ -242,17 +254,17 @@ export const LabTab: React.FC = () => {
                         <div className="flex items-center gap-3">
                             <span className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Statement A</span>
                             <select
-                                value={stmt1.connectionId || ''}
+                                value={activeConn1?.id || ''}
                                 onChange={e => setStmt1(prev => ({ ...prev, connectionId: e.target.value }))}
-                                className={`bg-white/10 text-[10px] font-bold border-0 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-orange-500 transition-colors ${connections.find(c => c.id === stmt1.connectionId)?.verified ? 'text-white' : 'text-red-400'}`}
+                                className={`bg-white/10 text-[10px] font-bold border-0 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-orange-500 transition-colors ${activeConn1?.verified ? 'text-white' : 'text-red-400'}`}
                             >
                                 {connections.map(c => <option key={c.id} value={c.id} className="text-black">{c.verified ? '🛡️' : '⚠️'} {c.name}</option>)}
                             </select>
                         </div>
                         <button
                             onClick={() => runQuery(1)}
-                            disabled={stmt1.loading || !(connections.find(c => c.id === stmt1.connectionId)?.verified)}
-                            className={`px-4 py-1 text-[10px] font-black rounded transition-all shadow-lg disabled:opacity-50 ${connections.find(c => c.id === stmt1.connectionId)?.verified ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-gray-700 text-gray-400'}`}
+                            disabled={stmt1.loading || !activeConn1?.verified}
+                            className={`px-4 py-1 text-[10px] font-black rounded transition-all shadow-lg disabled:opacity-50 ${activeConn1?.verified ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-gray-700 text-gray-400'}`}
                         >
                             RUN A
                         </button>
@@ -269,17 +281,17 @@ export const LabTab: React.FC = () => {
                         <div className="flex items-center gap-3">
                             <span className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Statement B</span>
                             <select
-                                value={stmt2.connectionId || ''}
+                                value={activeConn2?.id || ''}
                                 onChange={e => setStmt2(prev => ({ ...prev, connectionId: e.target.value }))}
-                                className={`bg-white/10 text-[10px] font-bold border-0 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-orange-500 transition-colors ${connections.find(c => c.id === stmt2.connectionId)?.verified ? 'text-white' : 'text-red-400'}`}
+                                className={`bg-white/10 text-[10px] font-bold border-0 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-orange-500 transition-colors ${activeConn2?.verified ? 'text-white' : 'text-red-400'}`}
                             >
                                 {connections.map(c => <option key={c.id} value={c.id} className="text-black">{c.verified ? '🛡️' : '⚠️'} {c.name}</option>)}
                             </select>
                         </div>
                         <button
                             onClick={() => runQuery(2)}
-                            disabled={stmt2.loading || !(connections.find(c => c.id === stmt2.connectionId)?.verified)}
-                            className={`px-4 py-1 text-[10px] font-black rounded transition-all shadow-lg disabled:opacity-50 ${connections.find(c => c.id === stmt2.connectionId)?.verified ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-gray-700 text-gray-400'}`}
+                            disabled={stmt2.loading || !activeConn2?.verified}
+                            className={`px-4 py-1 text-[10px] font-black rounded transition-all shadow-lg disabled:opacity-50 ${activeConn2?.verified ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-gray-700 text-gray-400'}`}
                         >
                             RUN B
                         </button>
