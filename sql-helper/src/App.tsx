@@ -53,7 +53,7 @@ function App() {
                         {tab === 'translate' && <><span>🇯🇵</span> Translate</>}
                         {tab === 'compare' && <><span>🔍</span> Schema Comparator</>}
                         {tab === 'generate' && <><span>⚡</span> Generate SELECT</>}
-                        {tab === 'settings' && <><span>⚙️</span> Database Settings</>}
+                        {tab === 'settings' && <><span>⚙️</span> Settings</>}
                     </button>
                 ))}
             </div>

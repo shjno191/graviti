@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { readBinaryFile, writeBinaryFile } from '@tauri-apps/api/fs';
 import { invoke } from '@tauri-apps/api/tauri';
+import { open as openDialog } from '@tauri-apps/api/dialog';
 import * as XLSX from 'xlsx';
 import { useAppStore } from '../store/useAppStore';
 
@@ -11,7 +12,7 @@ interface TranslateEntry {
 }
 
 export const TranslateTab: React.FC = () => {
-    const { activeTab, translateFilePath } = useAppStore();
+    const { activeTab, translateFilePath, setTranslateFilePath, setActiveTab } = useAppStore();
     const [data, setData] = useState<TranslateEntry[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(true);
@@ -21,12 +22,18 @@ export const TranslateTab: React.FC = () => {
 
 
     useEffect(() => {
-        if (activeTab === 'translate') {
+        if (activeTab === 'translate' && translateFilePath) {
             loadData();
         }
-    }, [activeTab]);
+    }, [activeTab, translateFilePath]);
 
     const loadData = async () => {
+        if (!translateFilePath) {
+            setLoading(false);
+            setError("Đường dẫn file Excel chưa được cấu hình. Vui lòng vào tab Cài đặt để chọn file.");
+            return;
+        }
+
         setLoading(true);
         setError(null);
         try {
@@ -62,7 +69,11 @@ export const TranslateTab: React.FC = () => {
             setData(entries);
         } catch (err: any) {
             console.error('Error loading Excel:', err);
-            setError(`Lỗi: ${err.message || err}`);
+            if (err.toString().includes("os error 2") || err.toString().includes("NotFound")) {
+                setError(`Không tìm thấy file tại: ${translateFilePath}. Vui lòng kiểm tra lại đường dẫn trong Cài đặt.`);
+            } else {
+                setError(`Lỗi: ${err.message || err}`);
+            }
         } finally {
             setLoading(false);
         }
@@ -226,10 +237,37 @@ export const TranslateTab: React.FC = () => {
                             <p className="text-xs text-gray-500 font-bold">Loading Data...</p>
                         </div>
                     ) : error ? (
-                        <div className="flex flex-col items-center justify-center h-full p-10 text-center">
-                            <div className="text-3xl mb-2">⚠️</div>
-                            <p className="text-red-500 font-bold text-xs max-w-xs">{error}</p>
-                            <button onClick={loadData} className="mt-4 px-4 py-1.5 bg-red-50 text-red-600 rounded-lg text-[10px] font-black hover:bg-red-100 border border-red-200">RETRY</button>
+                        <div className="flex flex-col items-center justify-center h-full p-10 text-center bg-gray-50/50">
+                            <div className="text-4xl mb-4">📂</div>
+                            <p className="text-gray-800 font-bold text-sm mb-2 max-w-sm">{error}</p>
+                            <div className="flex gap-3 mt-6">
+                                <button
+                                    onClick={async () => {
+                                        const selected = await openDialog({
+                                            filters: [{ name: 'Excel', extensions: ['xlsx'] }]
+                                        });
+                                        if (selected && typeof selected === 'string') {
+                                            setTranslateFilePath(selected);
+                                            // Auto save if possible or just rely on state
+                                        }
+                                    }}
+                                    className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-indigo-700 transition-all active:scale-95"
+                                >
+                                    CHỌN FILE NGAY
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('settings')}
+                                    className="px-5 py-2 bg-white text-gray-600 border border-gray-200 rounded-xl text-xs font-black shadow-sm hover:bg-gray-50 transition-all active:scale-95"
+                                >
+                                    VÀO CÀI ĐẶT
+                                </button>
+                                <button
+                                    onClick={loadData}
+                                    className="px-5 py-2 bg-gray-100 text-gray-400 rounded-xl text-xs font-black hover:bg-gray-200 transition-all active:scale-95"
+                                >
+                                    THỬ LẠI
+                                </button>
+                            </div>
                         </div>
                     ) : (
                         <table className="w-full border-collapse table-fixed">
