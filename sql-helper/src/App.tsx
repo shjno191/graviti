@@ -19,6 +19,9 @@ function App() {
                 const settings = await invoke<any>('load_db_settings');
                 if (settings) {
                     setConnections(settings.connections);
+                    if (settings.translate_file_path) {
+                        useAppStore.getState().setTranslateFilePath(settings.translate_file_path);
+                    }
                 }
             } catch (err) {
                 console.error('Failed to load DB settings:', err);

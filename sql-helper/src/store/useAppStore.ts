@@ -69,6 +69,9 @@ export interface AppState {
     globalLogPath: string;
     setGlobalLogPath: (path: string) => void;
 
+    translateFilePath: string;
+    setTranslateFilePath: (path: string) => void;
+
     connections: DbConfig[];
     setConnections: (conns: DbConfig[]) => void;
 }
@@ -126,6 +129,9 @@ export const useAppStore = create<AppState>((set) => ({
 
     globalLogPath: '',
     setGlobalLogPath: (val) => set({ globalLogPath: val }),
+
+    translateFilePath: '',
+    setTranslateFilePath: (val) => set({ translateFilePath: val }),
 
     connections: [],
     setConnections: (connections) => set({ connections }),

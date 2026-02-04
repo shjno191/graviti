@@ -31,12 +31,42 @@ pub struct DbConfig {
 pub struct AppSettings {
     pub connections: Vec<DbConfig>,
     pub global_log_path: Option<String>,
+    pub translate_file_path: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct QueryResult {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<String>>,
+}
+
+#[tauri::command]
+fn open_file(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        Command::new("cmd")
+            .args(["/C", "start", "", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -244,6 +274,11 @@ fn save_db_settings(handle: tauri::AppHandle, settings: AppSettings) -> Result<(
 fn load_db_settings(handle: tauri::AppHandle) -> Result<AppSettings, String> {
     let path = handle.path_resolver().app_config_dir().ok_or("Could not find app config dir")?;
     let config_path = path.join("db_settings.json");
+    
+    let default_translate_path = std::env::current_exe()
+        .map(|p| p.parent().unwrap_or(&p).join("data").join("translate.xlsx").to_string_lossy().to_string())
+        .unwrap_or_else(|_| "".to_string());
+
     if !config_path.exists() {
         let default_id = "default".to_string();
         return Ok(AppSettings {
@@ -261,12 +296,19 @@ fn load_db_settings(handle: tauri::AppHandle) -> Result<AppSettings, String> {
                 verified: Some(false),
             }],
             global_log_path: Some("".to_string()),
+            translate_file_path: Some(default_translate_path),
         });
     }
+    
     let mut file = File::open(config_path).map_err(|e: std::io::Error| e.to_string())?;
     let mut content = String::new();
     file.read_to_string(&mut content).map_err(|e: std::io::Error| e.to_string())?;
-    let settings: AppSettings = serde_json::from_str(&content).map_err(|e: serde_json::Error| e.to_string())?;
+    let mut settings: AppSettings = serde_json::from_str(&content).map_err(|e: serde_json::Error| e.to_string())?;
+    
+    if settings.translate_file_path.is_none() || settings.translate_file_path.as_ref().unwrap().is_empty() {
+        settings.translate_file_path = Some(default_translate_path);
+    }
+    
     Ok(settings)
 }
 
@@ -277,7 +319,8 @@ fn main() {
             execute_query, 
             test_connection,
             save_db_settings, 
-            load_db_settings
+            load_db_settings,
+            open_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

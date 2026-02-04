@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { readBinaryFile, writeBinaryFile } from '@tauri-apps/api/fs';
+import { invoke } from '@tauri-apps/api/tauri';
 import * as XLSX from 'xlsx';
 import { useAppStore } from '../store/useAppStore';
 
@@ -10,12 +11,14 @@ interface TranslateEntry {
 }
 
 export const TranslateTab: React.FC = () => {
-    const { activeTab } = useAppStore();
+    const { activeTab, translateFilePath } = useAppStore();
     const [data, setData] = useState<TranslateEntry[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [copyFeedback, setCopyFeedback] = useState<{ row: number, col: 'jp' | 'en' | 'vi' } | null>(null);
+
+
 
     useEffect(() => {
         if (activeTab === 'translate') {
@@ -27,7 +30,7 @@ export const TranslateTab: React.FC = () => {
         setLoading(true);
         setError(null);
         try {
-            const filePath = 'D:\\graviti\\sql-helper\\data\\translate.xlsx';
+            const filePath = translateFilePath;
             const contents = await readBinaryFile(filePath);
             const workbook = XLSX.read(contents, { type: 'array' });
             const firstSheetName = workbook.SheetNames[0];
@@ -69,7 +72,7 @@ export const TranslateTab: React.FC = () => {
         setLoading(true);
         setError(null);
         try {
-            const filePath = 'D:\\graviti\\sql-helper\\data\\translate.xlsx';
+            const filePath = translateFilePath;
             const contents = await readBinaryFile(filePath);
             const workbook = XLSX.read(contents, { type: 'array' });
             const firstSheetName = workbook.SheetNames[0];
@@ -128,6 +131,15 @@ export const TranslateTab: React.FC = () => {
         }
     };
 
+    const handleOpenExcel = async () => {
+        try {
+            await invoke('open_file', { path: translateFilePath });
+        } catch (err: any) {
+            console.error('Error opening Excel:', err);
+            alert(`Không thể mở file: ${err.message || err}`);
+        }
+    };
+
     const filteredData = useMemo(() => {
         if (!searchTerm) return data;
         const lowerSearch = searchTerm.toLowerCase();
@@ -169,6 +181,13 @@ export const TranslateTab: React.FC = () => {
                 </div>
 
                 <div className="flex gap-2">
+                    <button
+                        onClick={handleOpenExcel}
+                        className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-600 rounded-xl text-[10px] font-black hover:bg-green-100 border border-green-200 transition-all active:scale-95 shadow-sm"
+                        title="Open Excel File"
+                    >
+                        📂 OPEN EXCEL
+                    </button>
                     <button
                         onClick={handleCleanDuplicates}
                         className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black hover:bg-amber-100 border border-amber-200 transition-all active:scale-95 shadow-sm"

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useAppStore, DbConfig } from '../store/useAppStore';
 import { invoke } from '@tauri-apps/api/tauri';
+import { open as openDialog } from '@tauri-apps/api/dialog';
 
 export const SettingsTab: React.FC = () => {
-    const { connections, setConnections, globalLogPath } = useAppStore();
+    const { connections, setConnections, globalLogPath, translateFilePath, setTranslateFilePath } = useAppStore();
     const [editingConfig, setEditingConfig] = useState<DbConfig | null>(null);
     const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error' | 'testing'>('idle');
     const [testMessage, setTestMessage] = useState<string>('');
@@ -36,7 +37,8 @@ export const SettingsTab: React.FC = () => {
             await invoke('save_db_settings', {
                 settings: {
                     connections: updatedConnections,
-                    global_log_path: globalLogPath
+                    global_log_path: globalLogPath,
+                    translate_file_path: translateFilePath
                 }
             });
 
@@ -65,7 +67,8 @@ export const SettingsTab: React.FC = () => {
             await invoke('save_db_settings', {
                 settings: {
                     connections: updatedConnections,
-                    global_log_path: globalLogPath
+                    global_log_path: globalLogPath,
+                    translate_file_path: translateFilePath
                 }
             });
             setConnections(updatedConnections);
@@ -83,7 +86,8 @@ export const SettingsTab: React.FC = () => {
         await invoke('save_db_settings', {
             settings: {
                 connections: updatedConnections,
-                global_log_path: globalLogPath
+                global_log_path: globalLogPath,
+                translate_file_path: translateFilePath
             }
         });
         setConnections(updatedConnections);
@@ -99,6 +103,62 @@ export const SettingsTab: React.FC = () => {
                 >
                     <span className="text-xl">+</span> Add Connection
                 </button>
+            </div>
+
+            {/* General Settings Section */}
+            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 flex flex-col gap-6">
+                <div>
+                    <h3 className="text-xl font-black text-gray-800 uppercase tracking-tight mb-4">General Settings</h3>
+                    <div className="flex flex-col gap-4">
+                        <div className="flex flex-col gap-2">
+                            <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Translate Excel Path</label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={translateFilePath}
+                                    onChange={e => setTranslateFilePath(e.target.value)}
+                                    className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
+                                    placeholder="Path to translate.xlsx"
+                                />
+                                <button
+                                    onClick={async () => {
+                                        const selected = await openDialog({
+                                            filters: [{ name: 'Excel', extensions: ['xlsx'] }]
+                                        });
+                                        if (selected && typeof selected === 'string') {
+                                            setTranslateFilePath(selected);
+                                        }
+                                    }}
+                                    className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition-all border border-gray-200"
+                                >
+                                    Browse
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        setStatus('saving');
+                                        try {
+                                            await invoke('save_db_settings', {
+                                                settings: {
+                                                    connections: connections,
+                                                    global_log_path: globalLogPath,
+                                                    translate_file_path: translateFilePath
+                                                }
+                                            });
+                                            setStatus('success');
+                                            setTimeout(() => setStatus('idle'), 2000);
+                                        } catch (e) {
+                                            setStatus('error');
+                                        }
+                                    }}
+                                    className="px-6 py-2 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-md"
+                                >
+                                    {status === 'saving' ? 'SETTING...' : 'SAVE CONFIG'}
+                                </button>
+                            </div>
+                            <p className="text-[10px] text-gray-400 italic font-medium">Default path is in 'data' folder relative to the executable.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div className="grid grid-cols-[300px_1fr] gap-8">
