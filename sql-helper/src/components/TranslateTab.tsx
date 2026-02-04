@@ -6,6 +6,7 @@ import { useAppStore } from '../store/useAppStore';
 interface TranslateEntry {
     japanese: string;
     english: string;
+    vietnamese: string;
 }
 
 export const TranslateTab: React.FC = () => {
@@ -14,7 +15,7 @@ export const TranslateTab: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [copyFeedback, setCopyFeedback] = useState<{ row: number, col: 'jp' | 'en' } | null>(null);
+    const [copyFeedback, setCopyFeedback] = useState<{ row: number, col: 'jp' | 'en' | 'vi' } | null>(null);
 
     useEffect(() => {
         if (activeTab === 'translate') {
@@ -38,7 +39,8 @@ export const TranslateTab: React.FC = () => {
             let startIndex = 0;
             if (jsonData.length > 0) {
                 const firstRowStr = JSON.stringify(jsonData[0]).toLowerCase();
-                if (firstRowStr.includes("japan") || firstRowStr.includes("en") || firstRowStr.includes("日")) {
+                // Check if the first row is a header
+                if (firstRowStr.includes("japan") || firstRowStr.includes("en") || firstRowStr.includes("vi") || firstRowStr.includes("日")) {
                     startIndex = 1;
                 }
             }
@@ -48,8 +50,9 @@ export const TranslateTab: React.FC = () => {
                 if (row && row.length >= 2) {
                     const jp = String(row[0] || "").trim();
                     const en = String(row[1] || "").trim();
-                    if (jp || en) {
-                        entries.push({ japanese: jp, english: en });
+                    const vi = String(row[2] || "").trim();
+                    if (jp || en || vi) {
+                        entries.push({ japanese: jp, english: en, vietnamese: vi });
                     }
                 }
             }
@@ -67,11 +70,12 @@ export const TranslateTab: React.FC = () => {
         const lowerSearch = searchTerm.toLowerCase();
         return data.filter(item =>
             item.japanese.toLowerCase().includes(lowerSearch) ||
-            item.english.toLowerCase().includes(lowerSearch)
+            item.english.toLowerCase().includes(lowerSearch) ||
+            item.vietnamese.toLowerCase().includes(lowerSearch)
         );
     }, [data, searchTerm]);
 
-    const handleCopy = (text: string, rowIdx: number, col: 'jp' | 'en') => {
+    const handleCopy = (text: string, rowIdx: number, col: 'jp' | 'en' | 'vi') => {
         if (!text) return;
         navigator.clipboard.writeText(text);
         setCopyFeedback({ row: rowIdx, col });
@@ -93,7 +97,7 @@ export const TranslateTab: React.FC = () => {
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm opacity-50">🔍</span>
                     <input
                         type="text"
-                        placeholder="Search Japanese or Code..."
+                        placeholder="Search Japanese, English or Vietnamese..."
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium shadow-inner"
@@ -110,14 +114,17 @@ export const TranslateTab: React.FC = () => {
                 </button>
             </div>
 
-            {/* Table Area */}
+            {/* Table Area - Now 3 Columns */}
             <div className="flex-1 overflow-hidden bg-white rounded-2xl border border-gray-300 shadow-sm flex flex-col">
-                <div className="grid grid-cols-2 bg-gray-100 text-gray-600 border-b border-gray-300 sticky top-0 z-10">
-                    <div className="px-6 py-3 text-[10px] font-black uppercase tracking-widest border-r border-gray-300 flex items-center gap-2">
+                <div className="grid grid-cols-3 bg-gray-100 text-gray-600 border-b border-gray-300 sticky top-0 z-10">
+                    <div className="px-4 py-3 text-[10px] font-black uppercase tracking-widest border-r border-gray-300 flex items-center gap-2">
                         🇯🇵 Japanese
                     </div>
-                    <div className="px-6 py-3 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                    <div className="px-4 py-3 text-[10px] font-black uppercase tracking-widest border-r border-gray-300 flex items-center gap-2">
                         🔡 English / Code
+                    </div>
+                    <div className="px-4 py-3 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                        🇻🇳 Vietnamese
                     </div>
                 </div>
 
@@ -127,6 +134,12 @@ export const TranslateTab: React.FC = () => {
                             <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-2"></div>
                             <p className="text-xs text-gray-500 font-bold">Loading Data...</p>
                         </div>
+                    ) : error ? (
+                        <div className="flex flex-col items-center justify-center h-full p-10 text-center">
+                            <div className="text-3xl mb-2">⚠️</div>
+                            <p className="text-red-500 font-bold text-xs max-w-xs">{error}</p>
+                            <button onClick={loadData} className="mt-4 px-4 py-1.5 bg-red-50 text-red-600 rounded-lg text-[10px] font-black hover:bg-red-100 border border-red-200">RETRY</button>
+                        </div>
                     ) : (
                         <table className="w-full border-collapse table-fixed">
                             <tbody>
@@ -134,65 +147,59 @@ export const TranslateTab: React.FC = () => {
                                     <tr key={idx} className="border-b border-gray-200 group transition-colors">
                                         {/* Japanese Column */}
                                         <td
-                                            className={`px-6 py-3 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
+                                            className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
                                                 ${copyFeedback?.row === idx && copyFeedback.col === 'jp' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
                                             `}
                                             onClick={() => handleCopy(item.japanese, idx, 'jp')}
                                         >
-                                            <div className="flex justify-between items-center pr-2">
-                                                <span className={`text-[13px] font-bold text-gray-700 leading-relaxed break-words whitespace-pre-wrap ${copyFeedback?.row === idx && copyFeedback.col === 'jp' ? 'scale-105' : ''} transition-transform`}>
+                                            <div className="flex justify-between items-center">
+                                                <span className={`text-[12px] font-bold text-gray-700 leading-tight whitespace-pre-wrap break-words`}>
                                                     {item.japanese}
                                                 </span>
-                                                <div className="flex items-center">
-                                                    {copyFeedback?.row === idx && copyFeedback.col === 'jp' ? (
-                                                        <span className="text-[10px] text-green-600 font-black animate-bounce">COPIED!</span>
-                                                    ) : (
-                                                        <span className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-300">📋</span>
-                                                    )}
-                                                </div>
+                                                {copyFeedback?.row === idx && copyFeedback.col === 'jp' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
                                             </div>
                                         </td>
 
                                         {/* English Column */}
                                         <td
-                                            className={`px-6 py-3 cursor-pointer align-middle transition-all duration-300 relative
+                                            className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
                                                 ${copyFeedback?.row === idx && copyFeedback.col === 'en' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
                                             `}
                                             onClick={() => handleCopy(item.english, idx, 'en')}
                                         >
-                                            <div className="flex justify-between items-center pr-2">
-                                                <span className={`text-[13px] font-mono font-black text-indigo-600 leading-relaxed break-all uppercase ${copyFeedback?.row === idx && copyFeedback.col === 'en' ? 'scale-105' : ''} transition-transform`}>
+                                            <div className="flex justify-between items-center">
+                                                <span className={`text-[12px] font-mono font-black text-indigo-600 leading-tight break-all uppercase`}>
                                                     {item.english}
                                                 </span>
-                                                <div className="flex items-center">
-                                                    {copyFeedback?.row === idx && copyFeedback.col === 'en' ? (
-                                                        <span className="text-[10px] text-green-600 font-black animate-bounce">COPIED!</span>
-                                                    ) : (
-                                                        <span className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-300">📋</span>
-                                                    )}
-                                                </div>
+                                                {copyFeedback?.row === idx && copyFeedback.col === 'en' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
+                                            </div>
+                                        </td>
+
+                                        {/* Vietnamese Column */}
+                                        <td
+                                            className={`px-4 py-2.5 cursor-pointer align-middle transition-all duration-300 relative
+                                                ${copyFeedback?.row === idx && copyFeedback.col === 'vi' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
+                                            `}
+                                            onClick={() => handleCopy(item.vietnamese, idx, 'vi')}
+                                        >
+                                            <div className="flex justify-between items-center">
+                                                <span className={`text-[12px] font-bold text-teal-600 leading-tight break-words font-sans`}>
+                                                    {item.vietnamese}
+                                                </span>
+                                                {copyFeedback?.row === idx && copyFeedback.col === 'vi' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
                                             </div>
                                         </td>
                                     </tr>
                                 ))}
-                                {/* Empty rows if no matching data */}
                                 {filteredData.length === 0 && !loading && (
                                     <tr>
-                                        <td colSpan={2} className="p-20 text-center text-gray-400 text-xs font-bold uppercase tracking-widest">
-                                            No matches found
-                                        </td>
+                                        <td colSpan={3} className="p-20 text-center text-gray-400 text-xs font-bold uppercase tracking-widest">No matches found</td>
                                     </tr>
                                 )}
                             </tbody>
                         </table>
                     )}
                 </div>
-            </div>
-
-            <div className="px-2">
-                <p className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter italic">
-                    * Click any cell to copy. Animation confirms success. Long text will wrap automatically.
-                </p>
             </div>
         </div>
     );
