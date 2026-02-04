@@ -8,6 +8,7 @@ import { clsx } from 'clsx';
 import { invoke } from '@tauri-apps/api/tauri';
 
 import { LabTab } from './components/LabTab';
+import { TranslateTab } from './components/TranslateTab';
 
 function App() {
     const { activeTab, setActiveTab, setConnections } = useAppStore();
@@ -33,7 +34,7 @@ function App() {
             </header>
 
             <div className="flex justify-center border-b border-gray-200 bg-white sticky top-0 z-[100] shadow-sm">
-                {(['params', 'lab', 'compare', 'generate', 'settings'] as const).map((tab) => (
+                {(['params', 'lab', 'translate', 'compare', 'generate', 'settings'] as const).map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -46,6 +47,7 @@ function App() {
                     >
                         {tab === 'params' && <><span>📝</span> Parameter Replacement</>}
                         {tab === 'lab' && <><span>📊</span> Compare Lab</>}
+                        {tab === 'translate' && <><span>🇯🇵</span> Translate</>}
                         {tab === 'compare' && <><span>🔍</span> Schema Comparator</>}
                         {tab === 'generate' && <><span>⚡</span> Generate SELECT</>}
                         {tab === 'settings' && <><span>⚙️</span> Database Settings</>}
@@ -59,6 +61,9 @@ function App() {
                 </div>
                 <div className={clsx(activeTab !== 'lab' && 'hidden')}>
                     <LabTab />
+                </div>
+                <div className={clsx(activeTab !== 'translate' && 'hidden')}>
+                    <TranslateTab />
                 </div>
                 <div className={clsx(activeTab !== 'compare' && 'hidden')}>
                     <SchemaTab />
