@@ -21,6 +21,7 @@ export const TranslateTab: React.FC = () => {
     const [subTab, setSubTab] = useState<'dictionary' | 'quick'>('dictionary');
     const [bulkInput, setBulkInput] = useState('');
     const [bulkOutput, setBulkOutput] = useState('');
+    const [targetLang, setTargetLang] = useState<'jp' | 'en' | 'vi'>('en');
 
 
 
@@ -177,18 +178,34 @@ export const TranslateTab: React.FC = () => {
             return;
         }
 
-        // Sort data by length of Japanese string descending to match longest phrases first
-        const sortedDict = [...data].sort((a, b) => b.japanese.length - a.japanese.length);
+        const targetKey: keyof TranslateEntry = targetLang === 'en' ? 'english' : targetLang === 'vi' ? 'vietnamese' : 'japanese';
+        const sourceKeys: (keyof TranslateEntry)[] = (['japanese', 'english', 'vietnamese'] as (keyof TranslateEntry)[]).filter(k => k !== targetKey);
+
+        // Pre-process dictionary to have a flat list of (phrase, replacement) sorted by phrase length
+        const flattenedDict: { phrase: string, replacement: string }[] = [];
+        data.forEach(entry => {
+            const replacement = entry[targetKey];
+            if (!replacement) return;
+
+            sourceKeys.forEach(sKey => {
+                const phrase = entry[sKey];
+                if (phrase && String(phrase).trim() !== "" && phrase !== replacement) {
+                    flattenedDict.push({ phrase: String(phrase).trim(), replacement });
+                }
+            });
+        });
+
+        // Sort by phrase length descending to match longest phrases first
+        flattenedDict.sort((a, b) => b.phrase.length - a.phrase.length);
 
         let lines = bulkInput.split('\n');
         let translatedLines = lines.map(line => {
             let processedLine = line;
-            for (const entry of sortedDict) {
-                if (!entry.japanese) continue;
+            for (const item of flattenedDict) {
                 // Escaping special characters for regex
-                const escapedJp = entry.japanese.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const regex = new RegExp(escapedJp, 'g');
-                processedLine = processedLine.replace(regex, entry.english || entry.japanese);
+                const escapedKey = item.phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(escapedKey, 'g');
+                processedLine = processedLine.replace(regex, item.replacement);
             }
             return processedLine;
         });
@@ -198,30 +215,31 @@ export const TranslateTab: React.FC = () => {
 
     useEffect(() => {
         handleBulkTranslate();
-    }, [bulkInput, data]);
+    }, [bulkInput, data, targetLang]);
 
     return (
         <div className="flex flex-col h-[calc(100vh-140px)] gap-4 p-4 animate-in fade-in duration-300 overflow-hidden font-sans">
             {/* Header */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex items-center gap-6">
-                <div className="shrink-0 flex flex-col gap-1">
-                    <h2 className="text-lg font-black bg-gradient-to-br from-indigo-600 to-violet-600 bg-clip-text text-transparent uppercase tracking-tight leading-none">
-                        Translate
-                    </h2>
-                    <div className="flex gap-2 mt-1">
-                        <button
-                            onClick={() => setSubTab('dictionary')}
-                            className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md transition-all ${subTab === 'dictionary' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
-                        >
-                            Dictionary
-                        </button>
-                        <button
-                            onClick={() => setSubTab('quick')}
-                            className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md transition-all ${subTab === 'quick' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
-                        >
-                            Quick Translate
-                        </button>
-                    </div>
+                <div className="shrink-0 flex items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shadow-sm">
+                    <button
+                        onClick={() => setSubTab('dictionary')}
+                        className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${subTab === 'dictionary'
+                            ? 'bg-white text-indigo-600 shadow-md scale-105'
+                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                            }`}
+                    >
+                        <span>📚 DICTIONARY</span>
+                    </button>
+                    <button
+                        onClick={() => setSubTab('quick')}
+                        className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${subTab === 'quick'
+                            ? 'bg-white text-indigo-600 shadow-md scale-105'
+                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                            }`}
+                    >
+                        <span>⚡ QUICK TRANSLATE</span>
+                    </button>
                 </div>
 
                 <div className="flex-1 flex items-center gap-4">
@@ -386,22 +404,22 @@ export const TranslateTab: React.FC = () => {
                         </div>
                     </>
                 ) : (
-                    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
+                    <div className="flex-1 flex flex-col overflow-hidden bg-white">
                         <div className="grid grid-cols-2 flex-1 overflow-hidden">
                             {/* Input Column */}
-                            <div className="flex flex-col border-r border-gray-300">
-                                <div className="bg-gray-100 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-gray-500 border-b border-gray-200 flex justify-between items-center">
-                                    <span>Input (Japanese)</span>
+                            <div className="flex flex-col border-r border-gray-200">
+                                <div className="bg-gray-50/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 flex justify-between items-center h-12">
+                                    <span>INPUT SOURCE (Any language)</span>
                                     <button
                                         onClick={() => setBulkInput('')}
-                                        className="text-red-500 hover:text-red-700 font-black"
+                                        className="text-red-400 hover:text-red-600 transition-colors text-[9px] font-black border border-red-100 px-2 py-1 rounded-lg hover:bg-red-50"
                                     >
-                                        CLEAR
+                                        CLEAR ALL
                                     </button>
                                 </div>
                                 <textarea
-                                    className="flex-1 p-4 font-mono text-xs outline-none resize-none bg-white focus:bg-indigo-50/10 transition-colors"
-                                    placeholder="Paste Japanese code/text here..."
+                                    className="flex-1 p-6 font-mono text-[13px] outline-none resize-none bg-white focus:bg-indigo-50/5 transition-colors leading-relaxed"
+                                    placeholder="Paste code or text here..."
                                     value={bulkInput}
                                     onChange={(e) => setBulkInput(e.target.value)}
                                 ></textarea>
@@ -409,28 +427,48 @@ export const TranslateTab: React.FC = () => {
 
                             {/* Output Column */}
                             <div className="flex flex-col">
-                                <div className="bg-gray-100 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 border-b border-gray-200 flex justify-between items-center">
-                                    <span>Output (English / Code)</span>
+                                <div className="bg-indigo-50/30 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-indigo-500 border-b border-indigo-100 flex justify-between items-center h-12">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-indigo-600">RESULT TO:</span>
+                                        <div className="flex bg-white p-0.5 rounded-lg border border-indigo-100 shadow-sm">
+                                            <button
+                                                onClick={() => setTargetLang('en')}
+                                                className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${targetLang === 'en' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-indigo-400'}`}
+                                            >
+                                                🔡 EN
+                                            </button>
+                                            <button
+                                                onClick={() => setTargetLang('jp')}
+                                                className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${targetLang === 'jp' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-indigo-400'}`}
+                                            >
+                                                🇯🇵 JP
+                                            </button>
+                                            <button
+                                                onClick={() => setTargetLang('vi')}
+                                                className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${targetLang === 'vi' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-indigo-400'}`}
+                                            >
+                                                🇻🇳 VI
+                                            </button>
+                                        </div>
+                                    </div>
                                     <button
                                         onClick={() => {
+                                            if (!bulkOutput) return;
                                             navigator.clipboard.writeText(bulkOutput);
-                                            alert("Copied!");
+                                            alert("Copied to clipboard!");
                                         }}
-                                        className="text-green-600 hover:text-green-700 font-black"
+                                        className="px-3 py-1 bg-white text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors border border-indigo-100 shadow-sm text-[9px] font-black"
                                     >
-                                        COPY ALL
+                                        COPY RESULT
                                     </button>
                                 </div>
                                 <textarea
-                                    className="flex-1 p-4 font-mono text-xs outline-none resize-none bg-gray-50 text-indigo-900 font-bold"
+                                    className="flex-1 p-6 font-mono text-[13px] outline-none resize-none bg-indigo-50/10 text-indigo-900 font-bold leading-relaxed shadow-inner"
                                     readOnly
                                     value={bulkOutput}
-                                    placeholder="Translation will appear here automatically..."
+                                    placeholder="Translation will appear here..."
                                 ></textarea>
                             </div>
-                        </div>
-                        <div className="p-3 bg-white border-t border-gray-200 text-[10px] text-gray-400 italic">
-                            💡 Formatting (tabs, spaces) is preserved. Words not in dictionary remain unchanged.
                         </div>
                     </div>
                 )}

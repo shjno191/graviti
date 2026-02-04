@@ -165,21 +165,6 @@ export const ParamsTab: React.FC = () => {
         <div className="flex flex-col gap-5 p-5">
             <div className="flex flex-wrap gap-4 items-center justify-between p-5 bg-white rounded-2xl shadow-sm border border-gray-100">
                 <div className="flex gap-6 items-center flex-1">
-                    <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Active Database</label>
-                        <select
-                            value={selectedConnId || activeConn?.id || ''}
-                            onChange={(e) => setSelectedConnId(e.target.value)}
-                            className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-primary min-w-[200px]"
-                        >
-                            {connections.map(c => (
-                                <option key={c.id} value={c.id}>
-                                    {c.verified ? '🛡️' : '⚠️'} {c.name} ({c.database})
-                                </option>
-                            ))}
-                            {connections.length === 0 && <option value="">No settings found</option>}
-                        </select>
-                    </div>
 
                     <div className="flex-1">
                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Log File Path</label>
