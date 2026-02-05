@@ -1,11 +1,12 @@
 import React from 'react';
-import { QueryResult } from '../store/useAppStore';
+import { QueryResult, useAppStore } from '../store/useAppStore';
 
 interface ResultSetTableProps {
     result: QueryResult;
 }
 
-export const ResultSetTable: React.FC<ResultSetTableProps> = ({ result }) => {
+export const ResultSetTable: React.FC<ResultSetTableProps> = React.memo(({ result }) => {
+    const { excelHeaderColor } = useAppStore();
     if (!result || !result.columns.length) return null;
 
     const [copyStatus, setCopyStatus] = React.useState(false);
@@ -18,18 +19,72 @@ export const ResultSetTable: React.FC<ResultSetTableProps> = ({ result }) => {
     }, []);
 
     const copyToExcel = () => {
-        const header = result.columns.join('\t');
-        const rows = result.rows.map(row => row.join('\t')).join('\n');
-        const text = `${header}\n${rows}`;
-        navigator.clipboard.writeText(text);
-        setCopyStatus(true);
-        setTimeout(() => setCopyStatus(false), 2000);
+        // Full table styling
+        const tableHtml = `
+          <table style="border-collapse: collapse; border: 1px solid #000000;">
+            <thead>
+              <tr>
+                ${result.columns.map(col => `
+                  <th style="background-color: ${excelHeaderColor}; color: #ffffff; padding: 8px; border: 1px solid #000000; font-family: sans-serif; font-size: 11pt; text-align: left;">${col}</th>
+                `).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${result.rows.map(row => `
+                <tr>
+                  ${row.map(cell => `
+                    <td style="color: #000000; padding: 6px 8px; border: 1px solid #000000; font-family: Calibri, sans-serif; font-size: 10pt; white-space: nowrap;">${cell === null ? 'NULL' : cell}</td>
+                  `).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+
+        const plainText = [
+            result.columns.join('\t'),
+            ...result.rows.map(row => row.join('\t'))
+        ].join('\n');
+
+        const blob = new Blob([tableHtml], { type: 'text/html' });
+        const plainBlob = new Blob([plainText], { type: 'text/plain' });
+        const data = [new ClipboardItem({ 'text/html': blob, 'text/plain': plainBlob })];
+
+        navigator.clipboard.write(data).then(() => {
+            setCopyStatus(true);
+            setTimeout(() => setCopyStatus(false), 2000);
+        });
     };
 
     const handleCopyRow = (rowIndex: number) => {
         const row = result.rows[rowIndex];
-        const text = result.columns.map((col, i) => `${col}: ${row[i]}`).join('\n');
-        navigator.clipboard.writeText(text);
+
+        // Horizontal Format HTML for Copy Record
+        const tableHtml = `
+          <table style="border-collapse: collapse; border: 1px solid #000000;">
+            <thead>
+              <tr>
+                ${result.columns.map(col => `
+                  <th style="background-color: ${excelHeaderColor}; color: #ffffff; padding: 8px; border: 1px solid #000000; font-family: sans-serif; font-size: 11pt; text-align: left;">${col}</th>
+                `).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                ${row.map(cell => `
+                  <td style="color: #000000; padding: 6px 8px; border: 1px solid #000000; font-family: Calibri, sans-serif; font-size: 10pt; white-space: nowrap;">${cell === null ? 'NULL' : cell}</td>
+                `).join('')}
+              </tr>
+            </tbody>
+          </table>
+        `;
+
+        const plainText = result.columns.map((col, i) => `${col}: ${row[i]}`).join('\t'); // tab separated horizontal
+
+        const blob = new Blob([tableHtml], { type: 'text/html' });
+        const data = [new ClipboardItem({ 'text/html': blob, 'text/plain': new Blob([plainText], { type: 'text/plain' }) })];
+
+        navigator.clipboard.write(data);
         setMenuPos(null);
     };
 
@@ -57,23 +112,23 @@ export const ResultSetTable: React.FC<ResultSetTableProps> = ({ result }) => {
                     {copyStatus ? (
                         <><span>✅</span> COPIED</>
                     ) : (
-                        <><span>📊</span> CLICK TO EXCEL</>
+                        <><span>📊</span> COPY EXCEL</>
                     )}
                 </button>
             </div>
             <div className="overflow-x-auto max-h-[500px]">
                 <table className="w-full text-sm border-collapse">
-                    <thead className="sticky top-0 bg-gray-100 shadow-sm">
+                    <thead className="sticky top-0 shadow-sm" style={{ backgroundColor: excelHeaderColor }}>
                         <tr>
                             {result.columns.map((col, i) => (
-                                <th key={i} className="px-3 py-2 border-r border-b border-gray-300 text-left font-bold text-gray-700 whitespace-nowrap min-w-[100px]">
+                                <th key={i} className="px-3 py-2 border-r border-b border-gray-300 text-left font-medium text-white whitespace-nowrap min-w-[100px]">
                                     {col}
                                 </th>
                             ))}
                         </tr>
                     </thead>
                     <tbody>
-                        {result.rows.map((row, rowIndex) => (
+                        {result.rows.slice(0, 1000).map((row, rowIndex) => (
                             <tr
                                 key={rowIndex}
                                 onContextMenu={(e) => {
@@ -108,7 +163,7 @@ export const ResultSetTable: React.FC<ResultSetTableProps> = ({ result }) => {
                     >
                         <span className="text-xl group-hover:scale-125 transition-transform">📋</span>
                         <div className="flex flex-col">
-                            <span>Copy Record</span>
+                            <span>Copy Record (Excel Horizontal)</span>
                             <span className="text-[10px] text-gray-400 font-medium">Copy all columns of this row</span>
                         </div>
                     </button>
@@ -126,4 +181,4 @@ export const ResultSetTable: React.FC<ResultSetTableProps> = ({ result }) => {
             )}
         </div>
     );
-};
+});

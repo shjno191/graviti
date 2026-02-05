@@ -12,7 +12,14 @@ interface TranslateEntry {
 }
 
 export const TranslateTab: React.FC = () => {
-    const { activeTab, translateFilePath, setTranslateFilePath, setActiveTab } = useAppStore();
+    const {
+        activeTab,
+        translateFilePath,
+        setTranslateFilePath,
+        setActiveTab,
+        excelHeaderColor
+    } = useAppStore();
+
     const [data, setData] = useState<TranslateEntry[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(true);
@@ -24,14 +31,6 @@ export const TranslateTab: React.FC = () => {
     const [targetLang, setTargetLang] = useState<'jp' | 'en' | 'vi'>('en');
     const [syncing, setSyncing] = useState(false);
     const [syncProgress, setSyncProgress] = useState(0);
-
-
-
-    useEffect(() => {
-        if (activeTab === 'translate' && translateFilePath) {
-            loadData();
-        }
-    }, [activeTab, translateFilePath]);
 
     const loadData = async (forceSync = false) => {
         if (!translateFilePath) {
@@ -76,7 +75,6 @@ export const TranslateTab: React.FC = () => {
                 }
 
                 setSyncProgress(70);
-                // Clean & De-duplicate during sync
                 const seenKeys = new Set<string>();
                 const uniqueResults: TranslateEntry[] = [];
                 let duplicateCount = 0;
@@ -104,7 +102,6 @@ export const TranslateTab: React.FC = () => {
                 let writeSucceeded = true;
                 let writeError = null;
 
-                // If duplicates were found and it's a manual sync, clean the source Excel too
                 if (duplicateCount > 0 && forceSync) {
                     try {
                         const cleanAoa = [
@@ -129,7 +126,6 @@ export const TranslateTab: React.FC = () => {
                 }
 
                 setSyncProgress(95);
-                // Cache to JSON
                 await writeTextFile(jsonPath, JSON.stringify(uniqueResults, null, 2));
                 setSyncProgress(100);
                 return { entries: uniqueResults, cleaned: duplicateCount, writeSucceeded, writeError };
@@ -141,11 +137,9 @@ export const TranslateTab: React.FC = () => {
                 entries = syncResult.entries;
             } else {
                 try {
-                    // Try loading from JSON first for speed
                     const content = await readTextFile(jsonPath);
                     entries = JSON.parse(content);
                 } catch (e) {
-                    // If JSON missing, auto-create it from Excel
                     try {
                         syncResult = await performSyncFromExcel();
                         entries = syncResult.entries;
@@ -207,54 +201,68 @@ export const TranslateTab: React.FC = () => {
         setTimeout(() => setCopyFeedback(null), 600);
     };
 
-    const handleBulkTranslate = () => {
-        if (!bulkInput || data.length === 0) {
-            setBulkOutput(bulkInput);
-            return;
-        }
+    // Memoize the dictionary transformation to avoid re-calculating/sorting on every keystroke
+    const translationDict = useMemo(() => {
+        if (data.length === 0) return [];
 
         const targetKey: keyof TranslateEntry = targetLang === 'en' ? 'english' : targetLang === 'vi' ? 'vietnamese' : 'japanese';
         const sourceKeys: (keyof TranslateEntry)[] = (['japanese', 'english', 'vietnamese'] as (keyof TranslateEntry)[]).filter(k => k !== targetKey);
 
-        // Pre-process dictionary to have a flat list of (phrase, replacement) sorted by phrase length
-        const flattenedDict: { phrase: string, replacement: string }[] = [];
+        const flattened: { phrase: string, replacement: string, regex: RegExp }[] = [];
         data.forEach(entry => {
             const replacement = entry[targetKey];
             if (!replacement) return;
 
             sourceKeys.forEach(sKey => {
-                const phrase = entry[sKey];
-                if (phrase && String(phrase).trim() !== "" && phrase !== replacement) {
-                    flattenedDict.push({ phrase: String(phrase).trim(), replacement });
+                const phrase = String(entry[sKey] || "").trim();
+                if (phrase && phrase !== replacement) {
+                    // Pre-compile regex for performance
+                    const escapedKey = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    flattened.push({
+                        phrase,
+                        replacement,
+                        regex: new RegExp(escapedKey, 'g')
+                    });
                 }
             });
         });
 
-        // Sort by phrase length descending to match longest phrases first
-        flattenedDict.sort((a, b) => b.phrase.length - a.phrase.length);
+        // Longest phrases first to prevent partial replacements
+        return flattened.sort((a, b) => b.phrase.length - a.phrase.length);
+    }, [data, targetLang]);
 
-        let lines = bulkInput.split('\n');
-        let translatedLines = lines.map(line => {
-            let processedLine = line;
-            for (const item of flattenedDict) {
-                // Escaping special characters for regex
-                const escapedKey = item.phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const regex = new RegExp(escapedKey, 'g');
-                processedLine = processedLine.replace(regex, item.replacement);
-            }
-            return processedLine;
-        });
+    // Use a timeout to debounce heavy translation logic
+    useEffect(() => {
+        if (!bulkInput) {
+            setBulkOutput('');
+            return;
+        }
 
-        setBulkOutput(translatedLines.join('\n'));
-    };
+        const timer = setTimeout(() => {
+            const lines = bulkInput.split('\n');
+            const translated = lines.map(line => {
+                let processed = line;
+                for (const item of translationDict) {
+                    if (processed.includes(item.phrase)) {
+                        processed = processed.replace(item.regex, item.replacement);
+                    }
+                }
+                return processed;
+            });
+            setBulkOutput(translated.join('\n'));
+        }, 150); // 150ms debounce
+
+        return () => clearTimeout(timer);
+    }, [bulkInput, translationDict]);
 
     useEffect(() => {
-        handleBulkTranslate();
-    }, [bulkInput, data, targetLang]);
+        if (activeTab === 'translate' && data.length === 0) {
+            loadData();
+        }
+    }, [activeTab]);
 
     return (
         <div className="flex flex-col h-[calc(100vh-140px)] gap-4 p-4 animate-in fade-in duration-300 overflow-hidden font-sans">
-            {/* Header */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex items-center gap-6">
                 <div className="shrink-0 flex items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shadow-sm">
                     <button
@@ -337,18 +345,17 @@ export const TranslateTab: React.FC = () => {
                 </div>
             </div>
 
-            {/* Content Area */}
             <div className="flex-1 overflow-hidden bg-white rounded-2xl border border-gray-300 shadow-sm flex flex-col">
                 {subTab === 'dictionary' ? (
                     <>
-                        <div className="grid grid-cols-3 bg-gray-100 text-gray-600 border-b border-gray-300 sticky top-0 z-10">
-                            <div className="px-4 py-3 text-[10px] font-black uppercase tracking-widest border-r border-gray-300 flex items-center gap-2">
+                        <div className="grid grid-cols-3 border-b border-gray-300 sticky top-0 z-10" style={{ backgroundColor: excelHeaderColor }}>
+                            <div className="px-4 py-3 text-[10px] font-medium text-white uppercase tracking-widest border-r border-white/20 flex items-center gap-2">
                                 🇯🇵 Japanese
                             </div>
-                            <div className="px-4 py-3 text-[10px] font-black uppercase tracking-widest border-r border-gray-300 flex items-center gap-2">
+                            <div className="px-4 py-3 text-[10px] font-medium text-white uppercase tracking-widest border-r border-white/20 flex items-center gap-2">
                                 🔡 English / Code
                             </div>
-                            <div className="px-4 py-3 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                            <div className="px-4 py-3 text-[10px] font-medium text-white uppercase tracking-widest flex items-center gap-2">
                                 🇻🇳 Vietnamese
                             </div>
                         </div>
@@ -371,7 +378,6 @@ export const TranslateTab: React.FC = () => {
                                                 });
                                                 if (selected && typeof selected === 'string') {
                                                     setTranslateFilePath(selected);
-                                                    // Auto save if possible or just rely on state
                                                 }
                                             }}
                                             className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-indigo-700 transition-all active:scale-95"
@@ -397,7 +403,6 @@ export const TranslateTab: React.FC = () => {
                                     <tbody>
                                         {filteredData.map((item, idx) => (
                                             <tr key={idx} className="border-b border-gray-200 group transition-colors">
-                                                {/* Japanese Column */}
                                                 <td
                                                     className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
                                                         ${copyFeedback?.row === idx && copyFeedback.col === 'jp' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
@@ -412,7 +417,6 @@ export const TranslateTab: React.FC = () => {
                                                     </div>
                                                 </td>
 
-                                                {/* English Column */}
                                                 <td
                                                     className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
                                                         ${copyFeedback?.row === idx && copyFeedback.col === 'en' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
@@ -427,7 +431,6 @@ export const TranslateTab: React.FC = () => {
                                                     </div>
                                                 </td>
 
-                                                {/* Vietnamese Column */}
                                                 <td
                                                     className={`px-4 py-2.5 cursor-pointer align-middle transition-all duration-300 relative
                                                         ${copyFeedback?.row === idx && copyFeedback.col === 'vi' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
@@ -443,11 +446,6 @@ export const TranslateTab: React.FC = () => {
                                                 </td>
                                             </tr>
                                         ))}
-                                        {filteredData.length === 0 && !loading && (
-                                            <tr>
-                                                <td colSpan={3} className="p-20 text-center text-gray-400 text-xs font-bold uppercase tracking-widest">No matches found</td>
-                                            </tr>
-                                        )}
                                     </tbody>
                                 </table>
                             )}
@@ -456,7 +454,6 @@ export const TranslateTab: React.FC = () => {
                 ) : (
                     <div className="flex-1 flex flex-col overflow-hidden bg-white">
                         <div className="grid grid-cols-2 flex-1 overflow-hidden">
-                            {/* Input Column */}
                             <div className="flex flex-col border-r border-gray-200">
                                 <div className="bg-gray-50/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 flex justify-between items-center h-12">
                                     <span>INPUT SOURCE (Any language)</span>
@@ -475,7 +472,6 @@ export const TranslateTab: React.FC = () => {
                                 ></textarea>
                             </div>
 
-                            {/* Output Column */}
                             <div className="flex flex-col">
                                 <div className="bg-indigo-50/30 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-indigo-500 border-b border-indigo-100 flex justify-between items-center h-12">
                                     <div className="flex items-center gap-3">
@@ -504,12 +500,40 @@ export const TranslateTab: React.FC = () => {
                                     <button
                                         onClick={() => {
                                             if (!bulkOutput) return;
-                                            navigator.clipboard.writeText(bulkOutput);
-                                            alert("Copied to clipboard!");
+
+                                            const rawLines = bulkOutput.split('\n').map(l => l.trim()).filter(l => l);
+                                            const headerLabel = targetLang.toUpperCase();
+
+                                            // Copy Record must be horizontal (all lines from output become columns in one row)
+                                            const tableHtml = `
+                                              <table style="border-collapse: collapse; border: 1px solid #000000;">
+                                                <thead>
+                                                  <tr>
+                                                    ${rawLines.map(() => `
+                                                      <th style="background-color: ${excelHeaderColor}; color: #ffffff; padding: 8px; border: 1px solid #000000; font-family: sans-serif; font-size: 11pt;">${headerLabel}</th>
+                                                    `).join('')}
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  <tr>
+                                                    ${rawLines.map(line => `
+                                                      <td style="color: #000000; padding: 6px 8px; border: 1px solid #000000; font-family: Calibri, sans-serif; font-size: 10pt; white-space: nowrap;">${line}</td>
+                                                    `).join('')}
+                                                  </tr>
+                                                </tbody>
+                                              </table>
+                                            `;
+
+                                            const blob = new Blob([tableHtml], { type: 'text/html' });
+                                            const data = [new ClipboardItem({ 'text/html': blob, 'text/plain': new Blob([bulkOutput], { type: 'text/plain' }) })];
+
+                                            navigator.clipboard.write(data).then(() => {
+                                                alert("Đã copy định dạng Excel (Ngang)! Hãy dán vào Excel.");
+                                            });
                                         }}
                                         className="px-3 py-1 bg-white text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors border border-indigo-100 shadow-sm text-[9px] font-black"
                                     >
-                                        COPY RESULT
+                                        📄 COPY EXCEL
                                     </button>
                                 </div>
                                 <textarea

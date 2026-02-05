@@ -72,6 +72,9 @@ export interface AppState {
     translateFilePath: string;
     setTranslateFilePath: (path: string) => void;
 
+    excelHeaderColor: string;
+    setExcelHeaderColor: (color: string) => void;
+
     connections: DbConfig[];
     setConnections: (conns: DbConfig[]) => void;
 }
@@ -125,13 +128,16 @@ export const useAppStore = create<AppState>((set) => ({
     setSchemaScript: (val) => set({ schemaScript: val }),
 
     genPriorityColumns: '',
-    setGenPriorityColumns: (val) => set({ genPriorityColumns: val }),
+    setGenPriorityColumns: (cols: string) => set({ genPriorityColumns: cols }),
 
     globalLogPath: '',
     setGlobalLogPath: (val) => set({ globalLogPath: val }),
 
     translateFilePath: '',
     setTranslateFilePath: (val) => set({ translateFilePath: val }),
+
+    excelHeaderColor: '#4F46E5',
+    setExcelHeaderColor: (val) => set({ excelHeaderColor: val }),
 
     connections: [],
     setConnections: (connections) => set({ connections }),
