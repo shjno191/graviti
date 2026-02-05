@@ -46,20 +46,47 @@ export const TranslateTab: React.FC = () => {
     const [selections, setSelections] = useState<Record<string, string>>({});
     const [translatedLines, setTranslatedLines] = useState<TranslatedLine[]>([]);
     const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+    const [translatePriority, setTranslatePriority] = useState('');
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const outputRef = useRef<HTMLDivElement>(null);
+    const highlighterRef = useRef<HTMLDivElement>(null);
 
     const handleInputScroll = () => {
-        if (inputRef.current && outputRef.current) {
-            outputRef.current.scrollTop = inputRef.current.scrollTop;
+        if (inputRef.current) {
+            if (outputRef.current) outputRef.current.scrollTop = inputRef.current.scrollTop;
+            if (highlighterRef.current) highlighterRef.current.scrollTop = inputRef.current.scrollTop;
         }
     };
 
     const handleOutputScroll = () => {
-        if (inputRef.current && outputRef.current) {
+        if (outputRef.current && inputRef.current) {
             inputRef.current.scrollTop = outputRef.current.scrollTop;
+            if (highlighterRef.current) highlighterRef.current.scrollTop = outputRef.current.scrollTop;
         }
+    };
+
+    const handleSortInput = () => {
+        if (!bulkInput.trim()) return;
+        const priorityArray = translatePriority.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+        if (priorityArray.length === 0) return;
+
+        const lines = bulkInput.split('\n');
+        lines.sort((a, b) => {
+            const aUpper = a.trim().toUpperCase();
+            const bUpper = b.trim().toUpperCase();
+
+            const aIdx = priorityArray.findIndex(p => aUpper.includes(p));
+            const bIdx = priorityArray.findIndex(p => bUpper.includes(p));
+
+            if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+            if (aIdx !== -1) return -1;
+            if (bIdx !== -1) return 1;
+
+            return a.localeCompare(b);
+        });
+
+        setBulkInput(lines.join('\n'));
     };
 
     // Reset selections when input changes or target language changes
@@ -392,8 +419,23 @@ export const TranslateTab: React.FC = () => {
                             />
                         </div>
                     ) : (
-                        <div className="flex-1 text-[10px] text-gray-400 font-bold uppercase tracking-widest italic animate-pulse">
-                            Paste text below to translate automatically using dictionary data
+                        <div className="flex-1 flex items-center gap-3">
+                            <div className="relative flex-1 group">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500">⚡</span>
+                                <input
+                                    type="text"
+                                    placeholder="Sort Priority (e.g. ID, NAME, AGE)..."
+                                    value={translatePriority}
+                                    onChange={e => setTranslatePriority(e.target.value)}
+                                    className="w-full bg-indigo-50 border border-indigo-200 rounded-xl pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 shadow-inner"
+                                />
+                            </div>
+                            <button
+                                onClick={handleSortInput}
+                                className="px-4 py-2 bg-indigo-600 text-white text-[10px] font-black rounded-xl hover:bg-indigo-700 transition-all shadow-md active:scale-95 shrink-0"
+                            >
+                                SORT INPUT
+                            </button>
                         </div>
                     )}
                 </div>
@@ -559,11 +601,10 @@ export const TranslateTab: React.FC = () => {
                                 </div>
                                 <div className="flex-1 relative min-h-0 bg-white group/input">
                                     {/* Highlighter Overlay */}
-                                    <div className="absolute inset-x-0 inset-y-0 p-6 font-mono text-[13px] leading-relaxed pointer-events-none text-transparent whitespace-pre-wrap break-words overflow-y-auto"
+                                    <div
+                                        ref={highlighterRef}
+                                        className="absolute inset-x-0 inset-y-0 p-6 font-mono text-[13px] leading-relaxed pointer-events-none text-transparent whitespace-pre-wrap break-words overflow-y-auto"
                                         style={{ scrollbarWidth: 'none' }}
-                                        onScroll={(e) => {
-                                            // Mirror scroll if child scrolls
-                                        }}
                                     >
                                         {translatedLines.map((line, lIdx) => (
                                             <div key={lIdx} className="min-h-[1.5em]">
