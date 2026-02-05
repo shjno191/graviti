@@ -24,12 +24,11 @@ interface TranslatedLine {
     segments: TranslatedSegment[];
 }
 
-const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, selections }: {
+const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick }: {
     seg: TranslatedSegment,
     hoveredKey: string | null,
     onHover: (key: string | null) => void,
-    onClick: (seg: TranslatedSegment) => void,
-    selections: Record<string, string>
+    onClick: (seg: TranslatedSegment) => void
 }) => {
     if (seg.type === 'text') return <>{seg.text}</>;
 
@@ -739,7 +738,6 @@ export const TranslateTab: React.FC = () => {
                                                         seg={seg}
                                                         hoveredKey={hoveredKey}
                                                         onHover={setHoveredKey}
-                                                        selections={selections}
                                                         onClick={(s) => {
                                                             if (s.isMultiple) {
                                                                 const current = selections[s.key] || s.options[0];
