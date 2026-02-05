@@ -24,6 +24,82 @@ interface TranslatedLine {
     segments: TranslatedSegment[];
 }
 
+const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, selections }: {
+    seg: TranslatedSegment,
+    hoveredKey: string | null,
+    onHover: (key: string | null) => void,
+    onClick: (seg: TranslatedSegment) => void,
+    selections: Record<string, string>
+}) => {
+    if (seg.type === 'text') return <>{seg.text}</>;
+
+    return (
+        <span
+            key={seg.key}
+            className={`inline-flex items-center group/opt relative cursor-pointer mx-1 px-1.5 py-1 rounded transition-all duration-200
+                ${seg.isMultiple ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300 hover:bg-amber-200' : 'bg-transparent text-indigo-600'}
+                ${hoveredKey === seg.key ? 'ring-2 ring-indigo-500 scale-105 shadow-sm' : ''}
+            `}
+            onMouseEnter={() => onHover(seg.key)}
+            onMouseLeave={() => onHover(null)}
+            onClick={() => onClick(seg)}
+        >
+            {seg.text}
+            {seg.isMultiple && (
+                <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[8px] px-1 rounded opacity-0 group-hover/opt:opacity-100 transition-opacity whitespace-nowrap z-20">
+                    Click to switch ({seg.options.length} options)
+                </span>
+            )}
+        </span>
+    );
+});
+
+const DictionaryRow = React.memo(({ item, idx, copyFeedback, onCopy }: { item: TranslateEntry, idx: number, copyFeedback: any, onCopy: any }) => (
+    <tr className="border-b border-gray-200 group transition-colors">
+        <td
+            className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
+                ${copyFeedback?.row === idx && copyFeedback.col === 'jp' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
+            `}
+            onClick={() => onCopy(item.japanese, idx, 'jp')}
+        >
+            <div className="flex justify-between items-center">
+                <span className="text-[12px] font-bold text-gray-700 leading-tight whitespace-pre-wrap break-words">
+                    {item.japanese}
+                </span>
+                {copyFeedback?.row === idx && copyFeedback.col === 'jp' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
+            </div>
+        </td>
+
+        <td
+            className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
+                ${copyFeedback?.row === idx && copyFeedback.col === 'en' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
+            `}
+            onClick={() => onCopy(item.english, idx, 'en')}
+        >
+            <div className="flex justify-between items-center">
+                <span className="text-[12px] font-mono font-black text-indigo-600 leading-tight break-all uppercase">
+                    {item.english}
+                </span>
+                {copyFeedback?.row === idx && copyFeedback.col === 'en' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
+            </div>
+        </td>
+
+        <td
+            className={`px-4 py-2.5 cursor-pointer align-middle transition-all duration-300 relative
+                ${copyFeedback?.row === idx && copyFeedback.col === 'vi' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
+            `}
+            onClick={() => onCopy(item.vietnamese, idx, 'vi')}
+        >
+            <div className="flex justify-between items-center">
+                <span className="text-[12px] font-bold text-teal-600 leading-tight break-words font-sans">
+                    {item.vietnamese}
+                </span>
+                {copyFeedback?.row === idx && copyFeedback.col === 'vi' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
+            </div>
+        </td>
+    </tr>
+));
+
 export const TranslateTab: React.FC = () => {
     const {
         activeTab,
@@ -46,7 +122,7 @@ export const TranslateTab: React.FC = () => {
     const [selections, setSelections] = useState<Record<string, string>>({});
     const [translatedLines, setTranslatedLines] = useState<TranslatedLine[]>([]);
     const [hoveredKey, setHoveredKey] = useState<string | null>(null);
-    const [translatePriority, setTranslatePriority] = useState('');
+    const [lineSpacing, setLineSpacing] = useState(1.8);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -66,27 +142,14 @@ export const TranslateTab: React.FC = () => {
         }
     };
 
-    const handleSortInput = () => {
+    const handleFormatInput = () => {
         if (!bulkInput.trim()) return;
-        const priorityArray = translatePriority.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-        if (priorityArray.length === 0) return;
-
         const lines = bulkInput.split('\n');
-        lines.sort((a, b) => {
-            const aUpper = a.trim().toUpperCase();
-            const bUpper = b.trim().toUpperCase();
-
-            const aIdx = priorityArray.findIndex(p => aUpper.includes(p));
-            const bIdx = priorityArray.findIndex(p => bUpper.includes(p));
-
-            if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
-            if (aIdx !== -1) return -1;
-            if (bIdx !== -1) return 1;
-
-            return a.localeCompare(b);
+        const formattedLines = lines.map(line => {
+            // Replace tabs and multiple spaces with a single space, then trim
+            return line.replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
         });
-
-        setBulkInput(lines.join('\n'));
+        setBulkInput(formattedLines.join('\n'));
     };
 
     // Reset selections when input changes or target language changes
@@ -248,8 +311,9 @@ export const TranslateTab: React.FC = () => {
     const handleSync = () => loadData(true);
 
     const filteredData = useMemo(() => {
-        if (!searchTerm) return data;
-        const lowerSearch = searchTerm.toLowerCase();
+        const trimmedSearch = searchTerm.trim();
+        if (!trimmedSearch) return data;
+        const lowerSearch = trimmedSearch.toLowerCase();
         return data.filter(item =>
             item.japanese.toLowerCase().includes(lowerSearch) ||
             item.english.toLowerCase().includes(lowerSearch) ||
@@ -310,63 +374,53 @@ export const TranslateTab: React.FC = () => {
 
         const timer = setTimeout(() => {
             const lines = bulkInput.split('\n');
+            const normalize = (s: string) => s.replace(/[！-～]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
+
             const newTranslatedLines: TranslatedLine[] = lines.map((line, lIdx) => {
                 const matches: { start: number, end: number, replacements: string[], phrase: string }[] = [];
+                const normLine = normalize(line);
 
                 for (const item of translationDict) {
-                    let match;
                     item.regex.lastIndex = 0;
+                    let match;
                     while ((match = item.regex.exec(line)) !== null) {
-                        const start = match.index;
-                        const end = start + item.phrase.length;
+                        const start = match.index, end = start + item.phrase.length;
                         if (!matches.some(m => (start < m.end && end > m.start))) {
                             matches.push({ start, end, replacements: item.replacements, phrase: item.phrase });
                         }
                         if (item.phrase.length === 0) break;
                     }
+
+                    // Normalized match
+                    const normPhrase = normalize(item.phrase);
+                    if (normPhrase !== item.phrase) {
+                        const normRegex = new RegExp(normPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                        let nm;
+                        while ((nm = normRegex.exec(normLine)) !== null) {
+                            if (!matches.some(m => (nm!.index < m.end && (nm!.index + normPhrase.length) > m.start))) {
+                                matches.push({ start: nm.index, end: nm.index + normPhrase.length, replacements: item.replacements, phrase: line.substring(nm.index, nm.index + normPhrase.length) });
+                            }
+                            if (normPhrase.length === 0) break;
+                        }
+                    }
                 }
 
                 matches.sort((a, b) => a.start - b.start);
-
                 const segments: TranslatedSegment[] = [];
                 let lastIndex = 0;
+
                 matches.forEach((match) => {
                     if (match.start > lastIndex) {
-                        segments.push({
-                            type: 'text',
-                            text: line.substring(lastIndex, match.start),
-                            original: line.substring(lastIndex, match.start),
-                            key: `t-${lIdx}-${lastIndex}`,
-                            isMultiple: false,
-                            options: []
-                        });
+                        segments.push({ type: 'text', text: line.substring(lastIndex, match.start), original: line.substring(lastIndex, match.start), key: `t-${lIdx}-${lastIndex}`, isMultiple: false, options: [] });
                     }
-
                     const key = `p-${lIdx}-${match.start}`;
-                    const selected = selections[key] || match.replacements[0];
-
-                    segments.push({
-                        type: 'phrase',
-                        text: selected,
-                        original: match.phrase,
-                        key: key,
-                        isMultiple: match.replacements.length > 1,
-                        options: match.replacements
-                    });
+                    segments.push({ type: 'phrase', text: selections[key] || match.replacements[0], original: match.phrase, key, isMultiple: match.replacements.length > 1, options: match.replacements });
                     lastIndex = match.end;
                 });
 
                 if (lastIndex < line.length) {
-                    segments.push({
-                        type: 'text',
-                        text: line.substring(lastIndex),
-                        original: line.substring(lastIndex),
-                        key: `t-${lIdx}-${lastIndex}`,
-                        isMultiple: false,
-                        options: []
-                    });
+                    segments.push({ type: 'text', text: line.substring(lastIndex), original: line.substring(lastIndex), key: `t-${lIdx}-${lastIndex}`, isMultiple: false, options: [] });
                 }
-
                 return { segments };
             });
             setTranslatedLines(newTranslatedLines);
@@ -419,22 +473,33 @@ export const TranslateTab: React.FC = () => {
                             />
                         </div>
                     ) : (
-                        <div className="flex-1 flex items-center gap-3">
-                            <div className="relative flex-1 group">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500">⚡</span>
-                                <input
-                                    type="text"
-                                    placeholder="Sort Priority (e.g. ID, NAME, AGE)..."
-                                    value={translatePriority}
-                                    onChange={e => setTranslatePriority(e.target.value)}
-                                    className="w-full bg-indigo-50 border border-indigo-200 rounded-xl pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 shadow-inner"
-                                />
+                        <div className="flex-1 flex items-center justify-end gap-3">
+                            <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100 shadow-inner">
+                                <span className="text-[10px] font-black text-indigo-400 uppercase tracking-tighter">Line Height</span>
+                                <div className="flex items-center bg-white rounded-lg border border-indigo-200 overflow-hidden shadow-sm">
+                                    <button
+                                        onClick={() => setLineSpacing(prev => Math.max(1, prev - 0.2))}
+                                        className="px-2 py-1 hover:bg-gray-50 text-indigo-600 font-bold border-r border-indigo-100 transition-colors"
+                                    >
+                                        −
+                                    </button>
+                                    <span className="px-3 py-1 text-[11px] font-black text-indigo-900 min-w-[3rem] text-center">
+                                        {lineSpacing.toFixed(1)}
+                                    </span>
+                                    <button
+                                        onClick={() => setLineSpacing(prev => Math.min(4, prev + 0.2))}
+                                        className="px-2 py-1 hover:bg-gray-50 text-indigo-600 font-bold border-l border-indigo-100 transition-colors"
+                                    >
+                                        +
+                                    </button>
+                                </div>
                             </div>
                             <button
-                                onClick={handleSortInput}
-                                className="px-4 py-2 bg-indigo-600 text-white text-[10px] font-black rounded-xl hover:bg-indigo-700 transition-all shadow-md active:scale-95 shrink-0"
+                                onClick={handleFormatInput}
+                                className="px-6 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 shrink-0"
+                                title="Normalize whitespace and trim lines"
                             >
-                                SORT INPUT
+                                ✨ FORMAT CONTENT
                             </button>
                         </div>
                     )}
@@ -469,13 +534,6 @@ export const TranslateTab: React.FC = () => {
                         <span className="relative z-10">
                             {syncing ? `SYNCING ${syncProgress}%` : '⚡ SYNC & CLEAN'}
                         </span>
-                    </button>
-                    <button
-                        onClick={handleSync}
-                        className="p-2 hover:bg-gray-100 rounded-xl transition-all text-gray-400 hover:text-indigo-600 border border-gray-100 shadow-sm active:scale-95"
-                        title="Reload & Sync"
-                    >
-                        🔄
                     </button>
                 </div>
             </div>
@@ -537,49 +595,13 @@ export const TranslateTab: React.FC = () => {
                                 <table className="w-full border-collapse table-fixed">
                                     <tbody>
                                         {filteredData.map((item, idx) => (
-                                            <tr key={idx} className="border-b border-gray-200 group transition-colors">
-                                                <td
-                                                    className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
-                                                        ${copyFeedback?.row === idx && copyFeedback.col === 'jp' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
-                                                    `}
-                                                    onClick={() => handleCopy(item.japanese, idx, 'jp')}
-                                                >
-                                                    <div className="flex justify-between items-center">
-                                                        <span className={`text-[12px] font-bold text-gray-700 leading-tight whitespace-pre-wrap break-words`}>
-                                                            {item.japanese}
-                                                        </span>
-                                                        {copyFeedback?.row === idx && copyFeedback.col === 'jp' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
-                                                    </div>
-                                                </td>
-
-                                                <td
-                                                    className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
-                                                        ${copyFeedback?.row === idx && copyFeedback.col === 'en' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
-                                                    `}
-                                                    onClick={() => handleCopy(item.english, idx, 'en')}
-                                                >
-                                                    <div className="flex justify-between items-center">
-                                                        <span className={`text-[12px] font-mono font-black text-indigo-600 leading-tight break-all uppercase`}>
-                                                            {item.english}
-                                                        </span>
-                                                        {copyFeedback?.row === idx && copyFeedback.col === 'en' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
-                                                    </div>
-                                                </td>
-
-                                                <td
-                                                    className={`px-4 py-2.5 cursor-pointer align-middle transition-all duration-300 relative
-                                                        ${copyFeedback?.row === idx && copyFeedback.col === 'vi' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
-                                                    `}
-                                                    onClick={() => handleCopy(item.vietnamese, idx, 'vi')}
-                                                >
-                                                    <div className="flex justify-between items-center">
-                                                        <span className={`text-[12px] font-bold text-teal-600 leading-tight break-words font-sans`}>
-                                                            {item.vietnamese}
-                                                        </span>
-                                                        {copyFeedback?.row === idx && copyFeedback.col === 'vi' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
-                                                    </div>
-                                                </td>
-                                            </tr>
+                                            <DictionaryRow
+                                                key={idx}
+                                                item={item}
+                                                idx={idx}
+                                                copyFeedback={copyFeedback}
+                                                onCopy={handleCopy}
+                                            />
                                         ))}
                                     </tbody>
                                 </table>
@@ -603,11 +625,11 @@ export const TranslateTab: React.FC = () => {
                                     {/* Highlighter Overlay */}
                                     <div
                                         ref={highlighterRef}
-                                        className="absolute inset-x-0 inset-y-0 p-6 font-mono text-[13px] leading-relaxed pointer-events-none text-transparent whitespace-pre-wrap break-words overflow-y-auto"
-                                        style={{ scrollbarWidth: 'none' }}
+                                        className="absolute inset-x-0 inset-y-0 p-6 font-mono text-[13px] pointer-events-none text-transparent whitespace-pre-wrap break-words overflow-y-auto"
+                                        style={{ scrollbarWidth: 'none', lineHeight: lineSpacing }}
                                     >
                                         {translatedLines.map((line, lIdx) => (
-                                            <div key={lIdx} className="min-h-[1.5em]">
+                                            <div key={lIdx} style={{ minHeight: `${lineSpacing}em` }}>
                                                 {line.segments.map(seg => (
                                                     <span
                                                         key={seg.key}
@@ -625,7 +647,8 @@ export const TranslateTab: React.FC = () => {
                                     <textarea
                                         ref={inputRef}
                                         onScroll={handleInputScroll}
-                                        className="absolute inset-x-0 inset-y-0 w-full h-full p-6 font-mono text-[13px] outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors leading-relaxed overflow-y-auto z-10"
+                                        className="absolute inset-x-0 inset-y-0 w-full h-full p-6 font-mono text-[13px] outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors overflow-y-auto z-10"
+                                        style={{ lineHeight: lineSpacing }}
                                         placeholder="Paste code or text here..."
                                         value={bulkInput}
                                         onChange={(e) => setBulkInput(e.target.value)}
@@ -704,40 +727,28 @@ export const TranslateTab: React.FC = () => {
                                 <div
                                     ref={outputRef}
                                     onScroll={handleOutputScroll}
-                                    className="flex-1 p-6 font-mono text-[13px] outline-none overflow-auto bg-indigo-50/10 text-indigo-900 font-bold leading-relaxed shadow-inner whitespace-pre-wrap"
+                                    className="flex-1 p-6 font-mono text-[13px] outline-none overflow-auto bg-indigo-50/10 text-indigo-900 font-bold shadow-inner whitespace-pre-wrap"
+                                    style={{ lineHeight: lineSpacing }}
                                 >
                                     {translatedLines.length > 0 ? (
                                         translatedLines.map((line, lIdx) => (
-                                            <div key={lIdx} className="min-h-[1.5em]">
-                                                {line.segments.map(seg => {
-                                                    if (seg.type === 'text') return seg.text;
-
-                                                    return (
-                                                        <span
-                                                            key={seg.key}
-                                                            className={`inline-flex items-center group/opt relative cursor-pointer mx-1 px-1 rounded transition-all duration-200
-                                                                ${seg.isMultiple ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300 hover:bg-amber-200' : 'bg-transparent text-indigo-600'}
-                                                                ${hoveredKey === seg.key ? 'ring-2 ring-indigo-500 scale-105 shadow-sm' : ''}
-                                                            `}
-                                                            onMouseEnter={() => setHoveredKey(seg.key)}
-                                                            onMouseLeave={() => setHoveredKey(null)}
-                                                            onClick={() => {
-                                                                if (seg.isMultiple) {
-                                                                    const current = selections[seg.key] || seg.options[0];
-                                                                    const nextIdx = (seg.options.indexOf(current) + 1) % seg.options.length;
-                                                                    setSelections(prev => ({ ...prev, [seg.key]: seg.options[nextIdx] }));
-                                                                }
-                                                            }}
-                                                        >
-                                                            {seg.text}
-                                                            {seg.isMultiple && (
-                                                                <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[8px] px-1 rounded opacity-0 group-hover/opt:opacity-100 transition-opacity whitespace-nowrap z-20">
-                                                                    Click to switch ({seg.options.length} options)
-                                                                </span>
-                                                            )}
-                                                        </span>
-                                                    );
-                                                })}
+                                            <div key={lIdx} style={{ minHeight: `${lineSpacing}em` }}>
+                                                {line.segments.map(seg => (
+                                                    <MemoizedSegment
+                                                        key={seg.key}
+                                                        seg={seg}
+                                                        hoveredKey={hoveredKey}
+                                                        onHover={setHoveredKey}
+                                                        selections={selections}
+                                                        onClick={(s) => {
+                                                            if (s.isMultiple) {
+                                                                const current = selections[s.key] || s.options[0];
+                                                                const nextIdx = (s.options.indexOf(current) + 1) % s.options.length;
+                                                                setSelections(prev => ({ ...prev, [s.key]: s.options[nextIdx] }));
+                                                            }
+                                                        }}
+                                                    />
+                                                ))}
                                             </div>
                                         ))
                                     ) : (
