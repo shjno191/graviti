@@ -111,7 +111,7 @@ export const SettingsTab: React.FC = () => {
                     <h3 className="text-xl font-black text-gray-800 uppercase tracking-tight mb-4">General Settings</h3>
                     <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-2">
-                            <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Translate Excel Path</label>
+                            <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Translate Excel Path (Source)</label>
                             <div className="flex gap-2">
                                 <input
                                     type="text"

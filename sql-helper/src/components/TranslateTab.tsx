@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { readBinaryFile, writeBinaryFile } from '@tauri-apps/api/fs';
+import { readBinaryFile, writeBinaryFile, readTextFile, writeTextFile } from '@tauri-apps/api/fs';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open as openDialog } from '@tauri-apps/api/dialog';
 import * as XLSX from 'xlsx';
@@ -22,6 +22,8 @@ export const TranslateTab: React.FC = () => {
     const [bulkInput, setBulkInput] = useState('');
     const [bulkOutput, setBulkOutput] = useState('');
     const [targetLang, setTargetLang] = useState<'jp' | 'en' | 'vi'>('en');
+    const [syncing, setSyncing] = useState(false);
+    const [syncProgress, setSyncProgress] = useState(0);
 
 
 
@@ -31,129 +33,162 @@ export const TranslateTab: React.FC = () => {
         }
     }, [activeTab, translateFilePath]);
 
-    const loadData = async () => {
+    const loadData = async (forceSync = false) => {
         if (!translateFilePath) {
             setLoading(false);
-            setError("Đường dẫn file Excel chưa được cấu hình. Vui lòng vào tab Cài đặt để chọn file.");
+            setError("Đường dẫn file dữ liệu chưa được cấu hình.");
             return;
         }
 
-        setLoading(true);
+        setLoading(forceSync ? false : true);
+        if (forceSync) setSyncing(true);
+        setSyncProgress(0);
         setError(null);
+
         try {
-            const filePath = translateFilePath;
-            const contents = await readBinaryFile(filePath);
-            const workbook = XLSX.read(contents, { type: 'array' });
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
+            const excelPath = translateFilePath.toLowerCase().endsWith('.xlsx')
+                ? translateFilePath
+                : translateFilePath.replace(/\.json$/i, '.xlsx');
+            const jsonPath = translateFilePath.toLowerCase().endsWith('.json')
+                ? translateFilePath
+                : translateFilePath.replace(/\.xlsx$/i, '.json');
 
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
-            const entries: TranslateEntry[] = [];
+            let entries: TranslateEntry[] = [];
 
-            let startIndex = 0;
-            if (jsonData.length > 0) {
-                const firstRowStr = JSON.stringify(jsonData[0]).toLowerCase();
-                // Check if the first row is a header
-                if (firstRowStr.includes("japan") || firstRowStr.includes("en") || firstRowStr.includes("vi") || firstRowStr.includes("日")) {
-                    startIndex = 1;
+            const performSyncFromExcel = async () => {
+                setSyncProgress(10);
+                const contents = await readBinaryFile(excelPath);
+                setSyncProgress(30);
+                const workbook = XLSX.read(contents, { type: 'array' });
+                setSyncProgress(50);
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
+
+                let startIndex = 0;
+                let headerRows: any[][] = [];
+                if (jsonData.length > 0) {
+                    const firstRowStr = JSON.stringify(jsonData[0]).toLowerCase();
+                    if (firstRowStr.includes("japan") || firstRowStr.includes("en") || firstRowStr.includes("vi") || firstRowStr.includes("日")) {
+                        startIndex = 1;
+                        headerRows = [jsonData[0]];
+                    }
                 }
-            }
 
-            for (let i = startIndex; i < jsonData.length; i++) {
-                const row = jsonData[i];
-                if (row && row.length >= 2) {
-                    const jp = String(row[0] || "").trim();
-                    const en = String(row[1] || "").trim();
-                    const vi = String(row[2] || "").trim();
-                    if (jp || en || vi) {
-                        entries.push({ japanese: jp, english: en, vietnamese: vi });
+                setSyncProgress(70);
+                // Clean & De-duplicate during sync
+                const seenKeys = new Set<string>();
+                const uniqueResults: TranslateEntry[] = [];
+                let duplicateCount = 0;
+
+                for (let i = startIndex; i < jsonData.length; i++) {
+                    const row = jsonData[i];
+                    if (row && row.length >= 2) {
+                        const jp = String(row[0] || "").trim();
+                        const en = String(row[1] || "").trim();
+                        const vi = String(row[2] || "").trim();
+
+                        if (jp || en || vi) {
+                            const enKey = en.toLowerCase();
+                            if (enKey === "" || !seenKeys.has(enKey)) {
+                                if (enKey !== "") seenKeys.add(enKey);
+                                uniqueResults.push({ japanese: jp, english: en, vietnamese: vi });
+                            } else {
+                                duplicateCount++;
+                            }
+                        }
+                    }
+                }
+
+                setSyncProgress(85);
+                let writeSucceeded = true;
+                let writeError = null;
+
+                // If duplicates were found and it's a manual sync, clean the source Excel too
+                if (duplicateCount > 0 && forceSync) {
+                    try {
+                        const cleanAoa = [
+                            ...headerRows,
+                            ...uniqueResults.map(item => [item.japanese, item.english, item.vietnamese])
+                        ];
+                        const newWorksheet = XLSX.utils.aoa_to_sheet(cleanAoa);
+                        const newWorkbook = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, firstSheetName);
+                        const excelBuffer = XLSX.write(newWorkbook, { bookType: 'xlsx', type: 'array' });
+                        await writeBinaryFile(excelPath, new Uint8Array(excelBuffer));
+                    } catch (excelErr: any) {
+                        console.error("Could not write back to Excel:", excelErr);
+                        writeSucceeded = false;
+                        const errorStr = excelErr.toString().toLowerCase();
+                        if (errorStr.includes("access is denied") || errorStr.includes("permission denied") || errorStr.includes("os error 32")) {
+                            writeError = "locked";
+                        } else {
+                            writeError = excelErr.message || String(excelErr);
+                        }
+                    }
+                }
+
+                setSyncProgress(95);
+                // Cache to JSON
+                await writeTextFile(jsonPath, JSON.stringify(uniqueResults, null, 2));
+                setSyncProgress(100);
+                return { entries: uniqueResults, cleaned: duplicateCount, writeSucceeded, writeError };
+            };
+
+            let syncResult: { entries: TranslateEntry[], cleaned: number, writeSucceeded: boolean, writeError: string | null } | undefined;
+            if (forceSync) {
+                syncResult = await performSyncFromExcel();
+                entries = syncResult.entries;
+            } else {
+                try {
+                    // Try loading from JSON first for speed
+                    const content = await readTextFile(jsonPath);
+                    entries = JSON.parse(content);
+                } catch (e) {
+                    // If JSON missing, auto-create it from Excel
+                    try {
+                        syncResult = await performSyncFromExcel();
+                        entries = syncResult.entries;
+                    } catch (excelErr) {
+                        throw new Error("Không tìm thấy cả file Excel lẫn file JSON dữ liệu.");
                     }
                 }
             }
+
             setData(entries);
-        } catch (err: any) {
-            console.error('Error loading Excel:', err);
-            if (err.toString().includes("os error 2") || err.toString().includes("NotFound")) {
-                setError(`Không tìm thấy file tại: ${translateFilePath}. Vui lòng kiểm tra lại đường dẫn trong Cài đặt.`);
-            } else {
-                setError(`Lỗi: ${err.message || err}`);
+            if (forceSync) {
+                setTimeout(() => {
+                    setSyncing(false);
+                    setSyncProgress(0);
+
+                    if (syncResult) {
+                        let msg = "JSON: Sync thành công\n";
+                        if (syncResult.cleaned > 0) {
+                            msg += `Excel: Phát hiện ${syncResult.cleaned} key trùng\n`;
+                            if (!syncResult.writeSucceeded) {
+                                msg += "Excel: Chưa xóa được do Excel đang mở";
+                            } else {
+                                msg += "Excel: Đã dọn dẹp thành công";
+                            }
+                        } else {
+                            msg += "Excel: Dữ liệu đã sạch";
+                        }
+                        alert(msg);
+                    } else {
+                        alert("JSON: Sync thành công\nExcel: Dữ liệu đã tải");
+                    }
+                }, 500);
             }
+        } catch (err: any) {
+            console.error('Error loading data:', err);
+            setError(`Lỗi: ${err.message || err}`);
+            setSyncing(false);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleCleanDuplicates = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const filePath = translateFilePath;
-            const contents = await readBinaryFile(filePath);
-            const workbook = XLSX.read(contents, { type: 'array' });
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
-
-            if (jsonData.length <= 1) {
-                setLoading(false);
-                return;
-            }
-
-            let startIndex = 0;
-            const firstRowStr = JSON.stringify(jsonData[0]).toLowerCase();
-            if (firstRowStr.includes("japan") || firstRowStr.includes("en") || firstRowStr.includes("vi") || firstRowStr.includes("日")) {
-                startIndex = 1;
-            }
-
-            const header = startIndex > 0 ? jsonData[0] : null;
-            const rows = startIndex > 0 ? jsonData.slice(1) : jsonData;
-
-            const seenKeys = new Set<string>();
-            const uniqueRows = [];
-            let duplicateCount = 0;
-
-            for (const row of rows) {
-                const enValue = String(row[1] || "").trim();
-                const enKey = enValue.toLowerCase();
-
-                if (enKey === "") {
-                    uniqueRows.push(row);
-                } else if (!seenKeys.has(enKey)) {
-                    seenKeys.add(enKey);
-                    uniqueRows.push(row);
-                } else {
-                    duplicateCount++;
-                }
-            }
-
-            if (duplicateCount > 0) {
-                const newJsonData = header ? [header, ...uniqueRows] : uniqueRows;
-                const newWorksheet = XLSX.utils.aoa_to_sheet(newJsonData);
-                const newWorkbook = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, firstSheetName);
-
-                const excelBuffer = XLSX.write(newWorkbook, { bookType: 'xlsx', type: 'array' });
-                await writeBinaryFile(filePath, new Uint8Array(excelBuffer));
-
-                await loadData();
-            }
-            alert(duplicateCount > 0 ? `Đã dọn dẹp! Đã xóa ${duplicateCount} dòng trùng.` : 'Không có dòng trùng lặp.');
-        } catch (err: any) {
-            console.error('Error cleaning duplicates:', err);
-            setError(`Lỗi khi dọn dẹp: ${err.message || err}`);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleOpenExcel = async () => {
-        try {
-            await invoke('open_file', { path: translateFilePath });
-        } catch (err: any) {
-            console.error('Error opening Excel:', err);
-            alert(`Không thể mở file: ${err.message || err}`);
-        }
-    };
+    const handleSync = () => loadData(true);
 
     const filteredData = useMemo(() => {
         if (!searchTerm) return data;
@@ -264,23 +299,38 @@ export const TranslateTab: React.FC = () => {
 
                 <div className="flex gap-2">
                     <button
-                        onClick={handleOpenExcel}
+                        onClick={async () => {
+                            const excelPath = translateFilePath.toLowerCase().endsWith('.xlsx')
+                                ? translateFilePath
+                                : translateFilePath.replace(/\.json$/i, '.xlsx');
+                            await invoke('open_file', { path: excelPath });
+                        }}
                         className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-600 rounded-xl text-[10px] font-black hover:bg-green-100 border border-green-200 transition-all active:scale-95 shadow-sm"
-                        title="Open Excel File"
+                        title="Mở Excel để nhập liệu"
                     >
                         📂 OPEN EXCEL
                     </button>
+
                     <button
-                        onClick={handleCleanDuplicates}
-                        className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black hover:bg-amber-100 border border-amber-200 transition-all active:scale-95 shadow-sm"
-                        title="Clean Duplicate Keys (EN)"
+                        onClick={handleSync}
+                        disabled={syncing}
+                        className={`flex items-center gap-3 px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black hover:bg-indigo-700 transition-all active:scale-95 shadow-lg shadow-indigo-200 relative overflow-hidden`}
+                        title="Đồng bộ & Làm sạch dữ liệu từ Excel"
                     >
-                        🧹 CLEAN
+                        {syncing && (
+                            <div
+                                className="absolute left-0 top-0 h-full bg-white/20 transition-all duration-300 pointer-events-none"
+                                style={{ width: `${syncProgress}%` }}
+                            />
+                        )}
+                        <span className="relative z-10">
+                            {syncing ? `SYNCING ${syncProgress}%` : '⚡ SYNC & CLEAN'}
+                        </span>
                     </button>
                     <button
-                        onClick={loadData}
+                        onClick={handleSync}
                         className="p-2 hover:bg-gray-100 rounded-xl transition-all text-gray-400 hover:text-indigo-600 border border-gray-100 shadow-sm active:scale-95"
-                        title="Reload"
+                        title="Reload & Sync"
                     >
                         🔄
                     </button>
@@ -317,7 +367,7 @@ export const TranslateTab: React.FC = () => {
                                         <button
                                             onClick={async () => {
                                                 const selected = await openDialog({
-                                                    filters: [{ name: 'Excel', extensions: ['xlsx'] }]
+                                                    filters: [{ name: 'Data', extensions: ['json', 'xlsx'] }]
                                                 });
                                                 if (selected && typeof selected === 'string') {
                                                     setTranslateFilePath(selected);
@@ -335,7 +385,7 @@ export const TranslateTab: React.FC = () => {
                                             VÀO CÀI ĐẶT
                                         </button>
                                         <button
-                                            onClick={loadData}
+                                            onClick={handleSync}
                                             className="px-5 py-2 bg-gray-100 text-gray-400 rounded-xl text-xs font-black hover:bg-gray-200 transition-all active:scale-95"
                                         >
                                             THỬ LẠI
