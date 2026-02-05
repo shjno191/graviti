@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAppStore, QueryResult } from '../store/useAppStore';
 import { invoke } from '@tauri-apps/api/tauri';
+import { checkDangerousSql } from '../utils/sqlGuard';
 
 interface LabStatement {
     sql: string;
@@ -23,17 +24,30 @@ interface LabTableProps {
     onScroll: (e: React.UIEvent<HTMLDivElement>) => void;
     getOrderedColumns: (cols: string[]) => string[];
     isDifferent: (rowIdx: number, colName: string, val: string, otherResult?: QueryResult) => boolean;
+    colSearch: string;
 }
 
 const LabTable: React.FC<LabTableProps> = React.memo(({
     idx, state, otherState, excelHeaderColor, priorityCols, debouncedSearch,
-    onContextMenuCol, onContextMenuRow, scrollRef, onScroll, getOrderedColumns, isDifferent
+    onContextMenuCol, onContextMenuRow, scrollRef, onScroll, getOrderedColumns, isDifferent, colSearch
 }) => {
     if (state.loading) return <div className="p-10 text-center animate-pulse text-orange-500 font-bold">EXECUTING SQL...</div>;
     if (state.error) return <div className="p-6 bg-red-50 text-red-600 rounded-xl text-sm font-mono border border-red-100">{state.error}</div>;
     if (!state.result) return <div className="p-10 text-center text-gray-300 font-bold italic">No results yet. Run SQL to see data.</div>;
 
-    const activeCols = useMemo(() => getOrderedColumns(state.result?.columns || []), [state.result?.columns, priorityCols, getOrderedColumns]);
+    const activeCols = useMemo(() => {
+        let cols = getOrderedColumns(state.result?.columns || []);
+        if (colSearch) {
+            const terms = colSearch.toLowerCase().split(/[,/\-\s~]+/).filter(t => t.length > 0);
+            if (terms.length > 0) {
+                cols = cols.filter(c => {
+                    const colNameLower = c.toLowerCase();
+                    return terms.some(term => colNameLower.includes(term));
+                });
+            }
+        }
+        return cols;
+    }, [state.result?.columns, priorityCols, getOrderedColumns, colSearch]);
 
     const filteredRows = useMemo(() => {
         if (!state.result) return [];
@@ -111,6 +125,7 @@ export const LabTab: React.FC = () => {
     const [stmt2, setStmt2] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [colSearch, setColSearch] = useState('');
     const [priorityCols, setPriorityCols] = useState('');
     const [menuPos, setMenuPos] = useState<{ x: number, y: number, type: 'col' | 'row', content?: string, rowIndex?: number, idx?: 1 | 2 } | null>(null);
     const [copyStatus, setCopyStatus] = useState<{ [key: string]: boolean }>({});
@@ -144,6 +159,12 @@ export const LabTab: React.FC = () => {
         const conn = connections.find(c => c.id === stmt.connectionId) || connections[0];
         if (!conn || !conn.verified) {
             alert(conn ? 'Kết nối này chưa được xác thực.' : 'No database connection selected.');
+            return;
+        }
+
+        const guard = checkDangerousSql(stmt.sql);
+        if (guard.isDangerous) {
+            alert(`⚠️ CẢNH BÁO NGUY HIỂM!\n\nPhát hiện câu lệnh "${guard.command}" trong truy vấn của bạn. Để đảm bảo an toàn, hệ thống không cho phép chạy các câu lệnh làm thay đổi dữ liệu (UPDATE, INSERT, DELETE, TRUNCATE, etc.) tại đây.`);
             return;
         }
 
@@ -287,15 +308,25 @@ export const LabTab: React.FC = () => {
         <div className="flex flex-col h-[calc(100vh-140px)] gap-6 p-6 animate-in fade-in duration-300 overflow-hidden">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-wrap items-center gap-6 z-40">
                 <h2 className="text-xl font-black bg-gradient-to-br from-orange-500 to-red-600 bg-clip-text text-transparent uppercase tracking-tight">Compare Lab</h2>
-                <div className="flex-1 flex gap-4 min-w-[400px]">
+                <div className="flex-1 flex gap-4 min-w-[500px]">
                     <div className="relative flex-1 group">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
                         <input
                             type="text"
-                            placeholder="Global Search..."
+                            placeholder="Data Search..."
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                             className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-500 shadow-inner"
+                        />
+                    </div>
+                    <div className="relative flex-1 group">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400">📋</span>
+                        <input
+                            type="text"
+                            placeholder="Column Search..."
+                            value={colSearch}
+                            onChange={e => setColSearch(e.target.value)}
+                            className="w-full bg-blue-50 border border-blue-100 rounded-xl pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 shadow-inner"
                         />
                     </div>
                     <div className="relative flex-1 group">
@@ -380,6 +411,7 @@ export const LabTab: React.FC = () => {
                                     onScroll={e => handleScroll(`s${num}`, e)}
                                     getOrderedColumns={getOrderedColumns}
                                     isDifferent={isDifferent}
+                                    colSearch={colSearch}
                                 />
                             </div>
                         </div>

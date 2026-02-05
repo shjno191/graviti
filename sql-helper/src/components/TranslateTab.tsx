@@ -685,48 +685,6 @@ export const TranslateTab: React.FC = () => {
                                             </button>
                                         </div>
                                     </div>
-                                    <button
-                                        onClick={() => {
-                                            if (translatedLines.length === 0) return;
-
-                                            const finalOutput = translatedLines.map(line =>
-                                                line.segments.map(seg => seg.text).join('')
-                                            ).join('\n');
-
-                                            const rawLines = finalOutput.split('\n').map(l => l.trim()).filter(l => l);
-                                            const headerLabel = targetLang.toUpperCase();
-
-                                            // Copy Record must be horizontal (all lines from output become columns in one row)
-                                            const tableHtml = `
-                                              <table style="border-collapse: collapse; border: 1px solid #000000;">
-                                                <thead>
-                                                  <tr>
-                                                    ${rawLines.map(() => `
-                                                      <th style="background-color: ${excelHeaderColor}; color: #ffffff; padding: 8px; border: 1px solid #000000; font-family: sans-serif; font-size: 11pt;">${headerLabel}</th>
-                                                    `).join('')}
-                                                  </tr>
-                                                </thead>
-                                                <tbody>
-                                                  <tr>
-                                                    ${rawLines.map(line => `
-                                                      <td style="color: #000000; padding: 6px 8px; border: 1px solid #000000; font-family: Calibri, sans-serif; font-size: 10pt; white-space: nowrap;">${line}</td>
-                                                    `).join('')}
-                                                  </tr>
-                                                </tbody>
-                                              </table>
-                                            `;
-
-                                            const blob = new Blob([tableHtml], { type: 'text/html' });
-                                            const data = [new ClipboardItem({ 'text/html': blob, 'text/plain': new Blob([finalOutput], { type: 'text/plain' }) })];
-
-                                            navigator.clipboard.write(data).then(() => {
-                                                alert("Đã copy định dạng Excel (Ngang)! Hãy dán vào Excel.");
-                                            });
-                                        }}
-                                        className="px-3 py-1 bg-white text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors border border-indigo-100 shadow-sm text-[9px] font-black"
-                                    >
-                                        📄 COPY EXCEL
-                                    </button>
                                 </div>
                                 <div
                                     ref={outputRef}

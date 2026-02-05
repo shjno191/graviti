@@ -4,6 +4,7 @@ import { findLogEntriesOptimized, findLastId, replaceParamsInSql } from '../util
 import { open } from '@tauri-apps/api/dialog';
 import { invoke } from '@tauri-apps/api/tauri';
 import { ResultSetTable } from './ResultSetTable';
+import { checkDangerousSql } from '../utils/sqlGuard';
 
 export const ParamsTab: React.FC = () => {
     const {
@@ -119,6 +120,13 @@ export const ParamsTab: React.FC = () => {
 
         if (!conn.verified) {
             alert('Kết nối này chưa được xác thực (Verified). Vui lòng vào Cài đặt và TEST CONNECT thành công trước khi sử dụng.');
+            return;
+        }
+
+        const guard = checkDangerousSql(sql);
+        if (guard.isDangerous) {
+            alert(`⚠️ CẢNH BÁO NGUY HIỂM!\n\nPhát hiện câu lệnh "${guard.command}" trong truy vấn của bạn. Để đảm bảo an toàn, hệ thống không cho phép chạy các câu lệnh làm thay đổi dữ liệu (UPDATE, INSERT, DELETE, TRUNCATE, etc.) tại đây.`);
+            updateQueryGroup(groupId, { status: 'error', errorMessage: `Security Block: ${guard.command} command detected.` });
             return;
         }
 
