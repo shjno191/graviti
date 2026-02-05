@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { readBinaryFile, writeBinaryFile, readTextFile, writeTextFile } from '@tauri-apps/api/fs';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open as openDialog } from '@tauri-apps/api/dialog';
@@ -9,6 +9,19 @@ interface TranslateEntry {
     japanese: string;
     english: string;
     vietnamese: string;
+}
+
+interface TranslatedSegment {
+    type: 'text' | 'phrase';
+    text: string;
+    original: string;
+    key: string;
+    isMultiple: boolean;
+    options: string[];
+}
+
+interface TranslatedLine {
+    segments: TranslatedSegment[];
 }
 
 export const TranslateTab: React.FC = () => {
@@ -27,10 +40,32 @@ export const TranslateTab: React.FC = () => {
     const [copyFeedback, setCopyFeedback] = useState<{ row: number, col: 'jp' | 'en' | 'vi' } | null>(null);
     const [subTab, setSubTab] = useState<'dictionary' | 'quick'>('dictionary');
     const [bulkInput, setBulkInput] = useState('');
-    const [bulkOutput, setBulkOutput] = useState('');
     const [targetLang, setTargetLang] = useState<'jp' | 'en' | 'vi'>('en');
     const [syncing, setSyncing] = useState(false);
     const [syncProgress, setSyncProgress] = useState(0);
+    const [selections, setSelections] = useState<Record<string, string>>({});
+    const [translatedLines, setTranslatedLines] = useState<TranslatedLine[]>([]);
+    const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+
+    const inputRef = useRef<HTMLTextAreaElement>(null);
+    const outputRef = useRef<HTMLDivElement>(null);
+
+    const handleInputScroll = () => {
+        if (inputRef.current && outputRef.current) {
+            outputRef.current.scrollTop = inputRef.current.scrollTop;
+        }
+    };
+
+    const handleOutputScroll = () => {
+        if (inputRef.current && outputRef.current) {
+            inputRef.current.scrollTop = outputRef.current.scrollTop;
+        }
+    };
+
+    // Reset selections when input changes or target language changes
+    useEffect(() => {
+        setSelections({});
+    }, [bulkInput, targetLang]);
 
     const loadData = async (forceSync = false) => {
         if (!translateFilePath) {
@@ -75,7 +110,7 @@ export const TranslateTab: React.FC = () => {
                 }
 
                 setSyncProgress(70);
-                const seenKeys = new Set<string>();
+                const seenEntries = new Set<string>();
                 const uniqueResults: TranslateEntry[] = [];
                 let duplicateCount = 0;
 
@@ -87,9 +122,10 @@ export const TranslateTab: React.FC = () => {
                         const vi = String(row[2] || "").trim();
 
                         if (jp || en || vi) {
-                            const enKey = en.toLowerCase();
-                            if (enKey === "" || !seenKeys.has(enKey)) {
-                                if (enKey !== "") seenKeys.add(enKey);
+                            // Unique key is now combination of JP and EN to only remove exact duplicates of these two.
+                            const pairKey = `${jp.toLowerCase()}|${en.toLowerCase()}`;
+                            if (!seenEntries.has(pairKey)) {
+                                seenEntries.add(pairKey);
                                 uniqueResults.push({ japanese: jp, english: en, vietnamese: vi });
                             } else {
                                 duplicateCount++;
@@ -208,52 +244,109 @@ export const TranslateTab: React.FC = () => {
         const targetKey: keyof TranslateEntry = targetLang === 'en' ? 'english' : targetLang === 'vi' ? 'vietnamese' : 'japanese';
         const sourceKeys: (keyof TranslateEntry)[] = (['japanese', 'english', 'vietnamese'] as (keyof TranslateEntry)[]).filter(k => k !== targetKey);
 
-        const flattened: { phrase: string, replacement: string, regex: RegExp }[] = [];
+        const dictMap = new Map<string, Set<string>>();
         data.forEach(entry => {
-            const replacement = entry[targetKey];
+            const replacement = String(entry[targetKey] || "").trim();
             if (!replacement) return;
 
             sourceKeys.forEach(sKey => {
                 const phrase = String(entry[sKey] || "").trim();
+                // If Jjp is standard, maybe we only want to source from Japanese? 
+                // But keeping flexibility for now as the user didn't explicitly forbid other sources.
+                // However, "lấy key Jjp làm chuẩn" might mean JP column is the main key.
                 if (phrase && phrase !== replacement) {
-                    // Pre-compile regex for performance
-                    const escapedKey = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    flattened.push({
-                        phrase,
-                        replacement,
-                        regex: new RegExp(escapedKey, 'g')
-                    });
+                    if (!dictMap.has(phrase)) {
+                        dictMap.set(phrase, new Set());
+                    }
+                    dictMap.get(phrase)!.add(replacement);
                 }
             });
         });
 
-        // Longest phrases first to prevent partial replacements
-        return flattened.sort((a, b) => b.phrase.length - a.phrase.length);
+        const sorted = Array.from(dictMap.entries())
+            .map(([phrase, replacements]) => ({
+                phrase,
+                replacements: Array.from(replacements),
+                regex: new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+            }))
+            .sort((a, b) => b.phrase.length - a.phrase.length);
+
+        return sorted;
     }, [data, targetLang]);
 
     // Use a timeout to debounce heavy translation logic
     useEffect(() => {
         if (!bulkInput) {
-            setBulkOutput('');
+            setTranslatedLines([]);
             return;
         }
 
         const timer = setTimeout(() => {
             const lines = bulkInput.split('\n');
-            const translated = lines.map(line => {
-                let processed = line;
+            const newTranslatedLines: TranslatedLine[] = lines.map((line, lIdx) => {
+                const matches: { start: number, end: number, replacements: string[], phrase: string }[] = [];
+
                 for (const item of translationDict) {
-                    if (processed.includes(item.phrase)) {
-                        processed = processed.replace(item.regex, item.replacement);
+                    let match;
+                    item.regex.lastIndex = 0;
+                    while ((match = item.regex.exec(line)) !== null) {
+                        const start = match.index;
+                        const end = start + item.phrase.length;
+                        if (!matches.some(m => (start < m.end && end > m.start))) {
+                            matches.push({ start, end, replacements: item.replacements, phrase: item.phrase });
+                        }
+                        if (item.phrase.length === 0) break;
                     }
                 }
-                return processed;
+
+                matches.sort((a, b) => a.start - b.start);
+
+                const segments: TranslatedSegment[] = [];
+                let lastIndex = 0;
+                matches.forEach((match) => {
+                    if (match.start > lastIndex) {
+                        segments.push({
+                            type: 'text',
+                            text: line.substring(lastIndex, match.start),
+                            original: line.substring(lastIndex, match.start),
+                            key: `t-${lIdx}-${lastIndex}`,
+                            isMultiple: false,
+                            options: []
+                        });
+                    }
+
+                    const key = `p-${lIdx}-${match.start}`;
+                    const selected = selections[key] || match.replacements[0];
+
+                    segments.push({
+                        type: 'phrase',
+                        text: selected,
+                        original: match.phrase,
+                        key: key,
+                        isMultiple: match.replacements.length > 1,
+                        options: match.replacements
+                    });
+                    lastIndex = match.end;
+                });
+
+                if (lastIndex < line.length) {
+                    segments.push({
+                        type: 'text',
+                        text: line.substring(lastIndex),
+                        original: line.substring(lastIndex),
+                        key: `t-${lIdx}-${lastIndex}`,
+                        isMultiple: false,
+                        options: []
+                    });
+                }
+
+                return { segments };
             });
-            setBulkOutput(translated.join('\n'));
-        }, 150); // 150ms debounce
+            setTranslatedLines(newTranslatedLines);
+        }, 150);
 
         return () => clearTimeout(timer);
-    }, [bulkInput, translationDict]);
+    }, [bulkInput, translationDict, selections]);
 
     useEffect(() => {
         if (activeTab === 'translate' && data.length === 0) {
@@ -454,8 +547,8 @@ export const TranslateTab: React.FC = () => {
                 ) : (
                     <div className="flex-1 flex flex-col overflow-hidden bg-white">
                         <div className="grid grid-cols-2 flex-1 overflow-hidden">
-                            <div className="flex flex-col border-r border-gray-200">
-                                <div className="bg-gray-50/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 flex justify-between items-center h-12">
+                            <div className="flex flex-col border-r border-gray-200 min-h-0">
+                                <div className="bg-gray-50/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 flex justify-between items-center h-12 shrink-0">
                                     <span>INPUT SOURCE (Any language)</span>
                                     <button
                                         onClick={() => setBulkInput('')}
@@ -464,16 +557,43 @@ export const TranslateTab: React.FC = () => {
                                         CLEAR ALL
                                     </button>
                                 </div>
-                                <textarea
-                                    className="flex-1 p-6 font-mono text-[13px] outline-none resize-none bg-white focus:bg-indigo-50/5 transition-colors leading-relaxed"
-                                    placeholder="Paste code or text here..."
-                                    value={bulkInput}
-                                    onChange={(e) => setBulkInput(e.target.value)}
-                                ></textarea>
+                                <div className="flex-1 relative min-h-0 bg-white group/input">
+                                    {/* Highlighter Overlay */}
+                                    <div className="absolute inset-x-0 inset-y-0 p-6 font-mono text-[13px] leading-relaxed pointer-events-none text-transparent whitespace-pre-wrap break-words overflow-y-auto"
+                                        style={{ scrollbarWidth: 'none' }}
+                                        onScroll={(e) => {
+                                            // Mirror scroll if child scrolls
+                                        }}
+                                    >
+                                        {translatedLines.map((line, lIdx) => (
+                                            <div key={lIdx} className="min-h-[1.5em]">
+                                                {line.segments.map(seg => (
+                                                    <span
+                                                        key={seg.key}
+                                                        className={`transition-colors duration-200 py-0.5 rounded ${seg.type === 'phrase' ? (hoveredKey === seg.key ? 'bg-indigo-500/30 ring-1 ring-indigo-400' : 'bg-indigo-500/5') : ''}`}
+                                                        onMouseEnter={() => seg.type === 'phrase' && setHoveredKey(seg.key)}
+                                                        onMouseLeave={() => seg.type === 'phrase' && setHoveredKey(null)}
+                                                    >
+                                                        {seg.original}
+                                                    </span>
+                                                ))}
+                                                {'\n'}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <textarea
+                                        ref={inputRef}
+                                        onScroll={handleInputScroll}
+                                        className="absolute inset-x-0 inset-y-0 w-full h-full p-6 font-mono text-[13px] outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors leading-relaxed overflow-y-auto z-10"
+                                        placeholder="Paste code or text here..."
+                                        value={bulkInput}
+                                        onChange={(e) => setBulkInput(e.target.value)}
+                                    ></textarea>
+                                </div>
                             </div>
 
-                            <div className="flex flex-col">
-                                <div className="bg-indigo-50/30 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-indigo-500 border-b border-indigo-100 flex justify-between items-center h-12">
+                            <div className="flex flex-col min-h-0">
+                                <div className="bg-indigo-50/30 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-indigo-500 border-b border-indigo-100 flex justify-between items-center h-12 shrink-0">
                                     <div className="flex items-center gap-3">
                                         <span className="text-indigo-600">RESULT TO:</span>
                                         <div className="flex bg-white p-0.5 rounded-lg border border-indigo-100 shadow-sm">
@@ -499,9 +619,13 @@ export const TranslateTab: React.FC = () => {
                                     </div>
                                     <button
                                         onClick={() => {
-                                            if (!bulkOutput) return;
+                                            if (translatedLines.length === 0) return;
 
-                                            const rawLines = bulkOutput.split('\n').map(l => l.trim()).filter(l => l);
+                                            const finalOutput = translatedLines.map(line =>
+                                                line.segments.map(seg => seg.text).join('')
+                                            ).join('\n');
+
+                                            const rawLines = finalOutput.split('\n').map(l => l.trim()).filter(l => l);
                                             const headerLabel = targetLang.toUpperCase();
 
                                             // Copy Record must be horizontal (all lines from output become columns in one row)
@@ -525,7 +649,7 @@ export const TranslateTab: React.FC = () => {
                                             `;
 
                                             const blob = new Blob([tableHtml], { type: 'text/html' });
-                                            const data = [new ClipboardItem({ 'text/html': blob, 'text/plain': new Blob([bulkOutput], { type: 'text/plain' }) })];
+                                            const data = [new ClipboardItem({ 'text/html': blob, 'text/plain': new Blob([finalOutput], { type: 'text/plain' }) })];
 
                                             navigator.clipboard.write(data).then(() => {
                                                 alert("Đã copy định dạng Excel (Ngang)! Hãy dán vào Excel.");
@@ -536,12 +660,49 @@ export const TranslateTab: React.FC = () => {
                                         📄 COPY EXCEL
                                     </button>
                                 </div>
-                                <textarea
-                                    className="flex-1 p-6 font-mono text-[13px] outline-none resize-none bg-indigo-50/10 text-indigo-900 font-bold leading-relaxed shadow-inner"
-                                    readOnly
-                                    value={bulkOutput}
-                                    placeholder="Translation will appear here..."
-                                ></textarea>
+                                <div
+                                    ref={outputRef}
+                                    onScroll={handleOutputScroll}
+                                    className="flex-1 p-6 font-mono text-[13px] outline-none overflow-auto bg-indigo-50/10 text-indigo-900 font-bold leading-relaxed shadow-inner whitespace-pre-wrap"
+                                >
+                                    {translatedLines.length > 0 ? (
+                                        translatedLines.map((line, lIdx) => (
+                                            <div key={lIdx} className="min-h-[1.5em]">
+                                                {line.segments.map(seg => {
+                                                    if (seg.type === 'text') return seg.text;
+
+                                                    return (
+                                                        <span
+                                                            key={seg.key}
+                                                            className={`inline-flex items-center group/opt relative cursor-pointer mx-1 px-1 rounded transition-all duration-200
+                                                                ${seg.isMultiple ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300 hover:bg-amber-200' : 'bg-transparent text-indigo-600'}
+                                                                ${hoveredKey === seg.key ? 'ring-2 ring-indigo-500 scale-105 shadow-sm' : ''}
+                                                            `}
+                                                            onMouseEnter={() => setHoveredKey(seg.key)}
+                                                            onMouseLeave={() => setHoveredKey(null)}
+                                                            onClick={() => {
+                                                                if (seg.isMultiple) {
+                                                                    const current = selections[seg.key] || seg.options[0];
+                                                                    const nextIdx = (seg.options.indexOf(current) + 1) % seg.options.length;
+                                                                    setSelections(prev => ({ ...prev, [seg.key]: seg.options[nextIdx] }));
+                                                                }
+                                                            }}
+                                                        >
+                                                            {seg.text}
+                                                            {seg.isMultiple && (
+                                                                <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[8px] px-1 rounded opacity-0 group-hover/opt:opacity-100 transition-opacity whitespace-nowrap z-20">
+                                                                    Click to switch ({seg.options.length} options)
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <span className="text-gray-300 italic">Translation will appear here...</span>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
