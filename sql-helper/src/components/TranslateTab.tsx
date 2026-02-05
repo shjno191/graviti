@@ -35,9 +35,9 @@ const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick }: {
     return (
         <span
             key={seg.key}
-            className={`inline-flex items-center group/opt relative cursor-pointer mx-1 px-1.5 py-1 rounded transition-all duration-200
-                ${seg.isMultiple ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300 hover:bg-amber-200' : 'bg-transparent text-indigo-600'}
-                ${hoveredKey === seg.key ? 'ring-2 ring-indigo-500 scale-105 shadow-sm' : ''}
+            className={`inline-flex items-center group/opt relative cursor-pointer mx-1 px-1 rounded transition-all duration-300
+                ${seg.isMultiple ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300 hover:bg-amber-200' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}
+                ${hoveredKey === seg.key ? 'bg-indigo-600 !text-white scale-105 shadow-md shadow-indigo-200 z-10' : ''}
             `}
             onMouseEnter={() => onHover(seg.key)}
             onMouseLeave={() => onHover(null)}
@@ -121,7 +121,7 @@ export const TranslateTab: React.FC = () => {
     const [selections, setSelections] = useState<Record<string, string>>({});
     const [translatedLines, setTranslatedLines] = useState<TranslatedLine[]>([]);
     const [hoveredKey, setHoveredKey] = useState<string | null>(null);
-    const [lineSpacing, setLineSpacing] = useState(1.8);
+    const [lineSpacing, setLineSpacing] = useState(1.6);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -620,33 +620,38 @@ export const TranslateTab: React.FC = () => {
                                         CLEAR ALL
                                     </button>
                                 </div>
-                                <div className="flex-1 relative min-h-0 bg-white group/input">
+                                <div className="flex-1 relative min-h-0 bg-white group/input overflow-hidden">
                                     {/* Highlighter Overlay */}
                                     <div
                                         ref={highlighterRef}
-                                        className="absolute inset-x-0 inset-y-0 p-6 font-mono text-[13px] pointer-events-none text-transparent whitespace-pre-wrap break-words overflow-y-auto"
-                                        style={{ scrollbarWidth: 'none', lineHeight: lineSpacing }}
+                                        className="absolute inset-x-0 inset-y-0 p-6 font-mono text-[13px] pointer-events-none text-transparent whitespace-pre-wrap break-words overflow-y-scroll"
+                                        style={{
+                                            lineHeight: lineSpacing,
+                                            scrollbarWidth: 'none',
+                                            msOverflowStyle: 'none'
+                                        }}
                                     >
                                         {translatedLines.map((line, lIdx) => (
-                                            <div key={lIdx} style={{ minHeight: `${lineSpacing}em` }}>
-                                                {line.segments.map(seg => (
+                                            <div
+                                                key={lIdx}
+                                                className={`transition-colors duration-200 ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/10' : ''}`}
+                                                style={{ minHeight: `${lineSpacing}em` }}
+                                            >
+                                                {line.segments.length > 0 ? line.segments.map(seg => (
                                                     <span
                                                         key={seg.key}
-                                                        className={`transition-colors duration-200 py-0.5 rounded ${seg.type === 'phrase' ? (hoveredKey === seg.key ? 'bg-indigo-500/30 ring-1 ring-indigo-400' : 'bg-indigo-500/5') : ''}`}
-                                                        onMouseEnter={() => seg.type === 'phrase' && setHoveredKey(seg.key)}
-                                                        onMouseLeave={() => seg.type === 'phrase' && setHoveredKey(null)}
+                                                        className={`transition-colors duration-300 py-0.5 rounded ${seg.type === 'phrase' ? (hoveredKey === seg.key ? 'bg-indigo-600/40 ring-1 ring-indigo-500' : 'bg-indigo-500/10') : ''}`}
                                                     >
                                                         {seg.original}
                                                     </span>
-                                                ))}
-                                                {'\n'}
+                                                )) : '\u200B'}
                                             </div>
                                         ))}
                                     </div>
                                     <textarea
                                         ref={inputRef}
                                         onScroll={handleInputScroll}
-                                        className="absolute inset-x-0 inset-y-0 w-full h-full p-6 font-mono text-[13px] outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors overflow-y-auto z-10"
+                                        className="absolute inset-x-0 inset-y-0 w-full h-full p-6 font-mono text-[13px] outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors overflow-y-scroll z-10 border-none"
                                         style={{ lineHeight: lineSpacing }}
                                         placeholder="Paste code or text here..."
                                         value={bulkInput}
@@ -726,13 +731,17 @@ export const TranslateTab: React.FC = () => {
                                 <div
                                     ref={outputRef}
                                     onScroll={handleOutputScroll}
-                                    className="flex-1 p-6 font-mono text-[13px] outline-none overflow-auto bg-indigo-50/10 text-indigo-900 font-bold shadow-inner whitespace-pre-wrap"
+                                    className="flex-1 p-6 font-mono text-[13px] outline-none overflow-y-scroll bg-indigo-50/10 text-indigo-900 shadow-inner whitespace-pre-wrap break-words"
                                     style={{ lineHeight: lineSpacing }}
                                 >
                                     {translatedLines.length > 0 ? (
                                         translatedLines.map((line, lIdx) => (
-                                            <div key={lIdx} style={{ minHeight: `${lineSpacing}em` }}>
-                                                {line.segments.map(seg => (
+                                            <div
+                                                key={lIdx}
+                                                className={`transition-colors duration-200 ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/5' : ''}`}
+                                                style={{ minHeight: `${lineSpacing}em` }}
+                                            >
+                                                {line.segments.length > 0 ? line.segments.map(seg => (
                                                     <MemoizedSegment
                                                         key={seg.key}
                                                         seg={seg}
@@ -746,11 +755,14 @@ export const TranslateTab: React.FC = () => {
                                                             }
                                                         }}
                                                     />
-                                                ))}
+                                                )) : '\u200B'}
                                             </div>
                                         ))
                                     ) : (
-                                        <span className="text-gray-300 italic">Translation will appear here...</span>
+                                        <div className="flex flex-col items-center justify-center h-full opacity-20 select-none">
+                                            <span className="text-4xl mb-4">✨</span>
+                                            <span className="text-sm italic font-black uppercase tracking-widest">Translation will appear here</span>
+                                        </div>
                                     )}
                                 </div>
                             </div>
