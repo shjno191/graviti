@@ -1,7 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore, DbConfig } from '../store/useAppStore';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open as openDialog } from '@tauri-apps/api/dialog';
+
+const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: string }> = ({ onRecord }) => {
+    const [isRecording, setIsRecording] = useState(false);
+
+    useEffect(() => {
+        if (!isRecording) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            let combo = '';
+            if (e.ctrlKey) combo += 'CTRL+';
+            if (e.shiftKey) combo += 'SHIFT+';
+            if (e.altKey) combo += 'ALT+';
+
+            // Only add the key if it's not a modifier itself
+            if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+                combo += e.key.toUpperCase();
+                onRecord(combo);
+                setIsRecording(false);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isRecording, onRecord]);
+
+    return (
+        <button
+            onClick={() => setIsRecording(true)}
+            className={`px-6 py-2.5 rounded-xl font-black text-xs transition-all shadow-md active:scale-95 whitespace-nowrap ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-black text-white hover:bg-gray-800'}`}
+        >
+            {isRecording ? 'PRESS KEY NOW...' : 'CHANGE SHORTCUT'}
+        </button>
+    );
+};
 
 export const SettingsTab: React.FC = () => {
     const {
@@ -11,7 +48,9 @@ export const SettingsTab: React.FC = () => {
         setTranslateFilePath,
         translateFilePath,
         excelHeaderColor,
-        setExcelHeaderColor
+        setExcelHeaderColor,
+        runShortcut,
+        setRunShortcut
     } = useAppStore();
     const [editingConfig, setEditingConfig] = useState<DbConfig | null>(null);
     const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error' | 'testing'>('idle');
@@ -204,6 +243,22 @@ export const SettingsTab: React.FC = () => {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 h-fit">
+                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-tight mb-4">Execution Shortcut</h3>
+                    <div className="flex flex-col gap-4">
+                        <div className="flex flex-col gap-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Global Run SQL Shortcut</label>
+                            <div className="flex gap-3 items-center">
+                                <div className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm font-black text-primary shadow-inner">
+                                    {runShortcut}
+                                </div>
+                                <ShortcutRecorder onRecord={setRunShortcut} current={runShortcut} />
+                            </div>
+                            <p className="text-[9px] text-gray-400 mt-1">Press a key (e.g. F5, F9) or a combination (e.g. Ctrl+Enter) to set as default shortcut for Execute Query.</p>
                         </div>
                     </div>
                 </div>

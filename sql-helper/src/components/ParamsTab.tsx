@@ -10,12 +10,19 @@ export const ParamsTab: React.FC = () => {
     const {
         queryGroups, addQueryGroup, updateQueryGroup, removeQueryGroup,
         autoClipboard, setAutoClipboard, connections,
-        globalLogPath, setGlobalLogPath
+        globalLogPath, setGlobalLogPath, runShortcut
     } = useAppStore();
 
     const [selectedConnId, setSelectedConnId] = React.useState<string | null>(null);
+    const [showExecPicker, setShowExecPicker] = React.useState(false);
 
     const activeConn = connections.find(c => c.id === (selectedConnId || connections[0]?.id)) || connections[0];
+
+    // Latest state ref to avoid stale closures and re-registrations
+    const stateRef = React.useRef({ queryGroups, activeConn });
+    useEffect(() => {
+        stateRef.current = { queryGroups, activeConn };
+    }, [queryGroups, activeConn]);
 
     useEffect(() => {
         const loadInitialLog = async () => {
@@ -169,6 +176,39 @@ export const ParamsTab: React.FC = () => {
         navigator.clipboard.writeText(text);
     };
 
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            let combo = '';
+            if (e.ctrlKey) combo += 'CTRL+';
+            if (e.shiftKey) combo += 'SHIFT+';
+            if (e.altKey) combo += 'ALT+';
+            if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+                combo += e.key.toUpperCase();
+            }
+
+            if (combo === runShortcut.toUpperCase()) {
+                e.preventDefault();
+
+                const activeEl = document.activeElement;
+                if (activeEl?.id?.startsWith('sql-param-')) {
+                    const targetId = activeEl.id.replace('sql-param-', '');
+                    const group = stateRef.current.queryGroups.find(g => g.id === targetId);
+                    if (group && group.sql && group.status !== 'running') {
+                        runSql(group.id, group.sql, stateRef.current.activeConn);
+                        return;
+                    }
+                }
+
+                if (stateRef.current.queryGroups.length > 0) {
+                    setShowExecPicker(true);
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [runShortcut]); // Only depend on shortcut, data comes from ref
+
     return (
         <div className="flex flex-col gap-5 p-5">
             <div className="flex flex-wrap gap-4 items-center justify-between p-5 bg-white rounded-2xl shadow-sm border border-gray-100">
@@ -285,6 +325,7 @@ export const ParamsTab: React.FC = () => {
                                 <div className="flex flex-col gap-4">
                                     <div className="relative">
                                         <textarea
+                                            id={`sql-param-${group.id}`}
                                             value={group.sql}
                                             onChange={(e) => updateQueryGroup(group.id, { sql: e.target.value })}
                                             placeholder="SQL query with parameters replaced will appear here..."
@@ -376,6 +417,46 @@ export const ParamsTab: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* Params Execution Picker */}
+            {showExecPicker && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowExecPicker(false)}>
+                    <div className="bg-white rounded-[2.5rem] p-8 shadow-2xl border border-gray-100 flex flex-col gap-6 max-w-2xl w-full mx-4 max-h-[80vh] animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                        <div className="text-center">
+                            <h3 className="text-xl font-black text-gray-800 uppercase tracking-tight mb-1">Select Fragment to Run</h3>
+                            <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest font-mono">Choose from your active fragments</p>
+                        </div>
+
+                        <div className="overflow-y-auto flex flex-col gap-3 pr-2 custom-scrollbar">
+                            {queryGroups.filter(g => g.sql).map((group, idx) => (
+                                <button
+                                    key={group.id}
+                                    onClick={() => {
+                                        setShowExecPicker(false);
+                                        document.getElementById(`sql-param-${group.id}`)?.focus();
+                                        runSql(group.id, group.sql, activeConn);
+                                    }}
+                                    className="flex items-center gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group"
+                                >
+                                    <span className="w-10 h-10 bg-gray-900 text-white rounded-xl flex items-center justify-center font-black text-xs shrink-0 group-hover:bg-primary transition-colors">#{idx + 1}</span>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-black text-gray-800 uppercase truncate">ID: {group.statementId || 'No ID'}</div>
+                                        <div className="text-[10px] text-gray-400 font-mono truncate italic">{group.sql.substring(0, 100)}</div>
+                                    </div>
+                                    <span className="text-primary opacity-0 group-hover:opacity-100 transition-all font-black text-xs">RUN ▶</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        <button
+                            onClick={() => setShowExecPicker(false)}
+                            className="text-xs font-black text-gray-400 hover:text-gray-800 transition-all uppercase tracking-widest text-center"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -1,17 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { extractColumnsFromCreateTable, generateSelectStatement } from '../utils/schemaComparator';
 
 export const GenerateTab: React.FC = () => {
     const {
         schemaScript, setSchemaScript,
-        genPriorityColumns, setGenPriorityColumns
+        genPriorityColumns, setGenPriorityColumns,
+        runShortcut
     } = useAppStore();
 
     const [columns, setColumns] = useState<string[]>([]);
     const [generatedSql, setGeneratedSql] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            let combo = '';
+            if (e.ctrlKey) combo += 'CTRL+';
+            if (e.shiftKey) combo += 'SHIFT+';
+            if (e.altKey) combo += 'ALT+';
+            if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+                combo += e.key.toUpperCase();
+            }
+
+            if (combo === runShortcut.toUpperCase()) {
+                e.preventDefault();
+                handleGenerate();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [runShortcut, schemaScript, genPriorityColumns]);
 
     const handleGenerate = () => {
         setError(null);

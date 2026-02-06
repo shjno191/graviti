@@ -24,12 +24,14 @@ interface TranslatedLine {
     segments: TranslatedSegment[];
 }
 
-const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, copiedKey }: {
+const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, onCycle, copiedKey, lIdx }: {
     seg: TranslatedSegment,
     hoveredKey: string | null,
     onHover: (key: string | null) => void,
     onClick: (seg: TranslatedSegment) => void,
-    copiedKey: string | null
+    onCycle: (key: string, option: string) => void,
+    copiedKey: string | null,
+    lIdx: number
 }) => {
     if (seg.type === 'text') return <>{seg.text}</>;
 
@@ -39,23 +41,64 @@ const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, copiedK
         <span
             key={seg.key}
             className={`inline-flex items-center group/opt relative cursor-pointer mx-0.5 px-1.5 py-0.5 rounded transition-all duration-300 font-bold
-                ${seg.isMultiple ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300 hover:bg-amber-200' : 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-100'}
-                ${hoveredKey === seg.key ? 'bg-indigo-600 !text-white scale-105 shadow-md shadow-indigo-200 z-10' : ''}
-                ${isCopied ? '!bg-green-600 !text-white !ring-green-400 scale-105 z-10' : ''}
+                ${seg.isMultiple ? 'bg-amber-100 text-amber-900 ring-2 ring-amber-300/50 hover:ring-amber-400' : 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-100'}
+                ${hoveredKey === seg.key ? 'bg-indigo-600 !text-white scale-105 shadow-md shadow-indigo-200 z-20' : ''}
+                ${isCopied ? '!bg-green-600 !text-white !ring-green-400 scale-105 z-20' : ''}
             `}
             onMouseEnter={() => onHover(seg.key)}
             onMouseLeave={() => onHover(null)}
             onClick={() => onClick(seg)}
         >
-            {seg.text}
+            <span className="relative z-10">{seg.text}</span>
+
+            {seg.isMultiple && (
+                <span className="ml-1 text-[8px] opacity-60 bg-white/50 px-1 rounded-full border border-amber-400/30 select-none">
+                    {seg.options.length}
+                </span>
+            )}
+
+            {/* Hover Tooltip / Selection Menu */}
+            {seg.isMultiple && (
+                <div className={`absolute left-1/2 -translate-x-1/2 opacity-0 group-hover/opt:opacity-100 pointer-events-none group-hover/opt:pointer-events-auto transition-all duration-300 z-[9999]
+                    ${lIdx === 0 ? 'top-full pt-2' : 'bottom-[100%] pb-2'}
+                `}>
+                    <div className="flex bg-white rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.4),0_0_1px_rgba(0,0,0,0.1)] border border-indigo-200 p-2 gap-2 whitespace-nowrap animate-in zoom-in-95 duration-200">
+                        {seg.options.map((opt, i) => {
+                            const isActive = seg.text === opt;
+                            return (
+                                <button
+                                    key={i}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onCycle(seg.key, opt);
+                                    }}
+                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-black transition-all hover:scale-110 active:scale-95
+                                        ${isActive
+                                            ? 'bg-indigo-600 text-white shadow-lg ring-2 ring-indigo-300'
+                                            : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100'}
+                                    `}
+                                >
+                                    {isActive && <span className="mr-1">✓</span>}
+                                    {opt}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             {isCopied && (
-                <span className="absolute -top-5 left-1/2 -translate-x-1/2 bg-green-600 text-white text-[8px] px-1.5 py-0.5 rounded shadow-sm animate-bounce whitespace-nowrap z-30 font-black">
+                <span className={`absolute left-1/2 -translate-x-1/2 bg-green-600 text-white text-[8px] px-1.5 py-0.5 rounded shadow-sm animate-bounce whitespace-nowrap z-[10000] font-black select-none pointer-events-none
+                    ${lIdx === 0 ? 'top-[130%]' : 'bottom-[130%]'}
+                `}>
                     COPIED!
                 </span>
             )}
-            {!isCopied && (
-                <span className="absolute -top-5 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[8px] px-2 py-0.5 rounded opacity-0 group-hover/opt:opacity-100 transition-opacity whitespace-nowrap z-20 font-bold shadow-lg pointer-events-none">
-                    {seg.isMultiple ? '📦 Click to COPY (Cycle with 🔄)' : '📋 Click to COPY'}
+            {!isCopied && !seg.isMultiple && (
+                <span className={`absolute left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[8px] px-2 py-0.5 rounded opacity-0 group-hover/opt:opacity-100 transition-opacity whitespace-nowrap z-[9999] font-bold shadow-lg pointer-events-none select-none
+                    ${lIdx === 0 ? 'top-[120%]' : 'bottom-[120%]'}
+                `}>
+                    📋 CLICK TO COPY
                 </span>
             )}
         </span>
@@ -74,7 +117,7 @@ const DictionaryRow = React.memo(({ item, idx, copyFeedback, onCopy }: { item: T
                 <span className="text-[12px] font-bold text-gray-700 leading-tight whitespace-pre-wrap break-words">
                     {item.japanese}
                 </span>
-                {copyFeedback?.row === idx && copyFeedback.col === 'jp' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
+                {copyFeedback?.row === idx && copyFeedback.col === 'jp' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
             </div>
         </td>
 
@@ -88,7 +131,7 @@ const DictionaryRow = React.memo(({ item, idx, copyFeedback, onCopy }: { item: T
                 <span className="text-[12px] font-mono font-black text-indigo-600 leading-tight break-all uppercase">
                     {item.english}
                 </span>
-                {copyFeedback?.row === idx && copyFeedback.col === 'en' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
+                {copyFeedback?.row === idx && copyFeedback.col === 'en' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
             </div>
         </td>
 
@@ -102,7 +145,7 @@ const DictionaryRow = React.memo(({ item, idx, copyFeedback, onCopy }: { item: T
                 <span className="text-[12px] font-bold text-teal-600 leading-tight break-words font-sans">
                     {item.vietnamese}
                 </span>
-                {copyFeedback?.row === idx && copyFeedback.col === 'vi' && <span className="text-[9px] text-green-600 font-black animate-pulse">COPY!</span>}
+                {copyFeedback?.row === idx && copyFeedback.col === 'vi' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
             </div>
         </td>
     </tr>
@@ -337,7 +380,12 @@ export const TranslateTab: React.FC = () => {
         setTimeout(() => setCopyFeedback(null), 600);
     };
 
-    // Memoize the dictionary transformation to avoid re-calculating/sorting on every keystroke
+    const normalizeText = (s: string) => s
+        .replace(/[！-～]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0xFEE0)) // Full-width to half-width
+        .replace(/　/g, ' ') // Full-width space to half-width
+        .replace(/[\t\r\n\v\f]/g, ' '); // All whitespace-like to standard space (1-to-1)
+
+    // Memoize the dictionary transformation
     const translationDict = useMemo(() => {
         if (data.length === 0) return [];
 
@@ -345,20 +393,22 @@ export const TranslateTab: React.FC = () => {
         const sourceKeys: (keyof TranslateEntry)[] = (['japanese', 'english', 'vietnamese'] as (keyof TranslateEntry)[]).filter(k => k !== targetKey);
 
         const dictMap = new Map<string, Set<string>>();
+
         data.forEach(entry => {
             const replacement = String(entry[targetKey] || "").trim();
             if (!replacement) return;
 
             sourceKeys.forEach(sKey => {
-                const phrase = String(entry[sKey] || "").trim();
-                // If Jjp is standard, maybe we only want to source from Japanese? 
-                // But keeping flexibility for now as the user didn't explicitly forbid other sources.
-                // However, "lấy key Jjp làm chuẩn" might mean JP column is the main key.
-                if (phrase && phrase !== replacement) {
-                    if (!dictMap.has(phrase)) {
-                        dictMap.set(phrase, new Set());
+                const rawPhrase = String(entry[sKey] || "").trim();
+                if (rawPhrase && rawPhrase !== replacement) {
+                    // Normalize the dictionary phrase too
+                    const phrase = normalizeText(rawPhrase);
+                    if (phrase) {
+                        if (!dictMap.has(phrase)) {
+                            dictMap.set(phrase, new Set());
+                        }
+                        dictMap.get(phrase)!.add(replacement);
                     }
-                    dictMap.get(phrase)!.add(replacement);
                 }
             });
         });
@@ -367,6 +417,7 @@ export const TranslateTab: React.FC = () => {
             .map(([phrase, replacements]) => ({
                 phrase,
                 replacements: Array.from(replacements),
+                // Regex created from the normalized phrase
                 regex: new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
             }))
             .sort((a, b) => b.phrase.length - a.phrase.length);
@@ -383,34 +434,31 @@ export const TranslateTab: React.FC = () => {
 
         const timer = setTimeout(() => {
             const lines = bulkInput.split('\n');
-            const normalize = (s: string) => s.replace(/[！-～]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
 
             const newTranslatedLines: TranslatedLine[] = lines.map((line, lIdx) => {
                 const matches: { start: number, end: number, replacements: string[], phrase: string }[] = [];
-                const normLine = normalize(line);
+                const normLine = normalizeText(line);
 
                 for (const item of translationDict) {
                     item.regex.lastIndex = 0;
+                    // Always match against the normalized line for robustness
                     let match;
-                    while ((match = item.regex.exec(line)) !== null) {
-                        const start = match.index, end = start + item.phrase.length;
+                    while ((match = item.regex.exec(normLine)) !== null) {
+                        const start = match.index;
+                        const end = start + item.phrase.length;
+
+                        // Check if this range is already covered by a longer phrase
                         if (!matches.some(m => (start < m.end && end > m.start))) {
-                            matches.push({ start, end, replacements: item.replacements, phrase: item.phrase });
+                            // Map the match from normLine back to the same indices in original line
+                            // (Safe because normalizeText is 1-to-1)
+                            matches.push({
+                                start,
+                                end,
+                                replacements: item.replacements,
+                                phrase: line.substring(start, end)
+                            });
                         }
                         if (item.phrase.length === 0) break;
-                    }
-
-                    // Normalized match
-                    const normPhrase = normalize(item.phrase);
-                    if (normPhrase !== item.phrase) {
-                        const normRegex = new RegExp(normPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-                        let nm;
-                        while ((nm = normRegex.exec(normLine)) !== null) {
-                            if (!matches.some(m => (nm!.index < m.end && (nm!.index + normPhrase.length) > m.start))) {
-                                matches.push({ start: nm.index, end: nm.index + normPhrase.length, replacements: item.replacements, phrase: line.substring(nm.index, nm.index + normPhrase.length) });
-                            }
-                            if (normPhrase.length === 0) break;
-                        }
                     }
                 }
 
@@ -420,7 +468,8 @@ export const TranslateTab: React.FC = () => {
 
                 matches.forEach((match) => {
                     if (match.start > lastIndex) {
-                        segments.push({ type: 'text', text: line.substring(lastIndex, match.start), original: line.substring(lastIndex, match.start), key: `t-${lIdx}-${lastIndex}`, isMultiple: false, options: [] });
+                        const txt = line.substring(lastIndex, match.start);
+                        segments.push({ type: 'text', text: txt, original: txt, key: `t-${lIdx}-${lastIndex}`, isMultiple: false, options: [] });
                     }
                     const key = `p-${lIdx}-${match.start}`;
                     segments.push({ type: 'phrase', text: selections[key] || match.replacements[0], original: match.phrase, key, isMultiple: match.replacements.length > 1, options: match.replacements });
@@ -428,7 +477,8 @@ export const TranslateTab: React.FC = () => {
                 });
 
                 if (lastIndex < line.length) {
-                    segments.push({ type: 'text', text: line.substring(lastIndex), original: line.substring(lastIndex), key: `t-${lIdx}-${lastIndex}`, isMultiple: false, options: [] });
+                    const txt = line.substring(lastIndex);
+                    segments.push({ type: 'text', text: txt, original: txt, key: `t-${lIdx}-${lastIndex}`, isMultiple: false, options: [] });
                 }
                 return { segments };
             });
@@ -699,52 +749,38 @@ export const TranslateTab: React.FC = () => {
                                 <div
                                     ref={outputRef}
                                     onScroll={handleOutputScroll}
-                                    className="flex-1 p-6 font-mono text-[13px] outline-none overflow-y-scroll bg-indigo-50/10 text-indigo-900 shadow-inner whitespace-pre-wrap break-words"
+                                    className="flex-1 px-12 py-8 font-mono text-[13px] outline-none overflow-y-scroll bg-indigo-50/10 text-indigo-900 shadow-inner whitespace-pre-wrap break-words"
                                     style={{ lineHeight: lineSpacing }}
                                 >
                                     {translatedLines.length > 0 ? (
                                         translatedLines.map((line, lIdx) => {
-                                            const hasOptions = line.segments.some(s => s.isMultiple);
                                             return (
                                                 <div
                                                     key={lIdx}
-                                                    className={`flex items-start transition-colors duration-200 ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/5' : ''}`}
-                                                    style={{ minHeight: `${lineSpacing}em` }}
+                                                    className={`flex items-start transition-colors duration-200 relative group/line hover:!z-[100] ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/5' : ''}`}
+                                                    style={{
+                                                        minHeight: `${lineSpacing}em`,
+                                                        zIndex: translatedLines.length - lIdx // Ensure top toolbars overlap bottom lines
+                                                    }}
                                                 >
-                                                    <div className="w-8 shrink-0 flex justify-center pt-1 mt-[-2px]">
-                                                        {hasOptions && (
-                                                            <button
-                                                                onClick={() => {
-                                                                    setSelections(prev => {
-                                                                        const next = { ...prev };
-                                                                        line.segments.forEach(s => {
-                                                                            if (s.isMultiple) {
-                                                                                const current = prev[s.key] || s.options[0];
-                                                                                const idx = s.options.indexOf(current);
-                                                                                next[s.key] = s.options[(idx + 1) % s.options.length];
-                                                                            }
-                                                                        });
-                                                                        return next;
-                                                                    });
-                                                                }}
-                                                                className="w-5 h-5 flex items-center justify-center rounded-lg bg-amber-100 text-amber-600 hover:bg-amber-200 transition-all shadow-sm active:scale-90 border border-amber-200"
-                                                                title="Cycle versions for this line"
-                                                            >
-                                                                <span className="text-[10px] animate-pulse">🔄</span>
-                                                            </button>
-                                                        )}
-                                                    </div>
                                                     <div className="flex-1 whitespace-pre-wrap break-words">
                                                         {line.segments.length > 0 ? line.segments.map(seg => (
                                                             <MemoizedSegment
                                                                 key={seg.key}
                                                                 seg={seg}
+                                                                lIdx={lIdx}
                                                                 hoveredKey={hoveredKey}
                                                                 onHover={setHoveredKey}
                                                                 copiedKey={segmentCopyFeedback}
                                                                 onClick={(s) => {
                                                                     navigator.clipboard.writeText(s.text);
                                                                     setSegmentCopyFeedback(s.key);
+                                                                    setTimeout(() => setSegmentCopyFeedback(null), 1000);
+                                                                }}
+                                                                onCycle={(key, option) => {
+                                                                    setSelections(prev => ({ ...prev, [key]: option }));
+                                                                    navigator.clipboard.writeText(option);
+                                                                    setSegmentCopyFeedback(key);
                                                                     setTimeout(() => setSegmentCopyFeedback(null), 1000);
                                                                 }}
                                                             />

@@ -75,6 +75,9 @@ export interface AppState {
     excelHeaderColor: string;
     setExcelHeaderColor: (color: string) => void;
 
+    runShortcut: string;
+    setRunShortcut: (shortcut: string) => void;
+
     connections: DbConfig[];
     setConnections: (conns: DbConfig[]) => void;
 }
@@ -138,6 +141,9 @@ export const useAppStore = create<AppState>((set) => ({
 
     excelHeaderColor: '#4F46E5',
     setExcelHeaderColor: (val) => set({ excelHeaderColor: val }),
+
+    runShortcut: 'F5',
+    setRunShortcut: (val) => set({ runShortcut: val }),
 
     connections: [],
     setConnections: (connections) => set({ connections }),

@@ -120,7 +120,8 @@ const LabTable: React.FC<LabTableProps> = React.memo(({
 });
 
 export const LabTab: React.FC = () => {
-    const { connections, excelHeaderColor } = useAppStore();
+    const { connections, excelHeaderColor, runShortcut } = useAppStore();
+    const [showExecPicker, setShowExecPicker] = useState(false);
     const [stmt1, setStmt1] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
     const [stmt2, setStmt2] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
     const [searchTerm, setSearchTerm] = useState('');
@@ -133,8 +134,55 @@ export const LabTab: React.FC = () => {
     const scrollRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
     const isSyncing = useRef(false);
 
+    // Latest state ref to avoid stale closures in shortcut handler
+    const stateRef = useRef({ stmt1, stmt2, connections });
     useEffect(() => {
-        const handleClick = () => setMenuPos(null);
+        stateRef.current = { stmt1, stmt2, connections };
+    }, [stmt1, stmt2, connections]);
+
+    // Unified shortcut handler
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            let combo = '';
+            if (e.ctrlKey) combo += 'CTRL+';
+            if (e.shiftKey) combo += 'SHIFT+';
+            if (e.altKey) combo += 'ALT+';
+            if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+                combo += e.key.toUpperCase();
+            }
+
+            if (combo === runShortcut.toUpperCase()) {
+                e.preventDefault();
+
+                // Real-time check of active element
+                const activeEl = document.activeElement;
+                if (activeEl?.id === 'sql-lab-1') {
+                    // Use latest state from ref to check if we can run
+                    if (stateRef.current.stmt1.sql.trim()) {
+                        runQuery(1);
+                        return;
+                    }
+                }
+                if (activeEl?.id === 'sql-lab-2') {
+                    if (stateRef.current.stmt2.sql.trim()) {
+                        runQuery(2);
+                        return;
+                    }
+                }
+
+                // If no focus, show picker
+                setShowExecPicker(true);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [runShortcut, connections]); // Minimal deps to avoid re-registration
+
+    useEffect(() => {
+        const handleClick = () => {
+            setMenuPos(null);
+        };
         window.addEventListener('click', handleClick);
         return () => window.removeEventListener('click', handleClick);
     }, []);
@@ -369,6 +417,7 @@ export const LabTab: React.FC = () => {
                                 </button>
                             </div>
                             <textarea
+                                id={`sql-lab-${num}`}
                                 value={stmt.sql}
                                 onChange={e => setStmt(prev => ({ ...prev, sql: e.target.value }))}
                                 placeholder={`Paste SQL for Statement ${num === 1 ? 'A' : 'B'}...`}
@@ -434,6 +483,53 @@ export const LabTab: React.FC = () => {
                             <button onClick={() => handleGenerateInsert(menuPos.idx!, menuPos.rowIndex!)} className="w-full px-4 py-2.5 text-left text-sm font-bold text-gray-700 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-3"><span>📝</span> Generate INSERT</button>
                         </>
                     )}
+                </div>
+            )}
+
+            {/* Execution Picker Modal */}
+            {showExecPicker && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowExecPicker(false)}>
+                    <div className="bg-white rounded-[2.5rem] p-10 shadow-2xl border border-gray-100 flex flex-col items-center gap-8 max-w-xl w-full mx-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                        <div className="text-center">
+                            <h3 className="text-2xl font-black text-gray-800 uppercase tracking-tight mb-2">Select Target to Execute</h3>
+                            <p className="text-gray-400 text-sm font-bold uppercase tracking-widest italic font-mono">No active focus detected</p>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-6 w-full">
+                            <button
+                                onClick={() => {
+                                    setShowExecPicker(false);
+                                    document.getElementById('sql-lab-1')?.focus();
+                                    runQuery(1);
+                                }}
+                                className="group relative flex flex-col items-center gap-4 p-8 rounded-3xl bg-orange-50 border-2 border-orange-100 hover:border-orange-500 hover:bg-orange-100 transition-all shadow-lg active:scale-95"
+                            >
+                                <span className="text-4xl">🅰️</span>
+                                <span className="text-base font-black text-orange-600 uppercase">Statement A</span>
+                                <span className="text-[10px] text-orange-400 font-bold uppercase tracking-widest group-hover:text-orange-600 transition-colors">Press to Run</span>
+                            </button>
+
+                            <button
+                                onClick={() => {
+                                    setShowExecPicker(false);
+                                    document.getElementById('sql-lab-2')?.focus();
+                                    runQuery(2);
+                                }}
+                                className="group relative flex flex-col items-center gap-4 p-8 rounded-3xl bg-indigo-50 border-2 border-indigo-100 hover:border-indigo-500 hover:bg-indigo-100 transition-all shadow-lg active:scale-95"
+                            >
+                                <span className="text-4xl">🅱️</span>
+                                <span className="text-base font-black text-indigo-600 uppercase">Statement B</span>
+                                <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest group-hover:text-indigo-600 transition-colors">Press to Run</span>
+                            </button>
+                        </div>
+
+                        <button
+                            onClick={() => setShowExecPicker(false)}
+                            className="text-xs font-black text-gray-400 hover:text-gray-800 transition-all uppercase tracking-widest pt-2"
+                        >
+                            Cancel (Esc)
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { extractColumnsFromCreateTable, generateSelectStatement } from '../utils/schemaComparator';
 
@@ -16,15 +16,34 @@ interface ComparisonResult {
 export const SchemaTab: React.FC = () => {
     const {
         compareTables, addCompareTable, updateCompareTable, removeCompareTable,
-        priorityColumns, setPriorityColumns
+        priorityColumns, setPriorityColumns, runShortcut
     } = useAppStore();
 
     const [result, setResult] = useState<ComparisonResult | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    // Fold/Expand sections
     const [showCommon, setShowCommon] = useState(false);
     const [showDetails, setShowDetails] = useState(false);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            let combo = '';
+            if (e.ctrlKey) combo += 'CTRL+';
+            if (e.shiftKey) combo += 'SHIFT+';
+            if (e.altKey) combo += 'ALT+';
+            if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+                combo += e.key.toUpperCase();
+            }
+
+            if (combo === runShortcut.toUpperCase()) {
+                e.preventDefault();
+                handleCompare();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [runShortcut, compareTables, priorityColumns]);
 
     const handleCompare = () => {
         setError(null);
