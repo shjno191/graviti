@@ -24,29 +24,38 @@ interface TranslatedLine {
     segments: TranslatedSegment[];
 }
 
-const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick }: {
+const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, copiedKey }: {
     seg: TranslatedSegment,
     hoveredKey: string | null,
     onHover: (key: string | null) => void,
-    onClick: (seg: TranslatedSegment) => void
+    onClick: (seg: TranslatedSegment) => void,
+    copiedKey: string | null
 }) => {
     if (seg.type === 'text') return <>{seg.text}</>;
+
+    const isCopied = copiedKey === seg.key;
 
     return (
         <span
             key={seg.key}
-            className={`inline-flex items-center group/opt relative cursor-pointer mx-1 px-1 rounded transition-all duration-300
-                ${seg.isMultiple ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300 hover:bg-amber-200' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}
+            className={`inline-flex items-center group/opt relative cursor-pointer mx-0.5 px-1.5 py-0.5 rounded transition-all duration-300 font-bold
+                ${seg.isMultiple ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300 hover:bg-amber-200' : 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-100'}
                 ${hoveredKey === seg.key ? 'bg-indigo-600 !text-white scale-105 shadow-md shadow-indigo-200 z-10' : ''}
+                ${isCopied ? '!bg-green-600 !text-white !ring-green-400 scale-105 z-10' : ''}
             `}
             onMouseEnter={() => onHover(seg.key)}
             onMouseLeave={() => onHover(null)}
             onClick={() => onClick(seg)}
         >
             {seg.text}
-            {seg.isMultiple && (
-                <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[8px] px-1 rounded opacity-0 group-hover/opt:opacity-100 transition-opacity whitespace-nowrap z-20">
-                    Click to switch ({seg.options.length} options)
+            {isCopied && (
+                <span className="absolute -top-5 left-1/2 -translate-x-1/2 bg-green-600 text-white text-[8px] px-1.5 py-0.5 rounded shadow-sm animate-bounce whitespace-nowrap z-30 font-black">
+                    COPIED!
+                </span>
+            )}
+            {!isCopied && (
+                <span className="absolute -top-5 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[8px] px-2 py-0.5 rounded opacity-0 group-hover/opt:opacity-100 transition-opacity whitespace-nowrap z-20 font-bold shadow-lg pointer-events-none">
+                    {seg.isMultiple ? '📦 Click to COPY (Cycle with 🔄)' : '📋 Click to COPY'}
                 </span>
             )}
         </span>
@@ -122,6 +131,7 @@ export const TranslateTab: React.FC = () => {
     const [translatedLines, setTranslatedLines] = useState<TranslatedLine[]>([]);
     const [hoveredKey, setHoveredKey] = useState<string | null>(null);
     const [lineSpacing, setLineSpacing] = useState(1.6);
+    const [segmentCopyFeedback, setSegmentCopyFeedback] = useState<string | null>(null);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -693,29 +703,56 @@ export const TranslateTab: React.FC = () => {
                                     style={{ lineHeight: lineSpacing }}
                                 >
                                     {translatedLines.length > 0 ? (
-                                        translatedLines.map((line, lIdx) => (
-                                            <div
-                                                key={lIdx}
-                                                className={`transition-colors duration-200 ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/5' : ''}`}
-                                                style={{ minHeight: `${lineSpacing}em` }}
-                                            >
-                                                {line.segments.length > 0 ? line.segments.map(seg => (
-                                                    <MemoizedSegment
-                                                        key={seg.key}
-                                                        seg={seg}
-                                                        hoveredKey={hoveredKey}
-                                                        onHover={setHoveredKey}
-                                                        onClick={(s) => {
-                                                            if (s.isMultiple) {
-                                                                const current = selections[s.key] || s.options[0];
-                                                                const nextIdx = (s.options.indexOf(current) + 1) % s.options.length;
-                                                                setSelections(prev => ({ ...prev, [s.key]: s.options[nextIdx] }));
-                                                            }
-                                                        }}
-                                                    />
-                                                )) : '\u200B'}
-                                            </div>
-                                        ))
+                                        translatedLines.map((line, lIdx) => {
+                                            const hasOptions = line.segments.some(s => s.isMultiple);
+                                            return (
+                                                <div
+                                                    key={lIdx}
+                                                    className={`flex items-start transition-colors duration-200 ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/5' : ''}`}
+                                                    style={{ minHeight: `${lineSpacing}em` }}
+                                                >
+                                                    <div className="w-8 shrink-0 flex justify-center pt-1 mt-[-2px]">
+                                                        {hasOptions && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    setSelections(prev => {
+                                                                        const next = { ...prev };
+                                                                        line.segments.forEach(s => {
+                                                                            if (s.isMultiple) {
+                                                                                const current = prev[s.key] || s.options[0];
+                                                                                const idx = s.options.indexOf(current);
+                                                                                next[s.key] = s.options[(idx + 1) % s.options.length];
+                                                                            }
+                                                                        });
+                                                                        return next;
+                                                                    });
+                                                                }}
+                                                                className="w-5 h-5 flex items-center justify-center rounded-lg bg-amber-100 text-amber-600 hover:bg-amber-200 transition-all shadow-sm active:scale-90 border border-amber-200"
+                                                                title="Cycle versions for this line"
+                                                            >
+                                                                <span className="text-[10px] animate-pulse">🔄</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 whitespace-pre-wrap break-words">
+                                                        {line.segments.length > 0 ? line.segments.map(seg => (
+                                                            <MemoizedSegment
+                                                                key={seg.key}
+                                                                seg={seg}
+                                                                hoveredKey={hoveredKey}
+                                                                onHover={setHoveredKey}
+                                                                copiedKey={segmentCopyFeedback}
+                                                                onClick={(s) => {
+                                                                    navigator.clipboard.writeText(s.text);
+                                                                    setSegmentCopyFeedback(s.key);
+                                                                    setTimeout(() => setSegmentCopyFeedback(null), 1000);
+                                                                }}
+                                                            />
+                                                        )) : '\u200B'}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
                                     ) : (
                                         <div className="flex flex-col items-center justify-center h-full opacity-20 select-none">
                                             <span className="text-4xl mb-4">✨</span>
