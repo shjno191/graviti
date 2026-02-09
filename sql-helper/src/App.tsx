@@ -4,6 +4,7 @@ import { ParamsTab } from './components/ParamsTab';
 import { SchemaTab } from './components/SchemaTab';
 import { GenerateTab } from './components/GenerateTab';
 import { SettingsTab } from './components/SettingsTab';
+import { TextCompareTab } from './components/TextCompareTab';
 import { clsx } from 'clsx';
 import { invoke } from '@tauri-apps/api/tauri';
 
@@ -37,7 +38,7 @@ function App() {
             </header>
 
             <div className="flex justify-center border-b border-gray-200 bg-white sticky top-0 z-[100] shadow-sm">
-                {(['params', 'lab', 'translate', 'compare', 'generate', 'settings'] as const).map((tab) => (
+                {(['params', 'lab', 'translate', 'compare', 'text-compare', 'generate', 'settings'] as const).map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -52,6 +53,7 @@ function App() {
                         {tab === 'lab' && <><span>📊</span> Compare Lab</>}
                         {tab === 'translate' && <><span>🇯🇵</span> Translate</>}
                         {tab === 'compare' && <><span>🔍</span> Schema Comparator</>}
+                        {tab === 'text-compare' && <><span>📝</span> Text Compare</>}
                         {tab === 'generate' && <><span>⚡</span> Generate SELECT</>}
                         {tab === 'settings' && <><span>⚙️</span> Settings</>}
                     </button>
@@ -70,6 +72,9 @@ function App() {
                 </div>
                 <div className={clsx(activeTab !== 'compare' && 'hidden')}>
                     <SchemaTab />
+                </div>
+                <div className={clsx(activeTab !== 'text-compare' && 'hidden')}>
+                    <TextCompareTab />
                 </div>
                 <div className={clsx(activeTab !== 'generate' && 'hidden')}>
                     <GenerateTab />
