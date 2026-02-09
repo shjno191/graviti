@@ -40,10 +40,10 @@ const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, onCycle
     return (
         <span
             key={seg.key}
-            className={`inline-flex items-center group/opt relative cursor-pointer mx-0.5 px-1.5 py-0.5 rounded transition-all duration-300 font-bold
-                ${seg.isMultiple ? 'bg-amber-100 text-amber-900 ring-2 ring-amber-300/50 hover:ring-amber-400' : 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-100'}
-                ${hoveredKey === seg.key ? 'bg-indigo-600 !text-white scale-105 shadow-md shadow-indigo-200 z-20' : ''}
-                ${isCopied ? '!bg-green-600 !text-white !ring-green-400 scale-105 z-20' : ''}
+            className={`inline-flex items-center group/opt relative cursor-pointer mx-0.5 transition-all duration-300 font-bold
+                ${seg.isMultiple ? 'text-amber-600 border-b-2 border-amber-400/50 hover:border-amber-400' : 'text-indigo-600 border-b border-indigo-200 hover:border-indigo-400'}
+                ${hoveredKey === seg.key ? '!text-indigo-900 !border-indigo-600 !border-b-2 scale-[1.02]' : ''}
+                ${isCopied ? '!text-green-600 !border-green-600 !border-b-2' : ''}
             `}
             onMouseEnter={() => onHover(seg.key)}
             onMouseLeave={() => onHover(null)}
@@ -52,37 +52,43 @@ const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, onCycle
             <span className="relative z-10">{seg.text}</span>
 
             {seg.isMultiple && (
-                <span className="ml-1 text-[8px] opacity-60 bg-white/50 px-1 rounded-full border border-amber-400/30 select-none">
+                <span className="ml-1 text-[8px] opacity-60 bg-indigo-50 px-1 rounded-full border border-indigo-200 select-none">
                     {seg.options.length}
                 </span>
             )}
 
             {/* Hover Tooltip / Selection Menu */}
-            {seg.isMultiple && (
-                <div className={`absolute left-1/2 -translate-x-1/2 opacity-0 group-hover/opt:opacity-100 pointer-events-none group-hover/opt:pointer-events-auto transition-all duration-300 z-[9999]
-                    ${lIdx === 0 ? 'top-full pt-2' : 'bottom-[100%] pb-2'}
-                `}>
-                    <div className="flex bg-white rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.4),0_0_1px_rgba(0,0,0,0.1)] border border-indigo-200 p-2 gap-2 whitespace-nowrap animate-in zoom-in-95 duration-200">
-                        {seg.options.map((opt, i) => {
-                            const isActive = seg.text === opt;
-                            return (
-                                <button
-                                    key={i}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onCycle(seg.key, opt);
-                                    }}
-                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-black transition-all hover:scale-110 active:scale-95
-                                        ${isActive
-                                            ? 'bg-indigo-600 text-white shadow-lg ring-2 ring-indigo-300'
-                                            : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100'}
-                                    `}
-                                >
-                                    {isActive && <span className="mr-1">✓</span>}
-                                    {opt}
-                                </button>
-                            );
-                        })}
+            {seg.isMultiple && hoveredKey === seg.key && (
+                <div
+                    className="absolute left-full top-0 z-[9999] flex flex-col bg-white rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.4),0_0_1px_rgba(0,0,0,0.1)] border border-indigo-200 py-1.5 min-w-[140px] animate-in slide-in-from-left-2 duration-200 pointer-events-auto cursor-default translate-x-2"
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseEnter={(e) => e.stopPropagation()}
+                >
+                    {/* Transparent bridge to maintain hover state while moving mouse to tooltip */}
+                    <div className="absolute -left-2 top-0 bottom-0 w-2" />
+
+                    {/* Speech bubble arrow */}
+                    <div className="absolute top-3 -left-1.5 w-3 h-3 bg-white border-l border-b border-indigo-200 rotate-45"></div>
+
+                    <div className="max-h-[220px] overflow-y-auto custom-scrollbar flex flex-col pt-0.5">
+                        {seg.options.map((opt, oIdx) => (
+                            <button
+                                key={oIdx}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onCycle(seg.key, opt);
+                                }}
+                                className={`px-3 py-2 text-[11px] font-bold transition-all text-left flex items-center gap-2
+                                    ${seg.text === opt
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'text-gray-700 hover:bg-indigo-50 hover:text-indigo-600'}
+                                `}
+                            >
+                                <span className="opacity-40 text-[9px] w-3">{oIdx + 1}</span>
+                                <span className="flex-1 truncate">{opt}</span>
+                                {seg.text === opt && <span className="text-[10px]">✓</span>}
+                            </button>
+                        ))}
                     </div>
                 </div>
             )}
@@ -181,6 +187,23 @@ export const TranslateTab: React.FC = () => {
     const [segmentCopyFeedback, setSegmentCopyFeedback] = useState<string | null>(null);
     const [resultCopyFeedback, setResultCopyFeedback] = useState(false);
     const [showFormatSettings, setShowFormatSettings] = useState(false);
+    const settingsPanelRef = useRef<HTMLDivElement>(null);
+
+    // Close settings when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (settingsPanelRef.current && !settingsPanelRef.current.contains(event.target as Node)) {
+                setShowFormatSettings(false);
+            }
+        };
+
+        if (showFormatSettings) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showFormatSettings]);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -188,15 +211,17 @@ export const TranslateTab: React.FC = () => {
 
     const handleInputScroll = () => {
         if (inputRef.current) {
-            if (outputRef.current) outputRef.current.scrollTop = inputRef.current.scrollTop;
-            if (highlighterRef.current) highlighterRef.current.scrollTop = inputRef.current.scrollTop;
+            const scrollTop = inputRef.current.scrollTop;
+            if (outputRef.current) outputRef.current.scrollTop = scrollTop;
+            if (highlighterRef.current) highlighterRef.current.scrollTop = scrollTop;
         }
     };
 
     const handleOutputScroll = () => {
-        if (outputRef.current && inputRef.current) {
-            inputRef.current.scrollTop = outputRef.current.scrollTop;
-            if (highlighterRef.current) highlighterRef.current.scrollTop = outputRef.current.scrollTop;
+        if (outputRef.current) {
+            const scrollTop = outputRef.current.scrollTop;
+            if (inputRef.current) inputRef.current.scrollTop = scrollTop;
+            if (highlighterRef.current) highlighterRef.current.scrollTop = scrollTop;
         }
     };
 
@@ -210,28 +235,40 @@ export const TranslateTab: React.FC = () => {
             const lines = processedText.split('\n');
             const extractedLines: string[] = [];
 
-            // Look for .append("...") or .append('...') in each line
-            const appendRegex = /\.append\s*\(\s*(["'])(.*?)\1\s*\)/g;
-
-            let hasAppends = false;
             lines.forEach(line => {
-                let match;
-                while ((match = appendRegex.exec(line)) !== null) {
-                    extractedLines.push(match[2]);
-                    hasAppends = true;
+                let s = line.trim();
+                if (s.toLowerCase().includes('.append')) {
+                    const first = s.indexOf('(');
+                    const last = s.lastIndexOf(')');
+
+                    if (first !== -1) {
+                        let content = (last > first)
+                            ? s.substring(first + 1, last)
+                            : s.substring(first + 1);
+
+                        // Clean up Java artifacts: " and + and ;
+                        content = content.replace(/\"/g, '').replace(/\+/g, '').replace(/;/g, '').trim();
+
+                        if (content) {
+                            extractedLines.push(content);
+                        }
+                    }
+                } else if (s) {
+                    let cleaned = s.replace(/\"/g, '').replace(/\+/g, '').replace(/;/g, '').trim();
+                    if (cleaned) extractedLines.push(cleaned);
                 }
-                // If no append found but the line is not empty and we found appends elsewhere, 
-                // we might want to skip it or keep it. For now, if we are in "sql append mode",
-                // we only keep what's inside appends if we found any.
             });
 
-            if (hasAppends) {
+            if (extractedLines.length > 0) {
                 processedText = extractedLines.join('\n');
             }
         }
 
-        // Logic 1: Remove space and tab
+        // Logic 1 & 3: Remove space, tab, and commas
         if (formatRemoveSpaces) {
+            // Remove commas first
+            processedText = processedText.replace(/,/g, '');
+
             const lines = processedText.split('\n');
             const formattedLines = lines.map(line => {
                 // Replace tabs and multiple spaces with a single space, then trim
@@ -241,6 +278,47 @@ export const TranslateTab: React.FC = () => {
         }
 
         setBulkInput(processedText);
+    };
+
+    const handleCopyAllResult = () => {
+        const text = translatedLines.map(line =>
+            line.segments.map(seg => seg.text).join('')
+        ).join('\n');
+
+        if (!text.trim()) return;
+
+        navigator.clipboard.writeText(text);
+        setSegmentCopyFeedback('all');
+        setTimeout(() => setSegmentCopyFeedback(null), 1500);
+    };
+
+    const handleSmartFormat = () => {
+        if (!bulkInput.trim()) return;
+
+        // Smart format logic: Detect common patterns and clean them up
+        let text = bulkInput;
+
+        // 1. Remove common Java/C# noise
+        // Match StringBuilder initialization
+        text = text.replace(/StringBuilder\s+\w+\s*=\s*new\s+StringBuilder\(\s*\)\s*;/gi, '');
+
+        // Remove .append prefix and any following quotes
+        // Handles "sql.append(", "sb.append(", "query.append ( " etc.
+        text = text.replace(/[\w$]+\.append\s*\(\s*\"?/gi, '');
+
+        // Clean up common line endings like ");" or ")" or ");"
+        text = text.replace(/\"?\s*\)\s*;/g, '');
+
+        // Remove all quotes and addition symbols used for joining strings
+        text = text.replace(/\"/g, '');
+        text = text.replace(/\+/g, '');
+
+        // 2. Standard cleanup: replace tabs, multiple spaces, keep lines
+        const lines = text.split('\n').map(line => {
+            return line.replace(/,/g, ' ').replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
+        }).filter(line => line.length > 0);
+
+        setBulkInput(lines.join('\n'));
     };
 
     // Reset selections when input changes or target language changes
@@ -607,14 +685,24 @@ export const TranslateTab: React.FC = () => {
                             </div>
                             <div className="relative flex items-center gap-1">
                                 <button
-                                    onClick={handleFormatInput}
-                                    className="px-6 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 shrink-0"
-                                    title="Normalize whitespace and trim lines"
+                                    onClick={handleSmartFormat}
+                                    className="px-6 py-2 bg-amber-600 text-white text-xs font-black rounded-xl hover:bg-amber-700 transition-all shadow-lg active:scale-95 shrink-0"
+                                    title="Auto-detect and clean code/SQL artifacts"
                                 >
-                                    ✨ FORMAT CONTENT
+                                    🧠 SMART CONVERT
                                 </button>
                                 <button
-                                    onClick={() => setShowFormatSettings(!showFormatSettings)}
+                                    onClick={handleFormatInput}
+                                    className="px-6 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 shrink-0"
+                                    title="Standard normalization"
+                                >
+                                    ✨ FORMAT
+                                </button>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowFormatSettings(!showFormatSettings);
+                                    }}
                                     className={`p-2 rounded-xl border transition-all ${showFormatSettings ? 'bg-indigo-100 border-indigo-300 text-indigo-600' : 'bg-white border-gray-200 text-gray-400 hover:bg-gray-50'}`}
                                     title="Format Settings"
                                 >
@@ -622,7 +710,10 @@ export const TranslateTab: React.FC = () => {
                                 </button>
 
                                 {showFormatSettings && (
-                                    <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 z-[1000] animate-in slide-in-from-top-2 duration-200">
+                                    <div
+                                        ref={settingsPanelRef}
+                                        className="absolute top-full right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 z-[1000] animate-in slide-in-from-top-2 duration-200"
+                                    >
                                         <div className="flex flex-col gap-3">
                                             <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Format Logic</div>
 
@@ -636,7 +727,7 @@ export const TranslateTab: React.FC = () => {
                                                     />
                                                     <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[10px]">✓</span>
                                                 </div>
-                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Xóa Space & Tab dư thừa</span>
+                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Xóa Space, Tab & Dấu phẩy (,)</span>
                                             </label>
 
                                             <label className="flex items-center gap-3 cursor-pointer group">
@@ -649,7 +740,7 @@ export const TranslateTab: React.FC = () => {
                                                     />
                                                     <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[10px]">✓</span>
                                                 </div>
-                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Trích xuất nội dung .append()</span>
+                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Xóa .append()</span>
                                             </label>
 
                                             <div className="mt-2 pt-2 border-t border-gray-100">
@@ -771,8 +862,8 @@ export const TranslateTab: React.FC = () => {
                 ) : (
                     <div className="flex-1 flex flex-col overflow-hidden bg-white">
                         <div className="grid grid-cols-2 flex-1 overflow-hidden">
-                            <div className="flex flex-col border-r border-gray-200 min-h-0">
-                                <div className="bg-gray-50/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 flex justify-between items-center h-12 shrink-0">
+                            <div className="flex flex-col border-r border-gray-200 min-h-0 relative">
+                                <div className="bg-gray-50/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 flex justify-between items-center h-12 shrink-0 z-30">
                                     <span>INPUT SOURCE (Any language)</span>
                                     <button
                                         onClick={() => setBulkInput('')}
@@ -781,15 +872,14 @@ export const TranslateTab: React.FC = () => {
                                         CLEAR ALL
                                     </button>
                                 </div>
-                                <div className="flex-1 relative min-h-0 bg-white group/input overflow-hidden">
+                                <div className="flex-1 relative min-h-0 bg-white group/input">
                                     {/* Highlighter Overlay */}
                                     <div
                                         ref={highlighterRef}
-                                        className="absolute inset-x-0 inset-y-0 p-6 font-mono text-[13px] pointer-events-none text-transparent whitespace-pre-wrap break-words overflow-y-scroll"
+                                        className="absolute inset-0 p-6 font-mono text-sm pointer-events-none text-transparent whitespace-pre-wrap break-words overflow-hidden box-border z-10"
                                         style={{
-                                            lineHeight: lineSpacing,
-                                            scrollbarWidth: 'none',
-                                            msOverflowStyle: 'none'
+                                            lineHeight: `${lineSpacing}`,
+                                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
                                         }}
                                     >
                                         {translatedLines.map((line, lIdx) => (
@@ -801,7 +891,7 @@ export const TranslateTab: React.FC = () => {
                                                 {line.segments.length > 0 ? line.segments.map(seg => (
                                                     <span
                                                         key={seg.key}
-                                                        className={`transition-colors duration-300 py-0.5 rounded ${seg.type === 'phrase' ? (hoveredKey === seg.key ? 'bg-indigo-600/40 ring-1 ring-indigo-500' : 'bg-indigo-500/10') : ''}`}
+                                                        className={`transition-colors duration-300 inline ${seg.type === 'phrase' ? (hoveredKey === seg.key ? 'text-indigo-600 underline decoration-2 underline-offset-4' : 'text-indigo-600/40 underline decoration-1 underline-offset-4') : ''}`}
                                                     >
                                                         {seg.original}
                                                     </span>
@@ -812,8 +902,12 @@ export const TranslateTab: React.FC = () => {
                                     <textarea
                                         ref={inputRef}
                                         onScroll={handleInputScroll}
-                                        className="absolute inset-x-0 inset-y-0 w-full h-full p-6 font-mono text-[13px] outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors overflow-y-scroll z-10 border-none"
-                                        style={{ lineHeight: lineSpacing }}
+                                        className="absolute inset-0 w-full h-full p-6 font-mono text-sm outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors overflow-y-scroll z-20 border-none box-border text-gray-800 caret-gray-800"
+                                        style={{
+                                            lineHeight: `${lineSpacing}`,
+                                            whiteSpace: 'pre-wrap',
+                                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                                        }}
                                         placeholder="Paste code or text here..."
                                         value={bulkInput}
                                         onChange={(e) => setBulkInput(e.target.value)}
@@ -863,8 +957,11 @@ export const TranslateTab: React.FC = () => {
                                 <div
                                     ref={outputRef}
                                     onScroll={handleOutputScroll}
-                                    className="flex-1 px-12 py-8 font-mono text-[13px] outline-none overflow-y-scroll bg-indigo-50/10 text-indigo-900 shadow-inner whitespace-pre-wrap break-words"
-                                    style={{ lineHeight: lineSpacing }}
+                                    className="flex-1 p-6 font-mono text-sm outline-none overflow-y-scroll bg-indigo-50/10 text-indigo-900 shadow-inner whitespace-pre-wrap break-words box-border"
+                                    style={{
+                                        lineHeight: `${lineSpacing}`,
+                                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                                    }}
                                 >
                                     {translatedLines.length > 0 ? (
                                         translatedLines.map((line, lIdx) => {
@@ -874,7 +971,7 @@ export const TranslateTab: React.FC = () => {
                                                     className={`flex items-start transition-colors duration-200 relative group/line hover:!z-[100] ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/5' : ''}`}
                                                     style={{
                                                         minHeight: `${lineSpacing}em`,
-                                                        zIndex: translatedLines.length - lIdx // Ensure top toolbars overlap bottom lines
+                                                        zIndex: translatedLines.length - lIdx
                                                     }}
                                                 >
                                                     <div className="flex-1 whitespace-pre-wrap break-words">
@@ -887,15 +984,18 @@ export const TranslateTab: React.FC = () => {
                                                                 onHover={setHoveredKey}
                                                                 copiedKey={segmentCopyFeedback}
                                                                 onClick={(s) => {
+                                                                    if (window.getSelection()?.toString()) return;
                                                                     navigator.clipboard.writeText(s.text);
                                                                     setSegmentCopyFeedback(s.key);
                                                                     setTimeout(() => setSegmentCopyFeedback(null), 1000);
                                                                 }}
                                                                 onCycle={(key, option) => {
                                                                     setSelections(prev => ({ ...prev, [key]: option }));
-                                                                    navigator.clipboard.writeText(option);
-                                                                    setSegmentCopyFeedback(key);
-                                                                    setTimeout(() => setSegmentCopyFeedback(null), 1000);
+                                                                    if (!window.getSelection()?.toString()) {
+                                                                        navigator.clipboard.writeText(option);
+                                                                        setSegmentCopyFeedback(key);
+                                                                        setTimeout(() => setSegmentCopyFeedback(null), 1000);
+                                                                    }
                                                                 }}
                                                             />
                                                         )) : '\u200B'}
