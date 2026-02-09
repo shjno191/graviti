@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { compareOrdered, compareUnordered, DiffResult } from '../utils/diffLogic';
+import { compareOrdered, compareUnordered } from '../utils/diffLogic';
 
 export function TextCompareTab() {
     const [expectedText, setExpectedText] = useState('');
@@ -133,7 +133,7 @@ export function TextCompareTab() {
                                             {line.currentIndex !== undefined ? line.currentIndex + 1 : ''}
                                         </span>
                                         <span className={clsx("flex-1", line.type === 'added' && 'bg-green-100')}>
-                                            {line.type !== 'removed' ? (line.text || ' ') : ''}
+                                            {line.type !== 'removed' ? ((line.currentText ?? line.text) || ' ') : ''}
                                         </span>
                                     </div>
                                 </div>

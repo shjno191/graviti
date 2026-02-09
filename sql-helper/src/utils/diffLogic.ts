@@ -3,6 +3,7 @@ export type DiffType = 'same' | 'added' | 'removed' | 'modified';
 export interface DiffResult {
     lines: {
         text: string;
+        currentText?: string; // Text from Current side (if different or just for display)
         type: DiffType;
         originalIndex?: number; // Index in Expected
         currentIndex?: number; // Index in Current
@@ -49,7 +50,13 @@ export function compareOrdered(expectedParts: string[], currentParts: string[], 
 
     while (i > 0 || j > 0) {
         if (i > 0 && j > 0 && getKey(expectedParts[i - 1]) === getKey(currentParts[j - 1])) {
-            lines.unshift({ text: expectedParts[i - 1], type: 'same', originalIndex: i - 1, currentIndex: j - 1 });
+            lines.unshift({ 
+                text: expectedParts[i - 1], 
+                currentText: currentParts[j - 1],
+                type: 'same', 
+                originalIndex: i - 1, 
+                currentIndex: j - 1 
+            });
             i--;
             j--;
         } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
@@ -119,7 +126,13 @@ export function compareUnordered(expectedParts: string[], currentParts: string[]
             const indices = currentIndices.get(key)!;
             const currentIndex = indices.shift(); // take first
             
-            lines.push({ text: line, type: 'same', originalIndex: index, currentIndex: currentIndex });
+            lines.push({ 
+                text: line, 
+                currentText: currentParts[currentIndex!], // Use original text from Current
+                type: 'same', 
+                originalIndex: index, 
+                currentIndex: currentIndex 
+            });
             currentCounts.set(key, count - 1);
         } else {
             // Missing in Current
@@ -187,9 +200,9 @@ export function compareUnordered(expectedParts: string[], currentParts: string[]
     // `currentIndices` now has only the indices that were NOT used (because we shifted them out).
     // Let's collect them.
     const allExtras: {text: string, index: number}[] = [];
-    currentIndices.forEach((indices, text) => {
+    currentIndices.forEach((indices, _key) => {
         indices.forEach(idx => {
-            allExtras.push({ text, index: idx });
+            allExtras.push({ text: currentParts[idx], index: idx });
         });
     });
 
