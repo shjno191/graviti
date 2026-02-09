@@ -215,10 +215,8 @@ export const TranslateTab: React.FC = () => {
             let hasAppends = false;
             lines.forEach(line => {
                 let match;
-                let foundInLine = false;
                 while ((match = appendRegex.exec(line)) !== null) {
                     extractedLines.push(match[2]);
-                    foundInLine = true;
                     hasAppends = true;
                 }
                 // If no append found but the line is not empty and we found appends elsewhere, 
