@@ -157,7 +157,11 @@ export const TranslateTab: React.FC = () => {
         translateFilePath,
         setTranslateFilePath,
         setActiveTab,
-        excelHeaderColor
+        excelHeaderColor,
+        formatRemoveSpaces,
+        setFormatRemoveSpaces,
+        formatSqlAppend,
+        setFormatSqlAppend
     } = useAppStore();
 
     const [data, setData] = useState<TranslateEntry[]>([]);
@@ -175,6 +179,7 @@ export const TranslateTab: React.FC = () => {
     const [hoveredKey, setHoveredKey] = useState<string | null>(null);
     const [lineSpacing, setLineSpacing] = useState(1.6);
     const [segmentCopyFeedback, setSegmentCopyFeedback] = useState<string | null>(null);
+    const [showFormatSettings, setShowFormatSettings] = useState(false);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -196,12 +201,47 @@ export const TranslateTab: React.FC = () => {
 
     const handleFormatInput = () => {
         if (!bulkInput.trim()) return;
-        const lines = bulkInput.split('\n');
-        const formattedLines = lines.map(line => {
-            // Replace tabs and multiple spaces with a single space, then trim
-            return line.replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
-        });
-        setBulkInput(formattedLines.join('\n'));
+
+        let processedText = bulkInput;
+
+        // Logic 2: sql.append transformation
+        if (formatSqlAppend) {
+            const lines = processedText.split('\n');
+            const extractedLines: string[] = [];
+
+            // Look for .append("...") or .append('...') in each line
+            const appendRegex = /\.append\s*\(\s*(["'])(.*?)\1\s*\)/g;
+
+            let hasAppends = false;
+            lines.forEach(line => {
+                let match;
+                let foundInLine = false;
+                while ((match = appendRegex.exec(line)) !== null) {
+                    extractedLines.push(match[2]);
+                    foundInLine = true;
+                    hasAppends = true;
+                }
+                // If no append found but the line is not empty and we found appends elsewhere, 
+                // we might want to skip it or keep it. For now, if we are in "sql append mode",
+                // we only keep what's inside appends if we found any.
+            });
+
+            if (hasAppends) {
+                processedText = extractedLines.join('\n');
+            }
+        }
+
+        // Logic 1: Remove space and tab
+        if (formatRemoveSpaces) {
+            const lines = processedText.split('\n');
+            const formattedLines = lines.map(line => {
+                // Replace tabs and multiple spaces with a single space, then trim
+                return line.replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
+            }).filter(line => line.length > 0);
+            processedText = formattedLines.join('\n');
+        }
+
+        setBulkInput(processedText);
     };
 
     // Reset selections when input changes or target language changes
@@ -553,13 +593,62 @@ export const TranslateTab: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
-                            <button
-                                onClick={handleFormatInput}
-                                className="px-6 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 shrink-0"
-                                title="Normalize whitespace and trim lines"
-                            >
-                                ✨ FORMAT CONTENT
-                            </button>
+                            <div className="relative flex items-center gap-1">
+                                <button
+                                    onClick={handleFormatInput}
+                                    className="px-6 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 shrink-0"
+                                    title="Normalize whitespace and trim lines"
+                                >
+                                    ✨ FORMAT CONTENT
+                                </button>
+                                <button
+                                    onClick={() => setShowFormatSettings(!showFormatSettings)}
+                                    className={`p-2 rounded-xl border transition-all ${showFormatSettings ? 'bg-indigo-100 border-indigo-300 text-indigo-600' : 'bg-white border-gray-200 text-gray-400 hover:bg-gray-50'}`}
+                                    title="Format Settings"
+                                >
+                                    ⚙️
+                                </button>
+
+                                {showFormatSettings && (
+                                    <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 z-[1000] animate-in slide-in-from-top-2 duration-200">
+                                        <div className="flex flex-col gap-3">
+                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Format Logic</div>
+
+                                            <label className="flex items-center gap-3 cursor-pointer group">
+                                                <div className="relative flex items-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formatRemoveSpaces}
+                                                        onChange={(e) => setFormatRemoveSpaces(e.target.checked)}
+                                                        className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border border-gray-300 transition-all checked:border-indigo-600 checked:bg-indigo-600"
+                                                    />
+                                                    <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[10px]">✓</span>
+                                                </div>
+                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Xóa Space & Tab dư thừa</span>
+                                            </label>
+
+                                            <label className="flex items-center gap-3 cursor-pointer group">
+                                                <div className="relative flex items-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formatSqlAppend}
+                                                        onChange={(e) => setFormatSqlAppend(e.target.checked)}
+                                                        className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border border-gray-300 transition-all checked:border-indigo-600 checked:bg-indigo-600"
+                                                    />
+                                                    <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[10px]">✓</span>
+                                                </div>
+                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Trích xuất nội dung .append()</span>
+                                            </label>
+
+                                            <div className="mt-2 pt-2 border-t border-gray-100">
+                                                <p className="text-[9px] text-gray-400 italic">
+                                                    Tự động biến đổi mã nguồn Java/C# chứa sql.append thành câu lệnh SQL thô.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>

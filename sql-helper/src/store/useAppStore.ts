@@ -78,6 +78,11 @@ export interface AppState {
     runShortcut: string;
     setRunShortcut: (shortcut: string) => void;
 
+    formatRemoveSpaces: boolean;
+    setFormatRemoveSpaces: (val: boolean) => void;
+    formatSqlAppend: boolean;
+    setFormatSqlAppend: (val: boolean) => void;
+
     connections: DbConfig[];
     setConnections: (conns: DbConfig[]) => void;
 }
@@ -144,6 +149,11 @@ export const useAppStore = create<AppState>((set) => ({
 
     runShortcut: 'F5',
     setRunShortcut: (val) => set({ runShortcut: val }),
+
+    formatRemoveSpaces: true,
+    setFormatRemoveSpaces: (val) => set({ formatRemoveSpaces: val }),
+    formatSqlAppend: false,
+    setFormatSqlAppend: (val) => set({ formatSqlAppend: val }),
 
     connections: [],
     setConnections: (connections) => set({ connections }),
