@@ -77,9 +77,9 @@ fn parse_java_graph(source: String) -> Result<java_parser::CallGraph, String> {
 }
 
 #[tauri::command]
-fn generate_mermaid_graph(source: String) -> Result<String, String> {
+fn generate_mermaid_graph(source: String, method_name: Option<String>) -> Result<String, String> {
     let graph = JavaParser::parse(&source)?;
-    Ok(JavaParser::generate_mermaid(&graph, &source))
+    Ok(JavaParser::generate_mermaid(&graph, &source, method_name))
 }
 
 #[tauri::command]

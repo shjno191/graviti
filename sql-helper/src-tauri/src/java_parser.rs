@@ -8,6 +8,7 @@ pub struct MethodNode {
     // Start/End byte offsets for mapping back to source
     pub range: (usize, usize), 
     pub modifiers: Vec<String>,
+    pub return_type: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -90,10 +91,16 @@ impl JavaParser {
                         }
                     }
                     
+                    let return_type = match child.child_by_field_name("type") {
+                        Some(t) => source[t.byte_range().start..t.byte_range().end].trim().to_string(),
+                        None => "".to_string(), // Probably a constructor
+                    };
+                    
                     let method_node = MethodNode {
                         name: name.to_string(),
                         range: (child.byte_range().start, child.byte_range().end),
                         modifiers,
+                        return_type,
                     };
                     methods.insert(name.to_string(), method_node);
                     declarations.push((name.to_string(), child));
@@ -159,14 +166,26 @@ impl JavaParser {
         }
     }
 
-    pub fn generate_mermaid(graph: &CallGraph, source: &str) -> String {
+    pub fn generate_mermaid(graph: &CallGraph, source: &str, method_name: Option<String>) -> String {
         let mut output = String::from("flowchart TD\n");
         
-        let mut public_methods: Vec<String> = graph.nodes.iter()
-            .filter(|(_, node)| node.modifiers.contains(&"public".to_string()))
-            .map(|(name, _)| name.clone())
-            .collect();
-        public_methods.sort();
+        let mut target_methods: Vec<String> = Vec::new();
+
+        if let Some(name) = method_name {
+            if graph.nodes.contains_key(&name) {
+                target_methods.push(name);
+            }
+        } else {
+            // Default: Public AND Protected methods
+            target_methods = graph.nodes.iter()
+                .filter(|(_, node)| {
+                    node.modifiers.contains(&"public".to_string()) || 
+                    node.modifiers.contains(&"protected".to_string())
+                })
+                .map(|(name, _)| name.clone())
+                .collect();
+            target_methods.sort();
+        }
 
         // We need a fresh parser to traverse bodies for Control Flow logic
         let mut parser = Parser::new();
@@ -190,7 +209,7 @@ impl JavaParser {
             node_counter: 0,
         };
 
-        for method_name in public_methods {
+        for method_name in target_methods {
              if let Some(node_info) = graph.nodes.get(&method_name) {
                  // Find the node in the tree using the range
                  let start_byte = node_info.range.0;
@@ -543,7 +562,7 @@ mod tests {
         assert_eq!(calls[1], "homework1");
         assert_eq!(calls[2], "homework2");
         
-        let mermaid = JavaParser::generate_mermaid(&graph, source);
+        let mermaid = JavaParser::generate_mermaid(&graph, source, None);
         assert!(mermaid.contains("([\"study\"]):::public"));
         assert!(mermaid.contains("lesson1"));
         
@@ -563,7 +582,7 @@ mod tests {
         }
         "#;
         let graph = JavaParser::parse(source).expect("Parse failed");
-        let mermaid = JavaParser::generate_mermaid(&graph, source);
+        let mermaid = JavaParser::generate_mermaid(&graph, source, None);
         println!("{}", mermaid);
         
         assert!(mermaid.contains("([\"study\"]):::public"));
@@ -582,7 +601,7 @@ mod tests {
         }
         "#;
         let graph = JavaParser::parse(source).expect("Parse failed");
-        let mermaid = JavaParser::generate_mermaid(&graph, source);
+        let mermaid = JavaParser::generate_mermaid(&graph, source, None);
         println!("Sequential Flow:\n{}", mermaid);
 
         assert!(mermaid.contains("process"));
@@ -608,7 +627,7 @@ mod tests {
         }
         "#;
         let graph = JavaParser::parse(source).expect("Parse failed");
-        let mermaid = JavaParser::generate_mermaid(&graph, source);
+        let mermaid = JavaParser::generate_mermaid(&graph, source, None);
         println!("Decision Flow:\n{}", mermaid);
 
         assert!(mermaid.contains("x > 0"));
@@ -631,7 +650,7 @@ mod tests {
         }
         "#;
         let graph = JavaParser::parse(source).expect("Parse failed");
-        let mermaid = JavaParser::generate_mermaid(&graph, source);
+        let mermaid = JavaParser::generate_mermaid(&graph, source, None);
         println!("Condition Calls Flow:\n{}", mermaid);
 
         assert!(mermaid.contains("External: repo.isValid"));
@@ -652,10 +671,43 @@ mod tests {
         }
         "#;
         let graph = JavaParser::parse(source).expect("Parse failed");
-        let mermaid = JavaParser::generate_mermaid(&graph, source);
+        let mermaid = JavaParser::generate_mermaid(&graph, source, None);
         println!("Recursion Flow:\n{}", mermaid);
         
         assert!(mermaid.contains("return"));
         assert!(mermaid.contains("loop"));
+    }
+
+    #[test]
+    fn test_method_filtering() {
+        let source = r#"
+        class Filtering {
+            public void publicMethod() {
+                privateMethod();
+            }
+            protected void protectedMethod() {
+                // ...
+            }
+            private void privateMethod() {
+                // ...
+            }
+            void packagePrivateMethod() {
+                // ...
+            }
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+        
+        // 1. Default (None) -> Should contain public and protected ONLY
+        let mermaid_default = JavaParser::generate_mermaid(&graph, source, None);
+        assert!(mermaid_default.contains("([\"publicMethod\"])"));
+        assert!(mermaid_default.contains("([\"protectedMethod\"])"));
+        assert!(!mermaid_default.contains("([\"privateMethod\"])")); 
+        assert!(!mermaid_default.contains("([\"packagePrivateMethod\"])"));
+        
+        // 2. Specific Private Method -> Should generate graph for it
+        let mermaid_private = JavaParser::generate_mermaid(&graph, source, Some("privateMethod".to_string()));
+        assert!(mermaid_private.contains("([\"privateMethod\"])"));
+        assert!(!mermaid_private.contains("([\"publicMethod\"])"));
     }
 }
