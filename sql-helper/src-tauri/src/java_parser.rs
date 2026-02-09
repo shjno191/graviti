@@ -334,7 +334,7 @@ impl<'a> FlowGenerator<'a> {
     }
     
     fn dispatch_node(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
-         match node.kind() {
+         let node_id = match node.kind() {
              "expression_statement" | "local_variable_declaration" | "return_statement" => {
                  self.process_expression_with_label(node, prev_ids, label)
              },
@@ -344,15 +344,12 @@ impl<'a> FlowGenerator<'a> {
               _ => {
                   self.process_generic_recursive_with_label(node, prev_ids, label)
               }
-         }
+         };
+         node_id
     }
 
     fn process_expression_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
         let calls = self.find_calls_in_node(node);
-        
-        // Even if no calls, if it is a return statement, we might want to show it?
-        // User asked: "Detect return statements and early exits"
-        // If "return value;", it is a "return_statement".
         let is_return = node.kind() == "return_statement";
         
         if calls.is_empty() && !is_return {
@@ -362,13 +359,17 @@ impl<'a> FlowGenerator<'a> {
         let mut current_prevs = prev_ids;
         let mut pending_label = label;
          
-        for (name, is_external, raw_text) in calls {
+        for (name, is_external, raw_text, offset) in calls {
              let node_id = self.next_id();
              let text_label = if is_external { format!("External: {}", raw_text) } else { name.clone() };
              let style = if is_external { "external" } else { "internal" };
              
-             self.output.push_str(&format!("    {}[\"{}\"]:::{}\n", node_id, text_label, style));
+             let safe_label = text_label.replace('"', "'");
+             self.output.push_str(&format!("    {}[\"{}\"]:::{}\n", node_id, safe_label, style));
              
+             // Add click action
+             self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", node_id, offset));
+
              for prev in &current_prevs {
                  let arrow = match &pending_label {
                      Some(l) => format!("-->|{}|", l),
@@ -386,6 +387,10 @@ impl<'a> FlowGenerator<'a> {
              let return_text = &self.source[node.byte_range().start..node.byte_range().end].replace('"', "'");
              self.output.push_str(&format!("    {}[\"{}\"]\n", node_id, return_text));
              
+             // Add click action
+             let offset = node.byte_range().start;
+             self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", node_id, offset));
+
              for prev in &current_prevs {
                  let arrow = match &pending_label {
                      Some(l) => format!("-->|{}|", l),
@@ -393,9 +398,6 @@ impl<'a> FlowGenerator<'a> {
                  };
                  self.output.push_str(&format!("    {} {} {}\n", prev, arrow, node_id));
              }
-             // Return statement usually ends flow.
-             // We return empty vec? Or the return node?
-             // If we return the return node, subsequent statements (dead code) will link to it.
              current_prevs = vec![node_id]; 
          }
          
@@ -404,23 +406,20 @@ impl<'a> FlowGenerator<'a> {
 
     fn process_if_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
         let condition_node = node.child_by_field_name("condition").unwrap();
-        
-        // 1. Extract calls in condition and link PREVs to them by using process_expression logic
-        // But process_expression handles 'statements', here we have an expression inside parens.
-        // We can reuse find_calls_in_node.
-        
-        // We chain: prev_ids -> [Condition Calls] -> Decision Diamond
         let cond_calls = self.find_calls_in_node(condition_node);
         let mut current_prevs = prev_ids;
         let mut pending_label = label;
 
-        for (name, is_external, raw_text) in cond_calls {
+        for (name, is_external, raw_text, offset) in cond_calls {
              let node_id = self.next_id();
              let text_label = if is_external { format!("External: {}", raw_text) } else { name.clone() };
              let style = if is_external { "external" } else { "internal" };
              let safe_label = text_label.replace('"', "'");
              self.output.push_str(&format!("    {}[\"{}\"]:::{}\n", node_id, safe_label, style));
              
+             // Add click action
+             self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", node_id, offset));
+
              for prev in &current_prevs {
                  let arrow = match &pending_label {
                      Some(l) => format!("-->|{}|", l),
@@ -438,6 +437,10 @@ impl<'a> FlowGenerator<'a> {
         
         let cond_id = self.next_id();
         self.output.push_str(&format!("    {}{{\"{}\"}}:::decision\n", cond_id, clean_cond));
+        
+        // Add click action for decision node
+        let offset = condition_node.byte_range().start;
+        self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", cond_id, offset));
 
         for prev in &current_prevs {
              let arrow = match &pending_label {
@@ -456,11 +459,6 @@ impl<'a> FlowGenerator<'a> {
              let else_prevs = vec![cond_id.clone()];
              let else_res = self.traverse_node_with_label(alternative, else_prevs, Some("No".to_string()));
              ended_else = else_res;
-        } else {
-             // If no else, we just carry forward the decision node as a valid path
-             // But implicitly it should be "No".
-             // We can't label the NEXT edge from here.
-             // But we return it.
         }
         
         let mut result = ended_then;
@@ -484,13 +482,13 @@ impl<'a> FlowGenerator<'a> {
         current_ids
     }
 
-    fn find_calls_in_node(&self, node: Node) -> Vec<(String, bool, String)> {
+    fn find_calls_in_node(&self, node: Node) -> Vec<(String, bool, String, usize)> {
         let mut calls = Vec::new();
         self.collect_calls_recursive(node, &mut calls);
         calls
     }
     
-    fn collect_calls_recursive(&self, node: Node, calls: &mut Vec<(String, bool, String)>) {
+    fn collect_calls_recursive(&self, node: Node, calls: &mut Vec<(String, bool, String, usize)>) {
         if node.kind() == "method_invocation" {
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name_text = &self.source[name_node.byte_range().start..name_node.byte_range().end];
@@ -512,7 +510,7 @@ impl<'a> FlowGenerator<'a> {
                 if raw_text.starts_with("System.out") || raw_text.starts_with("System.err") {
                     // Ignore
                 } else {
-                     calls.push((name_text.to_string(), !is_internal, raw_text.to_string()));
+                     calls.push((name_text.to_string(), !is_internal, raw_text.to_string(), node.byte_range().start));
                 }
             }
         }

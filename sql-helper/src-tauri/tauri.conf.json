@@ -31,12 +31,6 @@
             },
             "clipboard": {
                 "all": true
-            },
-            "window": {
-                "all": true
-            },
-            "event": {
-                "all": true
             }
         },
         "bundle": {

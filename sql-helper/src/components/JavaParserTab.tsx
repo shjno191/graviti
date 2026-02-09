@@ -3,6 +3,8 @@ import { useState, useMemo } from 'react';
 import { parseJavaClass } from '../utils/javaParser';
 import { invoke } from '@tauri-apps/api/tauri';
 import { Mermaid } from './Mermaid';
+import { SourceCodeViewer } from './SourceCodeViewer';
+import { useEffect } from 'react';
 
 interface MethodNode {
     name: string;
@@ -80,6 +82,24 @@ export function JavaParserTab() {
     const [loadingMermaid, setLoadingMermaid] = useState(false);
     const [zoom, setZoom] = useState(1);
     const [showModal, setShowModal] = useState(false);
+    const [highlightOffset, setHighlightOffset] = useState<number | null>(null);
+
+    // Setup global click handler for Mermaid
+    useEffect(() => {
+        (window as any).onNodeClick = (id: string) => {
+            console.log('Node clicked:', id);
+            if (id.startsWith('offset-')) {
+                const offset = parseInt(id.split('-')[1]);
+                if (!isNaN(offset)) {
+                    setHighlightOffset(null); // Reset to trigger effect if same offset clicked twice
+                    setTimeout(() => setHighlightOffset(offset), 0);
+                }
+            }
+        };
+        return () => {
+            delete (window as any).onNodeClick;
+        };
+    }, []);
 
     const generateGraph = async () => {
         if (!sourceCode.trim()) return;
@@ -365,22 +385,38 @@ export function JavaParserTab() {
                                                             <span className="text-sm">Generating Flow Diagram...</span>
                                                         </div>
                                                     ) : mermaidGraph ? (
-                                                        <div className="flex flex-col gap-6">
-                                                            <div className="bg-white rounded border border-gray-200 shadow-inner overflow-auto relative min-h-[400px]">
-                                                                <div 
-                                                                    style={{ 
-                                                                        transform: `scale(${zoom})`, 
-                                                                        transformOrigin: 'top left',
-                                                                        transition: 'transform 0.1s ease-out'
-                                                                    }}
-                                                                    className="p-4"
-                                                                >
-                                                                    <Mermaid chart={mermaidGraph} />
+                                                        <div className="flex flex-col gap-6 h-full min-h-0">
+                                                            <div className="flex-1 flex gap-4 min-h-0">
+                                                                {/* Graph Panel */}
+                                                                <div className="flex-[2] bg-white rounded border border-gray-200 shadow-inner overflow-auto relative flex flex-col">
+                                                                    <div 
+                                                                        style={{ 
+                                                                            transform: `scale(${zoom})`, 
+                                                                            transformOrigin: 'top left',
+                                                                            transition: 'transform 0.1s ease-out'
+                                                                        }}
+                                                                        className="p-4"
+                                                                    >
+                                                                        <Mermaid chart={mermaidGraph} />
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Source View Panel */}
+                                                                <div className="flex-1 flex flex-col min-h-0">
+                                                                    <div className="text-[10px] font-bold text-gray-400 uppercase mb-1 flex justify-between items-center">
+                                                                        <span>Source Context</span>
+                                                                        <span className="text-primary italic normal-case">Click nodes to scroll</span>
+                                                                    </div>
+                                                                    <SourceCodeViewer 
+                                                                        source={sourceCode} 
+                                                                        highlightOffset={highlightOffset} 
+                                                                    />
                                                                 </div>
                                                             </div>
-                                                            <div>
+
+                                                            <div className="shrink-0">
                                                                 <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Mermaid Syntax</h4>
-                                                                <pre className="bg-gray-900 text-gray-100 p-3 rounded text-[10px] font-mono overflow-auto max-h-[150px]">
+                                                                <pre className="bg-gray-900 text-gray-100 p-3 rounded text-[10px] font-mono overflow-auto max-h-[100px]">
                                                                     {mermaidGraph}
                                                                 </pre>
                                                             </div>
@@ -467,15 +503,33 @@ export function JavaParserTab() {
                             </div>
                         </header>
 
-                        <main className="flex-1 overflow-auto bg-white p-6 relative group">
-                            <div 
-                                style={{ 
-                                    transform: `scale(${zoom})`, 
-                                    transformOrigin: 'top left',
-                                    transition: 'transform 0.1s ease-out'
-                                }}
-                            >
-                                <Mermaid chart={mermaidGraph} />
+                        <main className="flex-1 overflow-hidden bg-gray-50 flex min-h-0">
+                            <div className="flex-1 flex gap-4 p-6 min-h-0">
+                                {/* Graph Panel */}
+                                <div className="flex-[2] bg-white rounded border border-gray-200 shadow-inner overflow-auto relative flex flex-col">
+                                    <div 
+                                        style={{ 
+                                            transform: `scale(${zoom})`, 
+                                            transformOrigin: 'top left',
+                                            transition: 'transform 0.1s ease-out'
+                                        }}
+                                        className="p-4"
+                                    >
+                                        <Mermaid chart={mermaidGraph} />
+                                    </div>
+                                </div>
+
+                                {/* Source View Panel */}
+                                <div className="flex-1 flex flex-col min-h-0">
+                                    <div className="text-[10px] font-bold text-gray-500 uppercase mb-2 flex justify-between items-center px-1">
+                                        <span>Source Reference</span>
+                                        <span className="text-primary animate-pulse normal-case">Linked to diagram</span>
+                                    </div>
+                                    <SourceCodeViewer 
+                                        source={sourceCode} 
+                                        highlightOffset={highlightOffset} 
+                                    />
+                                </div>
                             </div>
                         </main>
                         
