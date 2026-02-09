@@ -22,6 +22,9 @@ tokio-util = { version = "0.7", features = ["compat"] }
 futures = "0.3"
 chrono = "0.4"
 
+tree-sitter = "0.20"
+tree-sitter-java = "0.20"
+
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem
 # DO NOT REMOVE!!
