@@ -7,6 +7,7 @@ export function TextCompareTab() {
     const [currentText, setCurrentText] = useState('');
     const [isOrdered, setIsOrdered] = useState(false); // Default to Unordered (User request implies a choice, let's default to unchecked as per "Compare without order" description being prominent)
     const [ignoreCase, setIgnoreCase] = useState(false); // Default to case-sensitive
+    const [trimWhitespace, setTrimWhitespace] = useState(false); // Default to no trim
     // Actually user says: "Compare with order (checkbox)... If checked... Compare without order... If unchecked"
     // Wait, usually checkbox "Ordered" means checked = ordered.
     // "Compare with order (index-based) -> If checked"
@@ -22,11 +23,11 @@ export function TextCompareTab() {
         // Let's keep them for now.
 
         if (isOrdered) {
-            return compareOrdered(expectedLines, currentLines, ignoreCase);
+            return compareOrdered(expectedLines, currentLines, ignoreCase, trimWhitespace);
         } else {
-            return compareUnordered(expectedLines, currentLines, ignoreCase);
+            return compareUnordered(expectedLines, currentLines, ignoreCase, trimWhitespace);
         }
-    }, [expectedText, currentText, isOrdered, ignoreCase]);
+    }, [expectedText, currentText, isOrdered, ignoreCase, trimWhitespace]);
 
     return (
         <div className="flex flex-col h-[calc(100vh-140px)] gap-4 p-4">
@@ -71,6 +72,15 @@ export function TextCompareTab() {
                         className="w-5 h-5 text-primary border-gray-300 rounded focus:ring-primary"
                     />
                     <span className="font-medium text-gray-700">Ignore Case</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer select-none ml-4">
+                    <input
+                        type="checkbox"
+                        checked={trimWhitespace}
+                        onChange={(e) => setTrimWhitespace(e.target.checked)}
+                        className="w-5 h-5 text-primary border-gray-300 rounded focus:ring-primary"
+                    />
+                    <span className="font-medium text-gray-700">Trim Whitespace</span>
                 </label>
                 <span className="text-gray-500 text-sm ml-auto">
                     {diffResult.lines.length} lines in result

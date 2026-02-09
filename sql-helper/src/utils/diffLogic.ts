@@ -15,12 +15,17 @@ export interface DiffResult {
  * Compare two text inputs line by line (Ordered comparison).
  * Uses a simple LCS (Longest Common Subsequence) approach for line-based diff.
  */
-export function compareOrdered(expectedParts: string[], currentParts: string[], ignoreCase: boolean = false): DiffResult {
+export function compareOrdered(expectedParts: string[], currentParts: string[], ignoreCase: boolean = false, trim: boolean = false): DiffResult {
     const n = expectedParts.length;
     const m = currentParts.length;
     
     // Helper to get comparison key
-    const getKey = (s: string) => ignoreCase ? s.toLowerCase() : s;
+    const getKey = (s: string) => {
+        let key = s;
+        if (trim) key = key.trim();
+        if (ignoreCase) key = key.toLowerCase();
+        return key;
+    };
 
     // DP table for LCS
     const dp: number[][] = Array(n + 1).fill(0).map(() => Array(m + 1).fill(0));
@@ -79,9 +84,14 @@ export function compareOrdered(expectedParts: string[], currentParts: string[], 
  * Compare two text inputs ignoring order (Unordered comparison).
  * Reorders Current to match Expected where possible.
  */
-export function compareUnordered(expectedParts: string[], currentParts: string[], ignoreCase: boolean = false): DiffResult {
+export function compareUnordered(expectedParts: string[], currentParts: string[], ignoreCase: boolean = false, trim: boolean = false): DiffResult {
     // Helper to get comparison key
-    const getKey = (s: string) => ignoreCase ? s.toLowerCase() : s;
+    const getKey = (s: string) => {
+        let key = s;
+        if (trim) key = key.trim();
+        if (ignoreCase) key = key.toLowerCase();
+        return key;
+    };
 
     const currentCounts = new Map<string, number>();
     const currentIndices = new Map<string, number[]>();
@@ -143,19 +153,7 @@ export function compareUnordered(expectedParts: string[], currentParts: string[]
     // We need to know for each line in `currentParts`, was it used?
     // We can use a usage tracker.
     
-    const usedCounts = new Map<string, number>(); // How many times we matched this line so far in the loop below
-    
-    // We already decided how many to match in step 1.
-    // Let's re-calculate:
-    // Total available in Current: map A
-    // Total needed by Expected: map B
-    // Matched = min(A, B)
-    // Extra = A - Matched (occurrences in Current that weren't matched)
-    
-    // We already did step 1 and reduced `currentCounts`.
-    // The `currentCounts` now holds the number of EXTRA lines for each string.
-    
-    const finalExtras: typeof lines = [];
+
     
     // We iterate `currentParts` to find these extras in order
     // But wait, `currentCounts` just has counts. It doesn't tell us *which* specific index was skipped if there are duplicates.
@@ -164,7 +162,7 @@ export function compareUnordered(expectedParts: string[], currentParts: string[]
     // Let's try to match them:
     const remainingToFind = new Map(currentCounts); 
     
-    currentParts.forEach((line, index) => {
+    currentParts.forEach((line) => {
         const key = getKey(line);
         if (remainingToFind.has(key) && remainingToFind.get(key)! > 0) {
              // This is an extra line
