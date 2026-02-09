@@ -189,6 +189,7 @@ export const ParamsTab: React.FC = () => {
             if (combo === runShortcut.toUpperCase()) {
                 e.preventDefault();
 
+                // Check if focused on a specific SQL textarea
                 const activeEl = document.activeElement;
                 if (activeEl?.id?.startsWith('sql-param-')) {
                     const targetId = activeEl.id.replace('sql-param-', '');
@@ -199,7 +200,15 @@ export const ParamsTab: React.FC = () => {
                     }
                 }
 
-                if (stateRef.current.queryGroups.length > 0) {
+                // If there's only 1 fragment with SQL, auto-run it without asking
+                const groupsWithSql = stateRef.current.queryGroups.filter(g => g.sql && g.status !== 'running');
+                if (groupsWithSql.length === 1) {
+                    runSql(groupsWithSql[0].id, groupsWithSql[0].sql, stateRef.current.activeConn);
+                    return;
+                }
+
+                // Otherwise, show picker if there are multiple fragments
+                if (groupsWithSql.length > 1) {
                     setShowExecPicker(true);
                 }
             }

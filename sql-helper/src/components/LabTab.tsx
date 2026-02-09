@@ -154,23 +154,74 @@ export const LabTab: React.FC = () => {
             if (combo === runShortcut.toUpperCase()) {
                 e.preventDefault();
 
-                // Real-time check of active element
+                const hasA = stateRef.current.stmt1.sql.trim();
+                const hasB = stateRef.current.stmt2.sql.trim();
+
+                console.log('[DEBUG] Shortcut pressed:', {
+                    combo,
+                    hasA: !!hasA,
+                    hasALength: hasA.length,
+                    hasB: !!hasB,
+                    hasBLength: hasB.length,
+                    activeElementId: document.activeElement?.id
+                });
+
+                // Check if focused on a specific statement
                 const activeEl = document.activeElement;
                 if (activeEl?.id === 'sql-lab-1') {
-                    // Use latest state from ref to check if we can run
-                    if (stateRef.current.stmt1.sql.trim()) {
+                    console.log('[DEBUG] Focused on A');
+                    // Focus on A: if A has SQL, run A; else if B has SQL, run B
+                    if (hasA) {
+                        console.log('[DEBUG] Running A (has SQL)');
                         runQuery(1);
                         return;
-                    }
-                }
-                if (activeEl?.id === 'sql-lab-2') {
-                    if (stateRef.current.stmt2.sql.trim()) {
+                    } else if (hasB) {
+                        console.log('[DEBUG] Running B (A empty, B has SQL)');
                         runQuery(2);
                         return;
                     }
+                    console.log('[DEBUG] Both empty, doing nothing');
+                    // Both empty, do nothing
+                    return;
+                }
+                if (activeEl?.id === 'sql-lab-2') {
+                    console.log('[DEBUG] Focused on B');
+                    // Focus on B: if B has SQL, run B; else if A has SQL, run A
+                    if (hasB) {
+                        console.log('[DEBUG] Running B (has SQL)');
+                        runQuery(2);
+                        return;
+                    } else if (hasA) {
+                        console.log('[DEBUG] Running A (B empty, A has SQL)');
+                        runQuery(1);
+                        return;
+                    }
+                    console.log('[DEBUG] Both empty, doing nothing');
+                    // Both empty, do nothing
+                    return;
                 }
 
-                // If no focus, show picker
+                console.log('[DEBUG] Not focused on any statement');
+                // Not focused on any statement
+                if (!hasA && !hasB) {
+                    console.log('[DEBUG] Both empty, doing nothing');
+                    // Both empty, do nothing
+                    return;
+                }
+                if (hasA && !hasB) {
+                    console.log('[DEBUG] Running A (only A has SQL)');
+                    // Only A has SQL, run A
+                    runQuery(1);
+                    return;
+                }
+                if (!hasA && hasB) {
+                    console.log('[DEBUG] Running B (only B has SQL)');
+                    // Only B has SQL, run B
+                    runQuery(2);
+                    return;
+                }
+                console.log('[DEBUG] Both have SQL, showing picker');
+                // Both have SQL, show picker
                 setShowExecPicker(true);
             }
         };
