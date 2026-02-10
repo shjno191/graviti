@@ -394,8 +394,8 @@ export function JavaParserTab() {
                                         <div className="flex-1 flex flex-col min-h-0 bg-gray-50/30">
                                             {selectedMethod ? (
                                                 <div className="flex-1 flex flex-col p-4 overflow-auto min-h-0 gap-4">
-                                                    <div className="flex justify-between items-center border-b border-gray-200 pb-2">
-                                                        <div className="flex flex-col min-w-0 flex-1">
+                                                    <div className="flex items-center border-b border-gray-200 pb-2">
+                                                        <div className="flex min-w-0">
                                                             <h3 className="font-bold text-gray-800 truncate" title={`Flow: ${selectedMethod}`}>Flow: {selectedMethod}</h3>
                                                             {loadingMermaid && <div className="text-[10px] text-primary animate-pulse">Generating...</div>}
                                                         </div>
