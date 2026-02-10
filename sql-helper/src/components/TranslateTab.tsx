@@ -785,28 +785,6 @@ export const TranslateTab: React.FC = () => {
     };
 
 
-    const getColOffset = (colName: string) => {
-        const name = colName.toUpperCase();
-        let offset = 0;
-        for (let i = 0; i < name.length; i++) {
-            offset = offset * 26 + (name.charCodeAt(i) - 64);
-        }
-        return offset - 1;
-    };
-
-    const getTabsForCols = (fromCol: string, toCol: string) => {
-        const fromIdx = getColOffset(fromCol);
-        const toIdx = getColOffset(toCol);
-        const gap = toIdx - fromIdx;
-        if (gap <= 0) return "";
-        return "\t".repeat(gap);
-    };
-
-    const getLeadTabs = (col: string) => {
-        const idx = getColOffset(col);
-        if (idx <= 0) return "";
-        return "\t".repeat(idx);
-    };
 
     /**
      * Smart formatter for SQL design documents based on rules in CHANGES.md.
@@ -845,7 +823,6 @@ export const TranslateTab: React.FC = () => {
                     const trimmed = line.trim();
 
                     if (trimmed.startsWith(cfg.label)) {
-                        const leadTabs = ""; // Title always at A
                         const gapToValue1 = "\t".repeat(cfg.offsets[0]);
 
                         if (cfg.type === 'text') {
