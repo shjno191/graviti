@@ -175,7 +175,9 @@ export const TranslateTab: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [copyFeedback, setCopyFeedback] = useState<{ row: number, col: 'jp' | 'en' | 'vi' } | null>(null);
-    const [subTab, setSubTab] = useState<'dictionary' | 'quick'>('dictionary');
+    const [subTab, setSubTab] = useState<'dictionary' | 'quick' | 'revertTK'>('dictionary');
+    const [revertTKInput, setRevertTKInput] = useState('');
+    const [revertTKResult, setRevertTKResult] = useState('');
     const [bulkInput, setBulkInput] = useState('');
     const [targetLang, setTargetLang] = useState<'jp' | 'en' | 'vi'>('en');
     const [syncing, setSyncing] = useState(false);
@@ -211,17 +213,29 @@ export const TranslateTab: React.FC = () => {
 
     const handleInputScroll = () => {
         if (inputRef.current) {
-            const scrollTop = inputRef.current.scrollTop;
-            if (outputRef.current) outputRef.current.scrollTop = scrollTop;
-            if (highlighterRef.current) highlighterRef.current.scrollTop = scrollTop;
+            const { scrollTop, scrollLeft } = inputRef.current;
+            if (outputRef.current) {
+                outputRef.current.scrollTop = scrollTop;
+                outputRef.current.scrollLeft = scrollLeft;
+            }
+            if (highlighterRef.current) {
+                highlighterRef.current.scrollTop = scrollTop;
+                highlighterRef.current.scrollLeft = scrollLeft;
+            }
         }
     };
 
     const handleOutputScroll = () => {
         if (outputRef.current) {
-            const scrollTop = outputRef.current.scrollTop;
-            if (inputRef.current) inputRef.current.scrollTop = scrollTop;
-            if (highlighterRef.current) highlighterRef.current.scrollTop = scrollTop;
+            const { scrollTop, scrollLeft } = outputRef.current;
+            if (inputRef.current) {
+                inputRef.current.scrollTop = scrollTop;
+                inputRef.current.scrollLeft = scrollLeft;
+            }
+            if (highlighterRef.current) {
+                highlighterRef.current.scrollTop = scrollTop;
+                highlighterRef.current.scrollLeft = scrollLeft;
+            }
         }
     };
 
@@ -280,33 +294,10 @@ export const TranslateTab: React.FC = () => {
         setBulkInput(processedText);
     };
 
-    const handleSmartFormat = () => {
-        if (!bulkInput.trim()) return;
-
-        // Smart format logic: Detect common patterns and clean them up
-        let text = bulkInput;
-
-        // 1. Remove common Java/C# noise
-        // Match StringBuilder initialization
-        text = text.replace(/StringBuilder\s+\w+\s*=\s*new\s+StringBuilder\(\s*\)\s*;/gi, '');
-
-        // Remove .append prefix and any following quotes
-        // Handles "sql.append(", "sb.append(", "query.append ( " etc.
-        text = text.replace(/[\w$]+\.append\s*\(\s*\"?/gi, '');
-
-        // Clean up common line endings like ");" or ")" or ");"
-        text = text.replace(/\"?\s*\)\s*;/g, '');
-
-        // Remove all quotes and addition symbols used for joining strings
-        text = text.replace(/\"/g, '');
-        text = text.replace(/\+/g, '');
-
-        // 2. Standard cleanup: replace tabs, multiple spaces, keep lines
-        const lines = text.split('\n').map(line => {
-            return line.replace(/,/g, ' ').replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
-        }).filter(line => line.length > 0);
-
-        setBulkInput(lines.join('\n'));
+    const handleRevertTK = () => {
+        if (!revertTKInput.trim()) return;
+        const formatted = smartFormatSqlDesign(revertTKInput);
+        setRevertTKResult(formatted);
     };
 
     // Reset selections when input changes or target language changes
@@ -490,6 +481,258 @@ export const TranslateTab: React.FC = () => {
         .replace(/　/g, ' ') // Full-width space to half-width
         .replace(/[\t\r\n\v\f]/g, ' '); // All whitespace-like to standard space (1-to-1)
 
+    /**
+     * Smart formatter for SQL design documents based on rules in CHANGES.md.
+     * It:
+     * - Cleans Java/C# StringBuilder + .append noise
+     * - Aligns 「【SQL論理名】」「【SQL定義名】」 style blocks (colon + value)
+     * - Aligns 2-column tables like 「カラム名 / セット内容」 with >=10 spaces gap
+     * - Aligns JOIN condition blocks (ON / AND / OR) in columns
+     * - Aligns LOG tables like 「レベル / メッセージ」
+     */
+    const smartFormatSqlDesign = (input: string): string => {
+        if (!input.trim()) return input;
+
+        // STEP 0: Basic cleanup of Java/C# append-style SQL (re-use current behavior)
+        let text = input;
+
+        // Remove StringBuilder initialization lines
+        text = text.replace(/StringBuilder\s+\w+\s*=\s*new\s+StringBuilder\(\s*\)\s*;/gi, '');
+
+        // Remove ".append(" prefixes (sql.append, sb.append, query.append, etc.) including optional first quote
+        text = text.replace(/[\w$]+\.append\s*\(\s*\"?/gi, '');
+
+        // Clean up common line endings like ");" or ")" with trailing semicolon
+        text = text.replace(/\"?\s*\)\s*;/g, '');
+
+        // Remove quotes and '+' used for string concatenation
+        text = text.replace(/\"/g, '');
+        text = text.replace(/\+/g, '');
+
+        // Normalize tabs to spaces, but keep multiple spaces (needed for columns)
+        let lines = text.split('\n').map(line =>
+            line.replace(/\t/g, ' ').replace(/\s+$/g, '')
+        );
+
+        // Helper: format SQL info blocks like 【SQL論理名】 ： <value>
+        const formatSqlInfoBlocks = (src: string[]): string[] => {
+            const result = [...src];
+
+            // Collect indices of lines that look like SQL info rows
+            const targetIndexes: number[] = [];
+            const LABEL_REGEX = /^【[^】]+】/;
+
+            result.forEach((line, idx) => {
+                if (!LABEL_REGEX.test(line)) return;
+                if (!line.includes('：')) return;
+                targetIndexes.push(idx);
+            });
+
+            if (targetIndexes.length === 0) return result;
+
+            // Group contiguous indexes into blocks
+            const blocks: number[][] = [];
+            let current: number[] = [];
+            targetIndexes.forEach((idx) => {
+                if (current.length === 0 || idx === current[current.length - 1] + 1) {
+                    current.push(idx);
+                } else {
+                    blocks.push(current);
+                    current = [idx];
+                }
+            });
+            if (current.length > 0) blocks.push(current);
+
+            blocks.forEach(block => {
+                const parts: { idx: number; label: string; value: string }[] = [];
+
+                block.forEach(i => {
+                    const raw = result[i];
+                    const colonIdx = raw.indexOf('：');
+                    if (colonIdx === -1) return;
+                    const label = raw.substring(0, colonIdx).trimEnd();
+                    const value = raw.substring(colonIdx + 1).trim();
+                    parts.push({ idx: i, label, value });
+                });
+
+                parts.forEach(({ idx, label, value }) => {
+                    // Tab-separated: copy sang Excel → mỗi cột vào 1 ô
+                    result[idx] = `${label}：\t${value}`;
+                });
+            });
+
+            return result;
+        };
+
+        // Helper: format 2-column tables (カラム名 / セット内容, レベル / メッセージ)
+        const formatTwoColumnTables = (src: string[]): string[] => {
+            const result = [...src];
+            const tableHeaderKeywords = [
+                'カラム名',
+                'セット内容',
+                'レベル',
+                'メッセージ'
+            ];
+
+            const isHeaderLine = (line: string) =>
+                tableHeaderKeywords.some(k => line.includes(k));
+
+            let i = 0;
+            while (i < result.length) {
+                if (!isHeaderLine(result[i])) {
+                    i++;
+                    continue;
+                }
+
+                const start = i;
+                let end = i;
+
+                // Extend block until blank line or separation
+                for (let j = i + 1; j < result.length; j++) {
+                    const l = result[j];
+                    if (!l.trim()) break;
+                    // Stop if new header or section marker
+                    if (isHeaderLine(l) || l.startsWith('■')) break;
+                    end = j;
+                }
+
+                // Collect rows
+                const rows: { idx: number; col1: string; col2: string }[] = [];
+
+                for (let k = start; k <= end; k++) {
+                    const raw = result[k];
+                    const trimmed = raw.trim();
+                    if (!trimmed) continue;
+
+                    // Generic split: first group of 2+ spaces separates col1 and col2
+                    const m = trimmed.match(/^(\S(?:.*?\S)?)\s{2,}(.*\S.*)$/);
+                    if (m) {
+                        rows.push({ idx: k, col1: m[1], col2: m[2] });
+                        continue;
+                    }
+
+                    // Fallback: try to split at single space between known Japanese labels
+                    if (trimmed.includes('カラム名') && trimmed.includes('セット内容')) {
+                        const idxKeyword = trimmed.indexOf('カラム名') + 'カラム名'.length;
+                        const col1 = trimmed.substring(0, idxKeyword).trimEnd();
+                        const col2 = trimmed.substring(idxKeyword).trim();
+                        rows.push({ idx: k, col1, col2 });
+                        continue;
+                    }
+
+                    if (trimmed.includes('レベル') && trimmed.includes('メッセージ')) {
+                        const idxKeyword = trimmed.indexOf('レベル') + 'レベル'.length;
+                        const col1 = trimmed.substring(0, idxKeyword).trimEnd();
+                        const col2 = trimmed.substring(idxKeyword).trim();
+                        rows.push({ idx: k, col1, col2 });
+                        continue;
+                    }
+                }
+
+                if (rows.length > 0) {
+                    // Tab-separated: copy sang Excel → 2 cột vào 2 ô
+                    rows.forEach(({ idx: lineIdx, col1, col2 }) => {
+                        result[lineIdx] = `${col1}\t${col2}`;
+                    });
+                }
+
+                i = end + 1;
+            }
+
+            return result;
+        };
+
+        // Helper: align JOIN conditions (ON / AND / OR)
+        const formatJoinBlocks = (src: string[]): string[] => {
+            const result = [...src];
+
+            let i = 0;
+            while (i < result.length) {
+                const line = result[i];
+                // JOIN block starts with bullet like ・商品マスタ RS （INNER JOIN）
+                if (!line.trim().startsWith('・')) {
+                    i++;
+                    continue;
+                }
+
+                const joinStart = i + 1;
+                const joinLines: { idx: number; op: string; rest: string }[] = [];
+                let maxOpLen = 0;
+
+                for (let j = joinStart; j < result.length; j++) {
+                    const raw = result[j];
+                    const trimmed = raw.trim();
+                    if (!trimmed) break;
+                    if (trimmed.startsWith('■') || trimmed.startsWith('・')) break;
+
+                    const m = trimmed.match(/^(ON|AND|OR)\s+(.*)$/);
+                    if (!m) break;
+
+                    const op = m[1];
+                    const rest = m[2];
+                    joinLines.push({ idx: j, op, rest });
+                    if (op.length > maxOpLen) maxOpLen = op.length;
+                }
+
+                if (joinLines.length > 0) {
+                    const BETWEEN_REGEX = /^(.*?)\s+BETWEEN\s+(.*?)\s+AND\s+(.*?)$/i;
+                    const INDENT_JOIN = '    '; // Rule 4: "Điều kiện AND thụt vào và thẳng cột"
+                    joinLines.forEach(({ idx: lineIdx, op, rest }) => {
+                        const trimmedRest = rest.trim();
+                        const between = trimmedRest.match(BETWEEN_REGEX);
+                        if (between) {
+                            result[lineIdx] = `${INDENT_JOIN}${op}\t${between[1].trim()}\tBETWEEN\t${between[2].trim()}\tAND\t${between[3].trim()}`;
+                        } else {
+                            result[lineIdx] = `${INDENT_JOIN}${op}\t${trimmedRest}`;
+                        }
+                    });
+                    const nextIdx = joinLines[joinLines.length - 1].idx + 1;
+                    // Cách 1 dòng giữa block INNER JOIN này và block INNER JOIN tiếp theo; đồng bộ source (chèn row)
+                    if (nextIdx < result.length && result[nextIdx].trim().startsWith('・')) {
+                        result.splice(nextIdx, 0, '');
+                    }
+                    i = nextIdx;
+                } else {
+                    i++;
+                }
+            }
+
+            return result;
+        };
+
+        // Helper: thụt dòng nội dung dưới ■ (rule 2: "Nội dung bên dưới PHẢI thụt vào ít nhất 1 cột")
+        // Dù source không thụt → output vẫn thụt 4 space. Dừng khi gặp ■ mới hoặc block JOIN (・...JOIN).
+        const formatHeaderBlocks = (src: string[]): string[] => {
+            const result = [...src];
+            const JOIN_HEADER_REGEX = /^・.*（.*JOIN.*）/;
+
+            for (let i = 0; i < result.length; i++) {
+                const line = result[i];
+                if (!line.trim().startsWith('■')) continue;
+
+                for (let j = i + 1; j < result.length; j++) {
+                    const l = result[j];
+                    if (!l.trim()) break;
+                    if (l.trim().startsWith('■')) break;
+                    if (JOIN_HEADER_REGEX.test(l.trim())) break; // Không thụt tiêu đề JOIN block
+                    if (l.trim().startsWith('【')) break; // Block SQL info (論理名・定義名) không thụt theo ■
+                    if (l.startsWith('    ')) continue; // Đã thụt rồi
+
+                    result[j] = `    ${l.trimStart()}`;
+                }
+            }
+
+            return result;
+        };
+
+        lines = formatSqlInfoBlocks(lines);
+        lines = formatTwoColumnTables(lines);
+        lines = formatJoinBlocks(lines);
+        lines = formatHeaderBlocks(lines);
+
+        return lines.join('\n');
+    };
+
     // Memoize the dictionary transformation
     const translationDict = useMemo(() => {
         if (data.length === 0) return [];
@@ -634,6 +877,15 @@ export const TranslateTab: React.FC = () => {
                     >
                         <span>⚡ QUICK TRANSLATE</span>
                     </button>
+                    <button
+                        onClick={() => setSubTab('revertTK')}
+                        className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${subTab === 'revertTK'
+                            ? 'bg-white text-amber-600 shadow-md scale-105'
+                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                            }`}
+                    >
+                        <span>🔄 RevertTK</span>
+                    </button>
                 </div>
 
                 <div className="flex-1 flex items-center gap-4">
@@ -649,7 +901,7 @@ export const TranslateTab: React.FC = () => {
                                 autoFocus
                             />
                         </div>
-                    ) : (
+                    ) : subTab === 'quick' ? (
                         <div className="flex-1 flex items-center justify-end gap-3">
                             <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100 shadow-inner">
                                 <span className="text-[10px] font-black text-indigo-400 uppercase tracking-tighter">Line Height</span>
@@ -672,13 +924,6 @@ export const TranslateTab: React.FC = () => {
                                 </div>
                             </div>
                             <div className="relative flex items-center gap-1">
-                                <button
-                                    onClick={handleSmartFormat}
-                                    className="px-6 py-2 bg-amber-600 text-white text-xs font-black rounded-xl hover:bg-amber-700 transition-all shadow-lg active:scale-95 shrink-0"
-                                    title="Auto-detect and clean code/SQL artifacts"
-                                >
-                                    🧠 SMART CONVERT
-                                </button>
                                 <button
                                     onClick={handleFormatInput}
                                     className="px-6 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 shrink-0"
@@ -741,10 +986,16 @@ export const TranslateTab: React.FC = () => {
                                 )}
                             </div>
                         </div>
+                    ) : (
+                        <div className="flex-1 flex items-center justify-end">
+                            <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Revert thiết kế từ code → format SQL</span>
+                        </div>
                     )}
                 </div>
 
                 <div className="flex gap-2">
+                    {subTab !== 'revertTK' && (
+                    <>
                     <button
                         onClick={async () => {
                             const excelPath = translateFilePath.toLowerCase().endsWith('.xlsx')
@@ -774,6 +1025,8 @@ export const TranslateTab: React.FC = () => {
                             {syncing ? `SYNCING ${syncProgress}%` : '⚡ SYNC & CLEAN'}
                         </span>
                     </button>
+                    </>
+                    )}
                 </div>
             </div>
 
@@ -847,6 +1100,57 @@ export const TranslateTab: React.FC = () => {
                             )}
                         </div>
                     </>
+                ) : subTab === 'revertTK' ? (
+                    <div className="flex-1 flex flex-col overflow-hidden bg-white">
+                        <div className="grid grid-cols-2 flex-1 overflow-hidden">
+                            <div className="flex flex-col border-r border-gray-200 min-h-0">
+                                <div className="bg-amber-50/80 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-600 border-b border-amber-100 flex justify-between items-center h-12 shrink-0">
+                                    <span>SOURCE (Code / SQL append...)</span>
+                                    <button
+                                        onClick={() => { setRevertTKInput(''); setRevertTKResult(''); }}
+                                        className="text-red-400 hover:text-red-600 text-[9px] font-black border border-red-100 px-2 py-1 rounded-lg hover:bg-red-50"
+                                    >
+                                        CLEAR
+                                    </button>
+                                </div>
+                                <textarea
+                                    wrap="off"
+                                    className="flex-1 w-full p-4 font-mono text-sm outline-none resize-none border-none bg-white text-gray-800 overflow-auto"
+                                    style={{ whiteSpace: 'pre' }}
+                                    placeholder="Dán code (Java/C# sql.append, hoặc đoạn thiết kế SQL thô)..."
+                                    value={revertTKInput}
+                                    onChange={(e) => setRevertTKInput(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex flex-col min-h-0">
+                                <div className="bg-amber-50/80 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-600 border-b border-amber-100 flex justify-between items-center h-12 shrink-0">
+                                    <span>SQL DESIGN (Formatted)</span>
+                                    <button
+                                        onClick={() => revertTKResult && navigator.clipboard.writeText(revertTKResult)}
+                                        disabled={!revertTKResult}
+                                        className="px-3 py-1.5 rounded-lg text-[10px] font-black bg-white text-amber-600 border border-amber-200 hover:bg-amber-50 disabled:opacity-50"
+                                    >
+                                        📋 COPY
+                                    </button>
+                                </div>
+                                <div
+                                    className="flex-1 p-4 font-mono text-sm overflow-auto bg-amber-50/20 text-amber-900 whitespace-pre"
+                                >
+                                    {revertTKResult || <span className="opacity-40 italic">Kết quả revert/format sẽ hiện ở đây. Bấm REVERT bên dưới.</span>}
+                                </div>
+                                <div className="px-4 py-3 border-t border-amber-100 bg-amber-50/50 shrink-0">
+                                    <button
+                                        onClick={handleRevertTK}
+                                        disabled={!revertTKInput.trim()}
+                                        className="px-6 py-2.5 bg-amber-600 text-white text-xs font-black rounded-xl hover:bg-amber-700 transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Revert thiết kế từ code, format theo rule SQL"
+                                    >
+                                        🔄 REVERT / FORMAT
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 ) : (
                     <div className="flex-1 flex flex-col overflow-hidden bg-white">
                         <div className="grid grid-cols-2 flex-1 overflow-hidden">
@@ -861,10 +1165,10 @@ export const TranslateTab: React.FC = () => {
                                     </button>
                                 </div>
                                 <div className="flex-1 relative min-h-0 bg-white group/input">
-                                    {/* Highlighter Overlay */}
+                                    {/* Highlighter Overlay - no wrap, sync scroll với input */}
                                     <div
                                         ref={highlighterRef}
-                                        className="absolute inset-0 p-6 font-mono text-sm pointer-events-none text-transparent whitespace-pre-wrap break-words overflow-hidden box-border z-10"
+                                        className="absolute inset-0 p-6 font-mono text-sm pointer-events-none text-transparent whitespace-pre overflow-auto box-border z-10"
                                         style={{
                                             lineHeight: `${lineSpacing}`,
                                             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
@@ -889,11 +1193,12 @@ export const TranslateTab: React.FC = () => {
                                     </div>
                                     <textarea
                                         ref={inputRef}
+                                        wrap="off"
                                         onScroll={handleInputScroll}
-                                        className="absolute inset-0 w-full h-full p-6 font-mono text-sm outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors overflow-y-scroll z-20 border-none box-border text-gray-800 caret-gray-800"
+                                        className="absolute inset-0 w-full h-full p-6 font-mono text-sm outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors overflow-auto z-20 border-none box-border text-gray-800 caret-gray-800"
                                         style={{
                                             lineHeight: `${lineSpacing}`,
-                                            whiteSpace: 'pre-wrap',
+                                            whiteSpace: 'pre',
                                             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
                                         }}
                                         placeholder="Paste code or text here..."
@@ -945,9 +1250,10 @@ export const TranslateTab: React.FC = () => {
                                 <div
                                     ref={outputRef}
                                     onScroll={handleOutputScroll}
-                                    className="flex-1 p-6 font-mono text-sm outline-none overflow-y-scroll bg-indigo-50/10 text-indigo-900 shadow-inner whitespace-pre-wrap break-words box-border"
+                                    className="flex-1 p-6 font-mono text-sm outline-none overflow-auto custom-scrollbar bg-indigo-50/10 text-indigo-900 shadow-inner box-border"
                                     style={{
                                         lineHeight: `${lineSpacing}`,
+                                        whiteSpace: 'pre',
                                         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
                                     }}
                                 >
@@ -956,13 +1262,13 @@ export const TranslateTab: React.FC = () => {
                                             return (
                                                 <div
                                                     key={lIdx}
-                                                    className={`flex items-start transition-colors duration-200 relative group/line hover:!z-[100] ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/5' : ''}`}
+                                                    className={`flex items-start transition-colors duration-200 relative group/line hover:!z-[100] whitespace-nowrap ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/5' : ''}`}
                                                     style={{
                                                         minHeight: `${lineSpacing}em`,
                                                         zIndex: translatedLines.length - lIdx
                                                     }}
                                                 >
-                                                    <div className="flex-1 whitespace-pre-wrap break-words">
+                                                    <div className="flex-1 whitespace-nowrap">
                                                         {line.segments.length > 0 ? line.segments.map(seg => (
                                                             <MemoizedSegment
                                                                 key={seg.key}
