@@ -280,18 +280,6 @@ export const TranslateTab: React.FC = () => {
         setBulkInput(processedText);
     };
 
-    const handleCopyAllResult = () => {
-        const text = translatedLines.map(line =>
-            line.segments.map(seg => seg.text).join('')
-        ).join('\n');
-
-        if (!text.trim()) return;
-
-        navigator.clipboard.writeText(text);
-        setSegmentCopyFeedback('all');
-        setTimeout(() => setSegmentCopyFeedback(null), 1500);
-    };
-
     const handleSmartFormat = () => {
         if (!bulkInput.trim()) return;
 
@@ -546,7 +534,7 @@ export const TranslateTab: React.FC = () => {
     const handleCopyResult = () => {
         if (translatedLines.length === 0) return;
 
-        const fullText = translatedLines.map(line => 
+        const fullText = translatedLines.map(line =>
             line.segments.map(seg => seg.text).join('')
         ).join('\n');
 
