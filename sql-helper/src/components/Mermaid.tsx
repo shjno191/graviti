@@ -101,7 +101,12 @@ export const Mermaid = ({ chart }: MermaidProps) => {
 
     return (
         <div
-            className="mermaid-container overflow-auto p-4 bg-white rounded border border-gray-200 flex justify-center min-h-[200px]"
+            className="mermaid-container bg-white inline-block"
+            style={{
+                display: 'inline-block',
+                minWidth: '200px',
+                minHeight: '200px'
+            }}
             dangerouslySetInnerHTML={{ __html: svg }}
         />
     );

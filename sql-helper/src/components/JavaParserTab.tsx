@@ -407,14 +407,14 @@ export function JavaParserTab() {
                                                         <div className="flex flex-col gap-6 h-full min-h-0">
                                                             <div className="flex-1 flex gap-4 min-h-0">
                                                                 {/* Graph Panel */}
-                                                                <div className="flex-[2] bg-white rounded border border-gray-200 shadow-inner overflow-auto relative flex flex-col">
-                                                                    <div 
-                                                                        style={{ 
-                                                                            transform: `scale(${zoom})`, 
+                                                                <div className="flex-[2] bg-white rounded border border-gray-200 shadow-inner overflow-auto relative flex flex-col min-h-0">
+                                                                    <div
+                                                                        style={{
+                                                                            transform: `scale(${zoom})`,
                                                                             transformOrigin: 'top left',
                                                                             transition: 'transform 0.1s ease-out'
                                                                         }}
-                                                                        className="p-4"
+                                                                        className="p-4 w-max h-max"
                                                                     >
                                                                         <Mermaid chart={mermaidGraph} />
                                                                     </div>
@@ -525,14 +525,14 @@ export function JavaParserTab() {
                         <main className="flex-1 overflow-hidden bg-gray-50 flex min-h-0">
                             <div className="flex-1 flex gap-4 p-6 min-h-0">
                                 {/* Graph Panel */}
-                                <div className="flex-[2] bg-white rounded border border-gray-200 shadow-inner overflow-auto relative flex flex-col">
-                                    <div 
-                                        style={{ 
-                                            transform: `scale(${zoom})`, 
+                                <div className="flex-[2] bg-white rounded border border-gray-200 shadow-inner overflow-auto relative flex flex-col min-h-0">
+                                    <div
+                                        style={{
+                                            transform: `scale(${zoom})`,
                                             transformOrigin: 'top left',
                                             transition: 'transform 0.1s ease-out'
                                         }}
-                                        className="p-4"
+                                        className="p-4 w-max h-max"
                                     >
                                         <Mermaid chart={mermaidGraph} />
                                     </div>
