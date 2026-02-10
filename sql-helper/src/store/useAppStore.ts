@@ -83,6 +83,9 @@ export interface AppState {
     formatSqlAppend: boolean;
     setFormatSqlAppend: (val: boolean) => void;
 
+    searchStrict: boolean;
+    setSearchStrict: (val: boolean) => void;
+
     connections: DbConfig[];
     setConnections: (conns: DbConfig[]) => void;
 }
@@ -153,7 +156,10 @@ export const useAppStore = create<AppState>((set) => ({
     formatRemoveSpaces: true,
     setFormatRemoveSpaces: (val) => set({ formatRemoveSpaces: val }),
     formatSqlAppend: false,
-    setFormatSqlAppend: (val) => set({ formatSqlAppend: val }),
+    setFormatSqlAppend: (val: boolean) => set({ formatSqlAppend: val }),
+
+    searchStrict: false,
+    setSearchStrict: (val: boolean) => set({ searchStrict: val }),
 
     connections: [],
     setConnections: (connections) => set({ connections }),
