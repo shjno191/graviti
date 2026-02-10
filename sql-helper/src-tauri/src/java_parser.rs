@@ -19,6 +19,46 @@ pub struct CallGraph {
     pub calls: HashMap<String, Vec<String>>,
 }
 
+// --- Configuration and API structs ---
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FlowSettings {
+    pub ignored_variables: Vec<String>,
+    pub ignored_services: Vec<String>,
+    pub collapse_details: bool,
+}
+
+impl Default for FlowSettings {
+    fn default() -> Self {
+        FlowSettings {
+            ignored_variables: vec![],
+            ignored_services: vec!["System.out".to_string(), "System.err".to_string()],
+            collapse_details: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MermaidOptions {
+    pub session_ignore_services: Vec<String>,
+    pub collapse_details: bool,
+}
+
+impl Default for MermaidOptions {
+    fn default() -> Self {
+        MermaidOptions {
+            session_ignore_services: vec![],
+            collapse_details: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MermaidResult {
+    pub mermaid: String,
+    pub external_services: Vec<String>,
+}
+
 pub struct JavaParser;
 
 impl JavaParser {
@@ -202,36 +242,131 @@ impl JavaParser {
         // We can reuse graph.nodes.range to find the node in the new tree? 
         // Or just re-find them. Using graph.nodes.range is safer/faster.
         
+        let default_ignored_vars: Vec<String> = vec![];
+        let default_ignored_svcs: Vec<String> = vec!["System.out".to_string(), "System.err".to_string()];
+
         let mut generator = FlowGenerator {
             source,
             graph,
             output: &mut output,
             node_counter: 0,
+            ignored_variables: &default_ignored_vars,
+            ignored_services: &default_ignored_svcs,
+            collapse_details: false,
+            detected_externals: HashSet::new(),
         };
 
         for method_name in target_methods {
              if let Some(node_info) = graph.nodes.get(&method_name) {
-                 // Find the node in the tree using the range
                  let start_byte = node_info.range.0;
                  let end_byte = node_info.range.1;
-                 
-                 // Descend to find the method_declaration at this range
-                 // A simple way is to walk from root and find the node with exact range
                  if let Some(method_node) = Self::find_node_by_range(root_node, start_byte, end_byte) {
                       generator.generate_method_flow(method_node, &method_name);
                  }
              }
         }
-        
+
         // Styles
         output.push_str("  classDef public fill:#f9f,stroke:#333,stroke-width:2px;\n");
-        output.push_str("  classDef internal fill:#e1f5fe,stroke:#01579b,stroke-width:1px;\n"); // Light Blue
-        output.push_str("  classDef external fill:#ffe0b2,stroke:#e65100,stroke-width:1px,stroke-dasharray: 5 5;\n"); // Orange, dashed
-        output.push_str("  classDef decision fill:#fff9c4,stroke:#fbc02d,stroke-width:1px,shape:rhombus;\n"); // Yellow Diamond
+        output.push_str("  classDef internal fill:#e1f5fe,stroke:#01579b,stroke-width:1px;\n");
+        output.push_str("  classDef external fill:#ffe0b2,stroke:#e65100,stroke-width:1px,stroke-dasharray: 5 5;\n");
+        output.push_str("  classDef decision fill:#fff9c4,stroke:#fbc02d,stroke-width:1px,shape:rhombus;\n");
+        output.push_str("  classDef loop fill:#e8f5e9,stroke:#2e7d32,stroke-width:1px;\n");
+        output.push_str("  classDef endNode fill:#fce4ec,stroke:#c62828,stroke-width:2px;\n");
 
         output
     }
-    
+
+    pub fn generate_mermaid_filtered(
+        graph: &CallGraph,
+        source: &str,
+        method_name: Option<String>,
+        ignored_variables: &[String],
+        ignored_services: &[String],
+        collapse_details: bool,
+    ) -> MermaidResult {
+        let mut output = String::from("flowchart TD\n");
+
+        let mut target_methods: Vec<String> = Vec::new();
+
+        if let Some(ref name) = method_name {
+            if graph.nodes.contains_key(name) {
+                target_methods.push(name.clone());
+            }
+        } else {
+            target_methods = graph.nodes.iter()
+                .filter(|(_, node)| {
+                    node.modifiers.contains(&"public".to_string()) ||
+                    node.modifiers.contains(&"protected".to_string())
+                })
+                .map(|(name, _)| name.clone())
+                .collect();
+            target_methods.sort();
+        }
+
+        let mut parser = Parser::new();
+        if parser.set_language(tree_sitter_java::language()).is_err() {
+            return MermaidResult {
+                mermaid: "error: failed to set language".to_string(),
+                external_services: vec![],
+            };
+        }
+        let tree = match parser.parse(source, None) {
+            Some(t) => t,
+            None => return MermaidResult {
+                mermaid: "error: parse failed".to_string(),
+                external_services: vec![],
+            },
+        };
+        let root_node = tree.root_node();
+
+        let mut generator = FlowGenerator {
+            source,
+            graph,
+            output: &mut output,
+            node_counter: 0,
+            ignored_variables,
+            ignored_services,
+            collapse_details,
+            detected_externals: HashSet::new(),
+        };
+
+        // Collapse mode with no specific method: render a simplified overview
+        if collapse_details && method_name.is_none() {
+            for method_name in &target_methods {
+                let node_id = generator.next_id();
+                generator.output.push_str(&format!("    {}([\"{}\"]):::public\n", node_id, method_name));
+            }
+            // Add edges based on call graph
+            // (simplified: just show who calls whom)
+        } else {
+            for method_name in &target_methods {
+                if let Some(node_info) = graph.nodes.get(method_name) {
+                    let start_byte = node_info.range.0;
+                    let end_byte = node_info.range.1;
+                    if let Some(method_node) = Self::find_node_by_range(root_node, start_byte, end_byte) {
+                        generator.generate_method_flow(method_node, method_name);
+                    }
+                }
+            }
+        }
+
+        let external_services: Vec<String> = generator.detected_externals.into_iter().collect();
+
+        // Styles
+        output.push_str("  classDef public fill:#f9f,stroke:#333,stroke-width:2px;\n");
+        output.push_str("  classDef internal fill:#e1f5fe,stroke:#01579b,stroke-width:1px;\n");
+        output.push_str("  classDef external fill:#ffe0b2,stroke:#e65100,stroke-width:1px,stroke-dasharray: 5 5;\n");
+        output.push_str("  classDef decision fill:#fff9c4,stroke:#fbc02d,stroke-width:1px,shape:rhombus;\n");
+        output.push_str("  classDef loop fill:#e8f5e9,stroke:#2e7d32,stroke-width:1px;\n");
+        output.push_str("  classDef endNode fill:#fce4ec,stroke:#c62828,stroke-width:2px;\n");
+
+        MermaidResult {
+            mermaid: output,
+            external_services,
+        }
+    }
+
     fn find_node_by_range<'a>(root: Node<'a>, start: usize, end: usize) -> Option<Node<'a>> {        // Traverse to find the specific node. behavior of `goto_first_child_for_byte` might help but exact match is needed.
         // Since we know the bytes, we can try to locate it.
         // Actually, just walking declarations again is robust enough given we have structure.
@@ -257,11 +392,16 @@ impl JavaParser {
     }
 }
 
+#[allow(dead_code)]
 struct FlowGenerator<'a> {
     source: &'a str,
     graph: &'a CallGraph,
     output: &'a mut String,
     node_counter: usize,
+    ignored_variables: &'a [String],
+    ignored_services: &'a [String],
+    collapse_details: bool,
+    detected_externals: HashSet<String>,
 }
 
 impl<'a> FlowGenerator<'a> {
@@ -283,7 +423,7 @@ impl<'a> FlowGenerator<'a> {
             for prev in end_nodes {
                 self.output.push_str(&format!("    {} --> {}\n", prev, end_id));
             }
-            self.output.push_str(&format!("    {}(End)\n", end_id));
+            self.output.push_str(&format!("    {}([\"End of {}\"]):::endNode\n", end_id, method_name));
         }
         
         self.output.push_str("  end\n");
@@ -334,18 +474,23 @@ impl<'a> FlowGenerator<'a> {
     }
     
     fn dispatch_node(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
-         let node_id = match node.kind() {
+         match node.kind() {
              "expression_statement" | "local_variable_declaration" | "return_statement" => {
                  self.process_expression_with_label(node, prev_ids, label)
              },
              "if_statement" => {
                  self.process_if_with_label(node, prev_ids, label)
              },
+             "for_statement" | "while_statement" | "do_statement" | "enhanced_for_statement" => {
+                 self.process_loop_with_label(node, prev_ids, label)
+             },
+             "switch_expression" | "switch_statement" => {
+                 self.process_switch_with_label(node, prev_ids, label)
+             },
               _ => {
                   self.process_generic_recursive_with_label(node, prev_ids, label)
               }
-         };
-         node_id
+         }
     }
 
     fn process_expression_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
@@ -466,6 +611,175 @@ impl<'a> FlowGenerator<'a> {
         result
     }
     
+    fn process_loop_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
+        // Extract loop condition/header text based on loop type
+        let loop_text = match node.kind() {
+            "for_statement" => {
+                let mut parts = Vec::new();
+                if let Some(init) = node.child_by_field_name("init") {
+                    parts.push(self.source[init.byte_range().start..init.byte_range().end].to_string());
+                }
+                if let Some(cond) = node.child_by_field_name("condition") {
+                    parts.push(self.source[cond.byte_range().start..cond.byte_range().end].to_string());
+                }
+                if let Some(update) = node.child_by_field_name("update") {
+                    parts.push(self.source[update.byte_range().start..update.byte_range().end].to_string());
+                }
+                format!("for ({})", parts.join("; "))
+            },
+            "while_statement" => {
+                if let Some(cond) = node.child_by_field_name("condition") {
+                    let cond_text = &self.source[cond.byte_range().start..cond.byte_range().end];
+                    format!("while {}", cond_text)
+                } else {
+                    "while (...)".to_string()
+                }
+            },
+            "do_statement" => {
+                if let Some(cond) = node.child_by_field_name("condition") {
+                    let cond_text = &self.source[cond.byte_range().start..cond.byte_range().end];
+                    format!("do...while {}", cond_text)
+                } else {
+                    "do...while (...)".to_string()
+                }
+            },
+            "enhanced_for_statement" => {
+                let type_text = node.child_by_field_name("type")
+                    .map(|t| self.source[t.byte_range().start..t.byte_range().end].to_string())
+                    .unwrap_or_default();
+                let name_text = node.child_by_field_name("name")
+                    .map(|n| self.source[n.byte_range().start..n.byte_range().end].to_string())
+                    .unwrap_or_default();
+                let value_text = node.child_by_field_name("value")
+                    .map(|v| self.source[v.byte_range().start..v.byte_range().end].to_string())
+                    .unwrap_or_default();
+                format!("for ({} {} : {})", type_text, name_text, value_text)
+            },
+            _ => "loop".to_string()
+        };
+
+        let safe_text = loop_text.replace('"', "'").replace('\n', " ");
+
+        // Truncate if too long
+        let display_text = if safe_text.len() > 60 {
+            format!("{}...", &safe_text[..57])
+        } else {
+            safe_text
+        };
+
+        // Create the loop condition node (hexagon shape)
+        let loop_id = self.next_id();
+        self.output.push_str(&format!("    {}{{{{\"{}\"}}}}:::loop\n", loop_id, display_text));
+
+        // Add click handler
+        let offset = node.byte_range().start;
+        self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", loop_id, offset));
+
+        // Connect previous nodes to the loop node
+        for prev in &prev_ids {
+            let arrow = match &label {
+                Some(l) => format!("-->|{}|", l),
+                None => "-->".to_string()
+            };
+            self.output.push_str(&format!("    {} {} {}\n", prev, arrow, loop_id));
+        }
+
+        // Process the body
+        let body = node.child_by_field_name("body");
+        let body_end_ids = if let Some(body_node) = body {
+            self.traverse_node_with_label(body_node, vec![loop_id.clone()], Some("loop body".to_string()))
+        } else {
+            vec![loop_id.clone()]
+        };
+
+        // Create back-edge from end of body to loop condition (visual loop)
+        for end_id in &body_end_ids {
+            if end_id != &loop_id {
+                self.output.push_str(&format!("    {} -.->|repeat| {}\n", end_id, loop_id));
+            }
+        }
+
+        // The loop exits to the next node from the loop condition
+        vec![loop_id]
+    }
+
+    fn process_switch_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
+        // Extract the switch condition
+        let condition = node.child_by_field_name("condition")
+            .map(|c| self.source[c.byte_range().start..c.byte_range().end].to_string())
+            .unwrap_or_else(|| "...".to_string());
+
+        let safe_condition = condition.replace('"', "'").replace('\n', " ");
+
+        // Create the switch decision node (diamond shape)
+        let switch_id = self.next_id();
+        self.output.push_str(&format!("    {}{{\"switch {}\"}}:::decision\n", switch_id, safe_condition));
+
+        // Add click handler
+        let offset = node.byte_range().start;
+        self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", switch_id, offset));
+
+        // Connect previous nodes to switch
+        for prev in &prev_ids {
+            let arrow = match &label {
+                Some(l) => format!("-->|{}|", l),
+                None => "-->".to_string()
+            };
+            self.output.push_str(&format!("    {} {} {}\n", prev, arrow, switch_id));
+        }
+
+        // Process the switch body to find case branches
+        let body = node.child_by_field_name("body");
+        let mut all_exit_ids: Vec<String> = Vec::new();
+
+        if let Some(body_node) = body {
+            let mut cursor = body_node.walk();
+            let children: Vec<Node> = body_node.children(&mut cursor).collect();
+
+            for child in children {
+                if !child.is_named() { continue; }
+
+                // Extract case label text
+                let case_label = if child.kind() == "switch_block_statement_group" {
+                    let mut label_parts = Vec::new();
+                    let mut inner_cursor = child.walk();
+                    for inner_child in child.children(&mut inner_cursor) {
+                        if inner_child.kind() == "switch_label" {
+                            let label_text = &self.source[inner_child.byte_range().start..inner_child.byte_range().end];
+                            label_parts.push(label_text.trim().to_string());
+                        }
+                    }
+                    if label_parts.is_empty() { "case".to_string() } else { label_parts.join(", ") }
+                } else {
+                    let text = &self.source[child.byte_range().start..child.byte_range().end];
+                    let first_line = text.lines().next().unwrap_or("case");
+                    first_line.trim().to_string()
+                };
+
+                let safe_case_label = case_label.replace('"', "'").replace('\n', " ");
+                let display_label = if safe_case_label.len() > 30 {
+                    format!("{}...", &safe_case_label[..27])
+                } else {
+                    safe_case_label
+                };
+
+                let case_exits = self.traverse_node_with_label(
+                    child,
+                    vec![switch_id.clone()],
+                    Some(display_label)
+                );
+                all_exit_ids.extend(case_exits);
+            }
+        }
+
+        // If no cases produced exits, the switch itself is the exit
+        if all_exit_ids.is_empty() {
+            all_exit_ids.push(switch_id.clone());
+        }
+
+        all_exit_ids
+    }
+
     fn process_generic_recursive_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
         let mut current_ids = prev_ids;
         let mut current_label = label;
@@ -482,39 +796,65 @@ impl<'a> FlowGenerator<'a> {
         current_ids
     }
 
-    fn find_calls_in_node(&self, node: Node) -> Vec<(String, bool, String, usize)> {
+    fn find_calls_in_node(&mut self, node: Node) -> Vec<(String, bool, String, usize)> {
         let mut calls = Vec::new();
         self.collect_calls_recursive(node, &mut calls);
         calls
     }
-    
-    fn collect_calls_recursive(&self, node: Node, calls: &mut Vec<(String, bool, String, usize)>) {
+
+    fn collect_calls_recursive(&mut self, node: Node, calls: &mut Vec<(String, bool, String, usize)>) {
         if node.kind() == "method_invocation" {
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name_text = &self.source[name_node.byte_range().start..name_node.byte_range().end];
                 let raw_text = &self.source[node.byte_range().start..node.byte_range().end];
-                
-                // Determine External
-                let mut is_internal = false;
+
+                // Check if this call should be ignored
+                let mut should_ignore = false;
+
                 if let Some(obj_node) = node.child_by_field_name("object") {
                     let obj_text = &self.source[obj_node.byte_range().start..obj_node.byte_range().end];
-                    if obj_text == "this" {
-                        is_internal = true;
+
+                    // Check against ignored_services (replaces hardcoded System.out/System.err)
+                    for svc in self.ignored_services.iter() {
+                        if raw_text.starts_with(svc.as_str()) || obj_text == svc.as_str() {
+                            should_ignore = true;
+                            break;
+                        }
                     }
-                } else {
-                    if self.graph.nodes.contains_key(name_text) {
-                        is_internal = true;
+
+                    // Check against ignored_variables
+                    if !should_ignore {
+                        for var in self.ignored_variables.iter() {
+                            if obj_text == var.as_str() || obj_text.starts_with(&format!("{}.", var)) {
+                                should_ignore = true;
+                                break;
+                            }
+                        }
                     }
                 }
-                
-                if raw_text.starts_with("System.out") || raw_text.starts_with("System.err") {
-                    // Ignore
-                } else {
-                     calls.push((name_text.to_string(), !is_internal, raw_text.to_string(), node.byte_range().start));
+
+                if !should_ignore {
+                    // Determine Internal vs External
+                    let mut is_internal = false;
+                    if let Some(obj_node) = node.child_by_field_name("object") {
+                        let obj_text = &self.source[obj_node.byte_range().start..obj_node.byte_range().end];
+                        if obj_text == "this" {
+                            is_internal = true;
+                        } else {
+                            // Track detected external service
+                            self.detected_externals.insert(obj_text.to_string());
+                        }
+                    } else {
+                        if self.graph.nodes.contains_key(name_text) {
+                            is_internal = true;
+                        }
+                    }
+
+                    calls.push((name_text.to_string(), !is_internal, raw_text.to_string(), node.byte_range().start));
                 }
             }
         }
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             self.collect_calls_recursive(child, calls);
@@ -707,5 +1047,251 @@ mod tests {
         let mermaid_private = JavaParser::generate_mermaid(&graph, source, Some("privateMethod".to_string()));
         assert!(mermaid_private.contains("([\"privateMethod\"])"));
         assert!(!mermaid_private.contains("([\"publicMethod\"])"));
+    }
+
+    #[test]
+    fn test_for_loop_flow() {
+        let source = r#"
+        class LoopTest {
+            public void process() {
+                for (int i = 0; i < 10; i++) {
+                    doWork();
+                }
+                done();
+            }
+            private void doWork() {}
+            private void done() {}
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+        let mermaid = JavaParser::generate_mermaid(&graph, source, Some("process".to_string()));
+        println!("For Loop Flow:\n{}", mermaid);
+
+        assert!(mermaid.contains("for ("));
+        assert!(mermaid.contains(":::loop"));
+        assert!(mermaid.contains("repeat"));
+        assert!(mermaid.contains("doWork"));
+        assert!(mermaid.contains("done"));
+    }
+
+    #[test]
+    fn test_while_loop_flow() {
+        let source = r#"
+        class WhileTest {
+            public void poll() {
+                while (isRunning()) {
+                    fetch();
+                }
+            }
+            private void fetch() {}
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+        let mermaid = JavaParser::generate_mermaid(&graph, source, Some("poll".to_string()));
+        println!("While Loop Flow:\n{}", mermaid);
+
+        assert!(mermaid.contains("while"));
+        assert!(mermaid.contains(":::loop"));
+        assert!(mermaid.contains("repeat"));
+    }
+
+    #[test]
+    fn test_enhanced_for_flow() {
+        let source = r#"
+        class ForEachTest {
+            public void processAll() {
+                for (String item : items) {
+                    handle(item);
+                }
+            }
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+        let mermaid = JavaParser::generate_mermaid(&graph, source, Some("processAll".to_string()));
+        println!("Enhanced For Flow:\n{}", mermaid);
+
+        assert!(mermaid.contains("for ("));
+        assert!(mermaid.contains(":::loop"));
+    }
+
+    #[test]
+    fn test_switch_flow() {
+        let source = r#"
+        class SwitchTest {
+            public void route(int code) {
+                switch (code) {
+                    case 1:
+                        handleOne();
+                        break;
+                    case 2:
+                        handleTwo();
+                        break;
+                    default:
+                        handleDefault();
+                }
+            }
+            private void handleOne() {}
+            private void handleTwo() {}
+            private void handleDefault() {}
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+        let mermaid = JavaParser::generate_mermaid(&graph, source, Some("route".to_string()));
+        println!("Switch Flow:\n{}", mermaid);
+
+        assert!(mermaid.contains("switch"));
+        assert!(mermaid.contains(":::decision"));
+    }
+
+    #[test]
+    fn test_nested_loop_in_if() {
+        let source = r#"
+        class NestedTest {
+            public void run() {
+                if (isReady()) {
+                    for (int i = 0; i < count; i++) {
+                        process();
+                    }
+                }
+                finish();
+            }
+            private void process() {}
+            private void finish() {}
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+        let mermaid = JavaParser::generate_mermaid(&graph, source, Some("run".to_string()));
+        println!("Nested Flow:\n{}", mermaid);
+
+        assert!(mermaid.contains(":::decision")); // if condition
+        assert!(mermaid.contains(":::loop"));     // for loop inside
+        assert!(mermaid.contains("finish"));      // after if
+    }
+
+    // --- Tests for filtering features (generate_mermaid_filtered) ---
+
+    #[test]
+    fn test_variable_ignore_filter() {
+        let source = r#"
+        class Service {
+            public void process() {
+                logger.info("start");
+                validate();
+                logger.debug("done");
+            }
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+        let result = JavaParser::generate_mermaid_filtered(
+            &graph, source, Some("process".to_string()),
+            &["logger".to_string()],
+            &[],
+            false,
+        );
+        println!("Variable Ignore Flow:\n{}", result.mermaid);
+
+        assert!(!result.mermaid.contains("logger.info"));
+        assert!(!result.mermaid.contains("logger.debug"));
+        assert!(result.mermaid.contains("validate"));
+    }
+
+    #[test]
+    fn test_service_ignore_filter() {
+        let source = r#"
+        class Service {
+            public void run() {
+                repo.save();
+                emailService.send();
+                notificationService.push();
+            }
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+        let result = JavaParser::generate_mermaid_filtered(
+            &graph, source, Some("run".to_string()),
+            &[],
+            &["emailService".to_string()],
+            false,
+        );
+        println!("Service Ignore Flow:\n{}", result.mermaid);
+
+        assert!(!result.mermaid.contains("emailService.send"));
+        assert!(result.mermaid.contains("repo.save"));
+        assert!(result.mermaid.contains("notificationService.push"));
+    }
+
+    #[test]
+    fn test_detected_external_services() {
+        let source = r#"
+        class Handler {
+            public void handle() {
+                repo.find();
+                cache.get();
+                emailService.send();
+            }
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+        let result = JavaParser::generate_mermaid_filtered(
+            &graph, source, Some("handle".to_string()),
+            &[], &[], false,
+        );
+        println!("Detected Services: {:?}", result.external_services);
+
+        assert!(result.external_services.contains(&"repo".to_string()));
+        assert!(result.external_services.contains(&"cache".to_string()));
+        assert!(result.external_services.contains(&"emailService".to_string()));
+    }
+
+    #[test]
+    fn test_end_node_label() {
+        let source = r#"
+        class Simple {
+            public void doWork() {
+                step1();
+            }
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+        let result = JavaParser::generate_mermaid_filtered(
+            &graph, source, Some("doWork".to_string()),
+            &[], &[], false,
+        );
+        println!("End Node Flow:\n{}", result.mermaid);
+
+        assert!(result.mermaid.contains("End of doWork"));
+        assert!(result.mermaid.contains(":::endNode"));
+    }
+
+    #[test]
+    fn test_collapse_details() {
+        let source = r#"
+        class Complex {
+            public void main() {
+                helper();
+            }
+            public void helper() {
+                subStep();
+            }
+            private void subStep() {}
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+
+        // Without collapse: both main and helper get subgraphs
+        let result_expanded = JavaParser::generate_mermaid_filtered(
+            &graph, source, None,
+            &[], &[], false,
+        );
+        // With collapse: simplified overview
+        let result_collapsed = JavaParser::generate_mermaid_filtered(
+            &graph, source, None,
+            &[], &[], true,
+        );
+        println!("Expanded:\n{}", result_expanded.mermaid);
+        println!("Collapsed:\n{}", result_collapsed.mermaid);
+
+        // Collapsed version should be shorter (no subgraph bodies)
+        assert!(result_collapsed.mermaid.len() < result_expanded.mermaid.len());
     }
 }

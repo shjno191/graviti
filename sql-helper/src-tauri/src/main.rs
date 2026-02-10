@@ -77,9 +77,38 @@ fn parse_java_graph(source: String) -> Result<java_parser::CallGraph, String> {
 }
 
 #[tauri::command]
-fn generate_mermaid_graph(source: String, method_name: Option<String>) -> Result<String, String> {
+fn generate_mermaid_graph(
+    handle: tauri::AppHandle,
+    source: String,
+    method_name: Option<String>,
+    options: Option<java_parser::MermaidOptions>,
+) -> Result<java_parser::MermaidResult, String> {
     let graph = JavaParser::parse(&source)?;
-    Ok(JavaParser::generate_mermaid(&graph, &source, method_name))
+
+    // Load global flow settings
+    let flow_settings = load_flow_settings(handle).unwrap_or_default();
+
+    // Merge global + session ignore lists
+    let opts = options.unwrap_or_default();
+    let mut all_ignored_services = flow_settings.ignored_services.clone();
+    for svc in &opts.session_ignore_services {
+        if !all_ignored_services.contains(svc) {
+            all_ignored_services.push(svc.clone());
+        }
+    }
+
+    let collapse = opts.collapse_details || flow_settings.collapse_details;
+
+    let result = JavaParser::generate_mermaid_filtered(
+        &graph,
+        &source,
+        method_name,
+        &flow_settings.ignored_variables,
+        &all_ignored_services,
+        collapse,
+    );
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -325,16 +354,42 @@ fn load_db_settings(handle: tauri::AppHandle) -> Result<AppSettings, String> {
     Ok(settings)
 }
 
+#[tauri::command]
+fn save_flow_settings(handle: tauri::AppHandle, settings: java_parser::FlowSettings) -> Result<(), String> {
+    let path = handle.path_resolver().app_config_dir().ok_or("Could not find app config dir")?;
+    fs::create_dir_all(&path).map_err(|e: std::io::Error| e.to_string())?;
+    let config_path = path.join("flow_settings.json");
+    let content = serde_json::to_string_pretty(&settings).map_err(|e: serde_json::Error| e.to_string())?;
+    let mut file = File::create(config_path).map_err(|e: std::io::Error| e.to_string())?;
+    file.write_all(content.as_bytes()).map_err(|e: std::io::Error| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn load_flow_settings(handle: tauri::AppHandle) -> Result<java_parser::FlowSettings, String> {
+    let path = handle.path_resolver().app_config_dir().ok_or("Could not find app config dir")?;
+    let config_path = path.join("flow_settings.json");
+    if !config_path.exists() {
+        return Ok(java_parser::FlowSettings::default());
+    }
+    let mut file = File::open(config_path).map_err(|e: std::io::Error| e.to_string())?;
+    let mut content = String::new();
+    file.read_to_string(&mut content).map_err(|e: std::io::Error| e.to_string())?;
+    serde_json::from_str(&content).map_err(|e: serde_json::Error| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            read_log_file, 
-            execute_query, 
+            read_log_file,
+            execute_query,
             test_connection,
             parse_java_graph,
             generate_mermaid_graph,
-            save_db_settings, 
+            save_db_settings,
             load_db_settings,
+            save_flow_settings,
+            load_flow_settings,
             open_file
         ])
         .run(tauri::generate_context!())

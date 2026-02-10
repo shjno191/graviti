@@ -18,6 +18,22 @@ interface CallGraph {
     calls: Record<string, string[]>;
 }
 
+interface MermaidOptions {
+    session_ignore_services: string[];
+    collapse_details: boolean;
+}
+
+interface MermaidResult {
+    mermaid: string;
+    external_services: string[];
+}
+
+interface FlowSettings {
+    ignored_variables: string[];
+    ignored_services: string[];
+    collapse_details: boolean;
+}
+
 // Recursive component to display the tree
 const CallGraphNode = ({ 
     method, 
@@ -84,6 +100,23 @@ export function JavaParserTab() {
     const [showModal, setShowModal] = useState(false);
     const [highlightOffset, setHighlightOffset] = useState<number | null>(null);
 
+    // Flow filtering state
+    const [flowSettings, setFlowSettings] = useState<FlowSettings>({
+        ignored_variables: [], ignored_services: [], collapse_details: false,
+    });
+    const [sessionIgnoreServices, setSessionIgnoreServices] = useState<string[]>([]);
+    const [detectedServices, setDetectedServices] = useState<string[]>([]);
+    const [collapseDetails, setCollapseDetails] = useState(false);
+    const [showFlowSettings, setShowFlowSettings] = useState(false);
+    const [variableInput, setVariableInput] = useState('');
+
+    // Load flow settings on mount
+    useEffect(() => {
+        invoke<FlowSettings>('load_flow_settings')
+            .then(s => { setFlowSettings(s); setCollapseDetails(s.collapse_details); })
+            .catch(err => console.warn('[JavaParserTab] Failed to load flow settings:', err));
+    }, []);
+
     // Setup global click handler for Mermaid diagram nodes
     // This handler receives click events from the Mermaid diagram and scrolls to the corresponding source code
     useEffect(() => {
@@ -145,11 +178,16 @@ export function JavaParserTab() {
         setMermaidGraph('');
         setZoom(1);
         try {
-            const mermaid = await invoke<string>('generate_mermaid_graph', { 
-                source: sourceCode, 
-                methodName: methodName 
+            const result = await invoke<MermaidResult>('generate_mermaid_graph', {
+                source: sourceCode,
+                methodName: methodName,
+                options: {
+                    session_ignore_services: sessionIgnoreServices,
+                    collapse_details: collapseDetails,
+                } as MermaidOptions,
             });
-            setMermaidGraph(mermaid);
+            setMermaidGraph(result.mermaid);
+            setDetectedServices(result.external_services.sort());
         } catch (err: any) {
             console.error(err);
             setNotification(`Failed to generate diagram for ${methodName}`);
@@ -157,6 +195,14 @@ export function JavaParserTab() {
             setLoadingMermaid(false);
         }
     };
+
+    // Re-generate diagram when filters change
+    useEffect(() => {
+        if (selectedMethod && mermaidGraph) {
+            selectMethod(selectedMethod);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sessionIgnoreServices, collapseDetails]);
 
     const copyColumn = (key: 'description' | 'name' | 'type', label: string) => {
         if (parsedFields.length === 0) return;
@@ -349,11 +395,11 @@ export function JavaParserTab() {
                                             {selectedMethod ? (
                                                 <div className="flex-1 flex flex-col p-4 overflow-auto min-h-0 gap-4">
                                                     <div className="flex justify-between items-center border-b border-gray-200 pb-2">
-                                                        <div className="flex flex-col">
-                                                            <h3 className="font-bold text-gray-800">Flow: {selectedMethod}</h3>
+                                                        <div className="flex flex-col min-w-0 flex-1">
+                                                            <h3 className="font-bold text-gray-800 truncate" title={`Flow: ${selectedMethod}`}>Flow: {selectedMethod}</h3>
                                                             {loadingMermaid && <div className="text-[10px] text-primary animate-pulse">Generating...</div>}
                                                         </div>
-                                                        <div className="flex gap-2 items-center">
+                                                        <div className="flex gap-2 items-center flex-shrink-0">
                                                             {/* Zoom Controls */}
                                                             <div className="flex items-center gap-1 bg-white border border-gray-200 rounded p-0.5 shadow-sm mr-2">
                                                                 <button 
@@ -397,6 +443,192 @@ export function JavaParserTab() {
                                                             </button>
                                                         </div>
                                                     </div>
+
+                                                    {/* Filter Controls Bar */}
+                                                    {!loadingMermaid && mermaidGraph && (
+                                                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 flex flex-wrap items-center gap-3 text-xs">
+                                                            {/* Collapse Toggle */}
+                                                            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={collapseDetails}
+                                                                    onChange={(e) => setCollapseDetails(e.target.checked)}
+                                                                    className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                                                                />
+                                                                <span className="font-semibold text-gray-600">Collapse details</span>
+                                                            </label>
+
+                                                            {/* Settings Gear */}
+                                                            <button
+                                                                onClick={() => setShowFlowSettings(!showFlowSettings)}
+                                                                className={`p-1 rounded hover:bg-gray-200 transition-colors ${showFlowSettings ? 'bg-gray-200 text-primary' : 'text-gray-400'}`}
+                                                                title="Flow Settings"
+                                                            >
+                                                                ⚙
+                                                            </button>
+
+                                                            {/* Separator */}
+                                                            {detectedServices.length > 0 && (
+                                                                <div className="h-5 w-px bg-gray-300" />
+                                                            )}
+
+                                                            {/* Detected External Services */}
+                                                            {detectedServices.length > 0 && (
+                                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                                    <span className="font-semibold text-gray-400 uppercase tracking-wider text-[10px]">
+                                                                        Services:
+                                                                    </span>
+                                                                    {detectedServices.map(svc => {
+                                                                        const isSessionIgnored = sessionIgnoreServices.includes(svc);
+                                                                        const isGlobalIgnored = flowSettings.ignored_services.includes(svc);
+                                                                        return (
+                                                                            <div key={svc} className="flex items-center gap-0.5 bg-white border border-gray-200 rounded px-1.5 py-0.5">
+                                                                                <label className="flex items-center gap-1 cursor-pointer">
+                                                                                    <input
+                                                                                        type="checkbox"
+                                                                                        checked={!isSessionIgnored && !isGlobalIgnored}
+                                                                                        onChange={(e) => {
+                                                                                            if (e.target.checked) {
+                                                                                                setSessionIgnoreServices(prev => prev.filter(s => s !== svc));
+                                                                                            } else {
+                                                                                                setSessionIgnoreServices(prev => [...prev, svc]);
+                                                                                            }
+                                                                                        }}
+                                                                                        disabled={isGlobalIgnored}
+                                                                                        className="w-3 h-3 rounded border-gray-300 text-primary"
+                                                                                    />
+                                                                                    <span className={`font-mono text-[11px] ${isGlobalIgnored ? 'text-gray-300 line-through' : isSessionIgnored ? 'text-gray-400 line-through' : 'text-orange-600'}`}>
+                                                                                        {svc}
+                                                                                    </span>
+                                                                                </label>
+                                                                                {!isGlobalIgnored && (
+                                                                                    <button
+                                                                                        onClick={async () => {
+                                                                                            const newSettings = {
+                                                                                                ...flowSettings,
+                                                                                                ignored_services: [...flowSettings.ignored_services, svc],
+                                                                                            };
+                                                                                            try {
+                                                                                                await invoke('save_flow_settings', { settings: newSettings });
+                                                                                                setFlowSettings(newSettings);
+                                                                                                setSessionIgnoreServices(prev => prev.filter(s => s !== svc));
+                                                                                                setNotification(`"${svc}" added to global ignore list`);
+                                                                                                setTimeout(() => setNotification(null), 2000);
+                                                                                            } catch (err) {
+                                                                                                console.error('Failed to save flow settings:', err);
+                                                                                            }
+                                                                                        }}
+                                                                                        className="text-[9px] text-red-400 hover:text-red-600 font-bold uppercase ml-0.5"
+                                                                                        title="Add to global ignore list (persisted)"
+                                                                                    >
+                                                                                        ✕
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Flow Settings Panel */}
+                                                    {showFlowSettings && !loadingMermaid && (
+                                                        <div className="bg-white border border-gray-200 rounded-lg p-3 text-xs space-y-3">
+                                                            {/* Ignored Variables */}
+                                                            <div>
+                                                                <div className="font-bold text-gray-500 uppercase tracking-wider text-[10px] mb-1.5">
+                                                                    Global Ignored Variables
+                                                                </div>
+                                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                                    {flowSettings.ignored_variables.map(v => (
+                                                                        <span key={v} className="inline-flex items-center gap-1 bg-gray-100 border border-gray-200 rounded px-2 py-0.5 font-mono text-gray-600">
+                                                                            {v}
+                                                                            <button
+                                                                                onClick={async () => {
+                                                                                    const newSettings = {
+                                                                                        ...flowSettings,
+                                                                                        ignored_variables: flowSettings.ignored_variables.filter(x => x !== v),
+                                                                                    };
+                                                                                    await invoke('save_flow_settings', { settings: newSettings });
+                                                                                    setFlowSettings(newSettings);
+                                                                                }}
+                                                                                className="text-red-400 hover:text-red-600 font-bold"
+                                                                            >
+                                                                                ✕
+                                                                            </button>
+                                                                        </span>
+                                                                    ))}
+                                                                    <div className="flex items-center gap-1">
+                                                                        <input
+                                                                            type="text"
+                                                                            value={variableInput}
+                                                                            onChange={(e) => setVariableInput(e.target.value)}
+                                                                            onKeyDown={async (e) => {
+                                                                                if (e.key === 'Enter' && variableInput.trim()) {
+                                                                                    const newSettings = {
+                                                                                        ...flowSettings,
+                                                                                        ignored_variables: [...flowSettings.ignored_variables, variableInput.trim()],
+                                                                                    };
+                                                                                    await invoke('save_flow_settings', { settings: newSettings });
+                                                                                    setFlowSettings(newSettings);
+                                                                                    setVariableInput('');
+                                                                                }
+                                                                            }}
+                                                                            placeholder="Add variable..."
+                                                                            className="border border-gray-200 rounded px-2 py-0.5 w-28 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                                                                        />
+                                                                        <button
+                                                                            onClick={async () => {
+                                                                                if (variableInput.trim()) {
+                                                                                    const newSettings = {
+                                                                                        ...flowSettings,
+                                                                                        ignored_variables: [...flowSettings.ignored_variables, variableInput.trim()],
+                                                                                    };
+                                                                                    await invoke('save_flow_settings', { settings: newSettings });
+                                                                                    setFlowSettings(newSettings);
+                                                                                    setVariableInput('');
+                                                                                }
+                                                                            }}
+                                                                            className="bg-primary/10 text-primary px-2 py-0.5 rounded hover:bg-primary/20 font-semibold"
+                                                                        >
+                                                                            + Add
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Ignored Services */}
+                                                            <div>
+                                                                <div className="font-bold text-gray-500 uppercase tracking-wider text-[10px] mb-1.5">
+                                                                    Global Ignored Services
+                                                                </div>
+                                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                                    {flowSettings.ignored_services.map(s => (
+                                                                        <span key={s} className="inline-flex items-center gap-1 bg-orange-50 border border-orange-200 rounded px-2 py-0.5 font-mono text-orange-600">
+                                                                            {s}
+                                                                            <button
+                                                                                onClick={async () => {
+                                                                                    const newSettings = {
+                                                                                        ...flowSettings,
+                                                                                        ignored_services: flowSettings.ignored_services.filter(x => x !== s),
+                                                                                    };
+                                                                                    await invoke('save_flow_settings', { settings: newSettings });
+                                                                                    setFlowSettings(newSettings);
+                                                                                }}
+                                                                                className="text-red-400 hover:text-red-600 font-bold"
+                                                                            >
+                                                                                ✕
+                                                                            </button>
+                                                                        </span>
+                                                                    ))}
+                                                                    {flowSettings.ignored_services.length === 0 && (
+                                                                        <span className="text-gray-300 italic">None</span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
 
                                                     {loadingMermaid ? (
                                                         <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-2">
