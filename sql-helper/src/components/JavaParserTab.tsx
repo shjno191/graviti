@@ -84,18 +84,37 @@ export function JavaParserTab() {
     const [showModal, setShowModal] = useState(false);
     const [highlightOffset, setHighlightOffset] = useState<number | null>(null);
 
-    // Setup global click handler for Mermaid
+    // Setup global click handler for Mermaid diagram nodes
+    // This handler receives click events from the Mermaid diagram and scrolls to the corresponding source code
     useEffect(() => {
         (window as any).onNodeClick = (id: string) => {
-            console.log('Node clicked:', id);
+            console.log('[JavaParserTab] Node clicked:', id);
+
+            // Extract byte offset from node ID
+            // Expected format: "offset-<byteOffset>" (e.g., "offset-1234")
             if (id.startsWith('offset-')) {
-                const offset = parseInt(id.split('-')[1]);
-                if (!isNaN(offset)) {
-                    setHighlightOffset(null); // Reset to trigger effect if same offset clicked twice
-                    setTimeout(() => setHighlightOffset(offset), 0);
+                const offsetStr = id.split('-')[1];
+                const offset = parseInt(offsetStr);
+
+                if (isNaN(offset)) {
+                    console.warn(`[JavaParserTab] Invalid offset value in node ID: ${id}`);
+                    return;
                 }
+
+                if (offset < 0) {
+                    console.warn(`[JavaParserTab] Negative offset in node ID: ${id}`);
+                    return;
+                }
+
+                console.log(`[JavaParserTab] Scrolling to offset ${offset}`);
+                // Reset to trigger effect even if same offset clicked twice
+                setHighlightOffset(null);
+                setTimeout(() => setHighlightOffset(offset), 0);
+            } else {
+                console.warn(`[JavaParserTab] Unexpected node ID format: ${id}. Expected format: offset-<number>`);
             }
         };
+
         return () => {
             delete (window as any).onNodeClick;
         };
