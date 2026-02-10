@@ -185,6 +185,7 @@ export const TranslateTab: React.FC = () => {
     const [hoveredKey, setHoveredKey] = useState<string | null>(null);
     const [lineSpacing, setLineSpacing] = useState(1.6);
     const [segmentCopyFeedback, setSegmentCopyFeedback] = useState<string | null>(null);
+    const [resultCopyFeedback, setResultCopyFeedback] = useState(false);
     const [showFormatSettings, setShowFormatSettings] = useState(false);
     const settingsPanelRef = useRef<HTMLDivElement>(null);
 
@@ -539,7 +540,20 @@ export const TranslateTab: React.FC = () => {
             .sort((a, b) => b.phrase.length - a.phrase.length);
 
         return sorted;
+        return sorted;
     }, [data, targetLang]);
+
+    const handleCopyResult = () => {
+        if (translatedLines.length === 0) return;
+
+        const fullText = translatedLines.map(line => 
+            line.segments.map(seg => seg.text).join('')
+        ).join('\n');
+
+        navigator.clipboard.writeText(fullText);
+        setResultCopyFeedback(true);
+        setTimeout(() => setResultCopyFeedback(false), 2000);
+    };
 
     // Use a timeout to debounce heavy translation logic
     useEffect(() => {
@@ -927,14 +941,17 @@ export const TranslateTab: React.FC = () => {
                                         </div>
                                     </div>
                                     <button
-                                        onClick={handleCopyAllResult}
-                                        className={`flex items-center gap-2 px-3 py-1 rounded-lg text-[9px] font-black transition-all shadow-sm
-                                            ${segmentCopyFeedback === 'all'
-                                                ? 'bg-green-600 text-white animate-pulse'
-                                                : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95'}
+                                        onClick={handleCopyResult}
+                                        disabled={translatedLines.length === 0}
+                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-300
+                                            ${resultCopyFeedback
+                                                ? 'bg-green-500 text-white shadow-lg scale-105'
+                                                : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300 shadow-sm active:scale-95'
+                                            }
+                                            ${translatedLines.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}
                                         `}
                                     >
-                                        {segmentCopyFeedback === 'all' ? '✅ COPIED ALL' : '📋 COPY ALL'}
+                                        <span>{resultCopyFeedback ? '✓ COPIED!' : '📋 COPY RESULT'}</span>
                                     </button>
                                 </div>
                                 <div

@@ -11,6 +11,8 @@ use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 use futures::StreamExt;
 use chrono;
+mod java_parser;
+use java_parser::JavaParser;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DbConfig {
@@ -67,6 +69,17 @@ fn open_file(path: String) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[tauri::command]
+fn parse_java_graph(source: String) -> Result<java_parser::CallGraph, String> {
+    JavaParser::parse(&source)
+}
+
+#[tauri::command]
+fn generate_mermaid_graph(source: String, method_name: Option<String>) -> Result<String, String> {
+    let graph = JavaParser::parse(&source)?;
+    Ok(JavaParser::generate_mermaid(&graph, &source, method_name))
 }
 
 #[tauri::command]
@@ -318,6 +331,8 @@ fn main() {
             read_log_file, 
             execute_query, 
             test_connection,
+            parse_java_graph,
+            generate_mermaid_graph,
             save_db_settings, 
             load_db_settings,
             open_file
