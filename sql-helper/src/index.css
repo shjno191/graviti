@@ -82,9 +82,20 @@ button {
   transition: none; /* Animation handles visual changes, not transitions */
 }
 
+/* Persistent subtle background that stays after animation completes */
+.flow-highlight-active {
+  background-color: rgba(250, 204, 21, 0.15);
+  border-left: 3px solid rgba(250, 204, 21, 0.8);
+  border-radius: 0 4px 4px 0;
+}
+
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
   .flow-highlight-target {
     animation: flow-highlight-pulse-dark 2s ease-out forwards;
+  }
+  .flow-highlight-active {
+    background-color: rgba(59, 130, 246, 0.1);
+    border-left: 3px solid rgba(59, 130, 246, 0.6);
   }
 }

@@ -1,21 +1,20 @@
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, memo } from 'react';
 
 interface SourceCodeViewerProps {
     source: string;
     highlightOffset?: number | null;
 }
 
-// Track the currently highlighted element and active timer globally to ensure cleanup
+// Track the currently highlighted element globally to ensure cleanup across re-renders
 let currentHighlightedElement: HTMLElement | null = null;
-let currentHighlightTimer: NodeJS.Timeout | null = null;
 
-export const SourceCodeViewer = ({ source, highlightOffset }: SourceCodeViewerProps) => {
+const SourceCodeViewerInner = ({ source, highlightOffset }: SourceCodeViewerProps) => {
     const lines = source.split('\n');
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Map byte offset to line index accurately (handling multi-byte characters)
-    const getLineFromOffset = useCallback((offset: number) => {
+    const getLineFromOffset = useCallback((offset: number): number => {
         const encoder = new TextEncoder();
         let currentByteOffset = 0;
         for (let i = 0; i < lines.length; i++) {
@@ -43,63 +42,53 @@ export const SourceCodeViewer = ({ source, highlightOffset }: SourceCodeViewerPr
 
         const targetId = `source-line-${lineIdx}`;
         const element = document.getElementById(targetId);
+        const container = containerRef.current;
 
-        if (!element) {
-            console.warn(`[SourceCodeViewer] Target element not found: ${targetId}`);
+        if (!element || !container) {
+            console.warn(`[SourceCodeViewer] Target element or container not found: ${targetId}`);
             return;
-        }
-
-        // Clear any pending timer from previous highlight
-        if (currentHighlightTimer) {
-            clearTimeout(currentHighlightTimer);
-            currentHighlightTimer = null;
         }
 
         // Remove highlight from previously highlighted element
         if (currentHighlightedElement && currentHighlightedElement !== element) {
             currentHighlightedElement.classList.remove('flow-highlight-target');
+            currentHighlightedElement.classList.remove('flow-highlight-active');
         }
 
-        // Scroll to the target element with smooth behavior
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Calculate scroll position to center the line within the container
+        const containerRect = container.getBoundingClientRect();
+        const elementRect = element.getBoundingClientRect();
+        
+        // Compute how far the element is from the container's visible top
+        const elementRelativeTop = elementRect.top - containerRect.top + container.scrollTop;
+        const targetScroll = elementRelativeTop - (container.clientHeight / 2) + (element.offsetHeight / 2);
+
+        container.scrollTo({
+            top: Math.max(0, targetScroll),
+            behavior: 'smooth'
+        });
 
         // Apply highlight class (re-trigger animation by removing and re-adding)
         element.classList.remove('flow-highlight-target');
+        element.classList.remove('flow-highlight-active');
         // Force reflow to restart animation
         void element.offsetWidth;
         element.classList.add('flow-highlight-target');
+        element.classList.add('flow-highlight-active');
 
         // Track this as the currently highlighted element
         currentHighlightedElement = element;
-
-        // Auto-remove highlight after animation completes (matches CSS animation duration)
-        currentHighlightTimer = setTimeout(() => {
-            if (element.classList.contains('flow-highlight-target')) {
-                element.classList.remove('flow-highlight-target');
-            }
-            if (currentHighlightedElement === element) {
-                currentHighlightedElement = null;
-            }
-            currentHighlightTimer = null;
-        }, 2000);
-
-        return () => {
-            if (currentHighlightTimer) {
-                clearTimeout(currentHighlightTimer);
-                currentHighlightTimer = null;
-            }
-        };
     }, [highlightOffset, getLineFromOffset]);
 
     return (
         <div
             ref={containerRef}
-            className="flex-1 overflow-auto bg-gray-50 font-mono text-xs border border-gray-200 rounded custom-scrollbar"
+            className="flex-1 overflow-auto bg-gray-50 font-mono text-xs border border-gray-200 rounded custom-scrollbar relative"
             aria-label="Source code viewer with click-to-scroll support"
         >
-            <div className="flex">
+            <div className="flex min-h-full min-w-0">
                 {/* Line Numbers Column */}
-                <div className="bg-gray-100 text-gray-400 text-right p-2 select-none border-r border-gray-200 min-w-[3rem] sticky left-0 z-10">
+                <div className="bg-gray-100 text-gray-400 text-right p-2 select-none border-r border-gray-200 min-w-[3.5rem] sticky left-0 z-10 shrink-0">
                     {lines.map((_, i) => (
                         <div key={i} className="leading-5">
                             {i + 1}
@@ -108,13 +97,13 @@ export const SourceCodeViewer = ({ source, highlightOffset }: SourceCodeViewerPr
                 </div>
 
                 {/* Code Content Column */}
-                <div className="p-2 whitespace-pre min-w-0">
+                <div className="p-2 whitespace-pre min-w-0 flex-1">
                     {lines.map((line, i) => (
                         <div
                             key={i}
                             id={`source-line-${i}`}
-                            className="px-2 leading-5 hover:bg-gray-100/50 transition-colors"
-                            title={`Line ${i + 1}: Click from diagram to highlight`}
+                            className="px-2 leading-5 hover:bg-gray-100/50 transition-colors relative"
+                            title={`Line ${i + 1}`}
                         >
                             {line || ' '}
                         </div>
@@ -125,31 +114,6 @@ export const SourceCodeViewer = ({ source, highlightOffset }: SourceCodeViewerPr
     );
 };
 
-/**
- * SourceCodeViewer Component
- *
- * Displays source code with line numbers and supports click-to-scroll highlighting from Mermaid diagrams.
- *
- * ID Convention:
- * - Each line is assigned a stable ID: `source-line-${lineIndex}`
- * - Line index is 0-based (first line = source-line-0)
- * - IDs remain stable across re-renders if source code doesn't change
- *
- * Highlight Behavior:
- * - Triggered by `highlightOffset` prop (byte offset in source)
- * - Offset is converted to line index using UTF-8 byte calculation
- * - Target line is scrolled into view with smooth behavior
- * - Highlight animation plays for 2 seconds (matches CSS animation duration)
- * - Rapidly clicking same node removes previous highlight before applying new one
- * - Invalid offsets log a warning and silently fail
- *
- * Animation Classes:
- * - `.flow-highlight-target`: Yellow pulse animation (light mode)
- * - Dark mode: Blue pulse animation (automatically applied via @media query)
- * - Animation includes: background color, box-shadow, and inset border
- *
- * Performance Considerations:
- * - Uses CSS animations (GPU-accelerated) instead of JavaScript timers for visual changes
- * - Reflow optimization: Forces reflow to restart animation on same element
- * - Global state tracking prevents orphaned highlights and timer leaks
- */
+// React.memo: only re-render when source or highlightOffset actually changes
+// This prevents expensive DOM rebuilds when parent zoom/modal state changes
+export const SourceCodeViewer = memo(SourceCodeViewerInner);

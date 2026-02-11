@@ -98,6 +98,7 @@ fn generate_mermaid_graph(
     }
 
     let collapse = opts.collapse_details || flow_settings.collapse_details;
+    let show_source_ref = opts.show_source_reference || flow_settings.show_source_reference;
 
     let result = JavaParser::generate_mermaid_filtered(
         &graph,
@@ -106,6 +107,7 @@ fn generate_mermaid_graph(
         &flow_settings.ignored_variables,
         &all_ignored_services,
         collapse,
+        show_source_ref,
     );
 
     Ok(result)

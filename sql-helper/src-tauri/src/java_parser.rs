@@ -2,7 +2,7 @@
 use std::collections::{HashMap, HashSet};
 use tree_sitter::{Parser, Node};
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MethodNode {
     pub name: String,
     // Start/End byte offsets for mapping back to source
@@ -11,12 +11,49 @@ pub struct MethodNode {
     pub return_type: String,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum FlowStep {
+    Call {
+        name: String,
+        is_external: bool,
+        raw_text: String,
+        offset: usize,
+        line: usize,
+    },
+    Decision {
+        label: String,
+        offset: usize,
+        line: usize,
+        yes_branch: Vec<FlowStep>,
+        no_branch: Vec<FlowStep>,
+    },
+    Loop {
+        label: String,
+        offset: usize,
+        line: usize,
+        body: Vec<FlowStep>,
+    },
+    Switch {
+        label: String,
+        offset: usize,
+        line: usize,
+        cases: Vec<(String, Vec<FlowStep>)>,
+    },
+    Return {
+        label: String,
+        offset: usize,
+        line: usize,
+    },
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct CallGraph {
     // Map of Method Name -> Method Details
     pub nodes: HashMap<String, MethodNode>,
     // Adjacency List: Caller -> List of Callees (in order of appearance)
     pub calls: HashMap<String, Vec<String>>,
+    // Flow model for each method
+    pub flows: HashMap<String, Vec<FlowStep>>,
 }
 
 // --- Configuration and API structs ---
@@ -26,6 +63,7 @@ pub struct FlowSettings {
     pub ignored_variables: Vec<String>,
     pub ignored_services: Vec<String>,
     pub collapse_details: bool,
+    pub show_source_reference: bool,
 }
 
 impl Default for FlowSettings {
@@ -34,6 +72,7 @@ impl Default for FlowSettings {
             ignored_variables: vec![],
             ignored_services: vec!["System.out".to_string(), "System.err".to_string()],
             collapse_details: false,
+            show_source_reference: false,
         }
     }
 }
@@ -42,6 +81,7 @@ impl Default for FlowSettings {
 pub struct MermaidOptions {
     pub session_ignore_services: Vec<String>,
     pub collapse_details: bool,
+    pub show_source_reference: bool,
 }
 
 impl Default for MermaidOptions {
@@ -49,6 +89,7 @@ impl Default for MermaidOptions {
         MermaidOptions {
             session_ignore_services: vec![],
             collapse_details: false,
+            show_source_reference: false,
         }
     }
 }
@@ -74,20 +115,22 @@ impl JavaParser {
 
         // Pass 1: Collect all method declarations
         let mut method_declarations = Vec::new(); // Store nodes to process later
-
         Self::collect_method_declarations(root_node, source, &mut methods, &mut method_declarations);
 
         let method_names: HashSet<String> = methods.keys().cloned().collect();
 
-        // Pass 2: Analyze method bodies for calls
+        // Pass 2: Analyze method bodies for flows
+        let mut flows = HashMap::new();
         for (name, node) in &method_declarations {
-             let calls = Self::find_calls(*node, source, &method_names);
-             method_calls.insert(name.clone(), calls);
+             let (steps, calls_list) = Self::analyze_method_flow(*node, source, &method_names);
+             method_calls.insert(name.clone(), calls_list);
+             flows.insert(name.clone(), steps);
         }
 
         Ok(CallGraph {
             nodes: methods,
             calls: method_calls,
+            flows,
         })
     }
 
@@ -155,138 +198,203 @@ impl JavaParser {
         }
     }
 
-    fn find_calls(node: Node, source: &str, valid_methods: &HashSet<String>) -> Vec<String> {
-        let mut calls = Vec::new();        
-        // We only care about the body, which is usually a 'block'
+    fn analyze_method_flow(node: Node, source: &str, method_names: &HashSet<String>) -> (Vec<FlowStep>, Vec<String>) {
+        let mut steps = Vec::new();
+        let mut calls_list = Vec::new();
+        
         if let Some(body) = node.child_by_field_name("body") {
-            Self::visit_body(body, source, valid_methods, &mut calls);
+            Self::collect_flow_recursive(body, source, method_names, &mut steps, &mut calls_list);
         }
         
-        calls
+        (steps, calls_list)
     }
 
-    fn visit_body(node: Node, source: &str, valid_methods: &HashSet<String>, calls: &mut Vec<String>) {
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            if child.kind() == "method_invocation" {
-                // Check if it's a local call
-                // Simple case: name() -> identifier
-                // Complex case: this.name() -> field_access
+    fn collect_flow_recursive(node: Node, source: &str, method_names: &HashSet<String>, steps: &mut Vec<FlowStep>, calls_list: &mut Vec<String>) {
+        if !node.is_named() { return; }
+
+        match node.kind() {
+            "block" => {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    Self::collect_flow_recursive(child, source, method_names, steps, calls_list);
+                }
+            },
+            "expression_statement" | "local_variable_declaration" => {
+                let mut node_calls = Vec::new();
+                Self::find_calls_in_expr(node, source, method_names, &mut node_calls);
                 
-                let name_node = child.child_by_field_name("name");
-                 if let Some(name_node) = name_node {
-                     let name = &source[name_node.byte_range().start..name_node.byte_range().end];
-                     
-                     // Check if there is an object/expression before the name (e.g., obj.method())
-                     let object_node = child.child_by_field_name("object");
-                     
-                     let is_local_call = match object_node {
-                         None => true, // direct call: method()
-                         Some(obj) => {
-                             let obj_text = &source[obj.byte_range().start..obj.byte_range().end];
-                             obj_text == "this" // explicit local call: this.method()
+                for (name, is_external, raw, offset, line) in node_calls {
+                    steps.push(FlowStep::Call {
+                        name: name.clone(),
+                        is_external,
+                        raw_text: raw,
+                        offset,
+                        line,
+                    });
+                    if !is_external {
+                        calls_list.push(name);
+                    }
+                }
+            },
+            "return_statement" => {
+                steps.push(FlowStep::Return {
+                    label: source[node.byte_range().start..node.byte_range().end].replace('"', "'"),
+                    offset: node.byte_range().start,
+                    line: node.start_position().row + 1,
+                });
+            },
+            "if_statement" => {
+                if let Some(condition) = node.child_by_field_name("condition") {
+                    let mut cond_calls = Vec::new();
+                    Self::find_calls_in_expr(condition, source, method_names, &mut cond_calls);
+                    
+                    for (name, is_external, raw, offset, line) in cond_calls {
+                        steps.push(FlowStep::Call {
+                            name: name.clone(),
+                            is_external,
+                            raw_text: raw,
+                            offset,
+                            line,
+                        });
+                        if !is_external {
+                            calls_list.push(name);
+                        }
+                    }
+
+                    let cond_text = source[condition.byte_range().start..condition.byte_range().end].replace('\n', " ").replace('"', "'");
+                    
+                    let mut yes_branch = Vec::new();
+                    if let Some(consequence) = node.child_by_field_name("consequence") {
+                        Self::collect_flow_recursive(consequence, source, method_names, &mut yes_branch, calls_list);
+                    }
+
+                    let mut no_branch = Vec::new();
+                    if let Some(alternative) = node.child_by_field_name("alternative") {
+                        Self::collect_flow_recursive(alternative, source, method_names, &mut no_branch, calls_list);
+                    }
+
+                    steps.push(FlowStep::Decision {
+                        label: cond_text,
+                        offset: condition.byte_range().start,
+                        line: condition.start_position().row + 1,
+                        yes_branch,
+                        no_branch,
+                    });
+                }
+            },
+            "for_statement" | "while_statement" | "do_statement" | "enhanced_for_statement" => {
+                let mut label = node.kind().to_string();
+                let offset = node.byte_range().start;
+                let line = node.start_position().row + 1;
+
+                // Improved label extraction
+                if node.kind() == "while_statement" {
+                    if let Some(cond) = node.child_by_field_name("condition") {
+                        label = format!("while {}", &source[cond.byte_range().start..cond.byte_range().end]);
+                    }
+                } else if node.kind() == "for_statement" {
+                     label = "for (...)".to_string();
+                } else if node.kind() == "enhanced_for_statement" {
+                     label = "for (item : list)".to_string();
+                }
+
+                let mut body_steps = Vec::new();
+                if let Some(body) = node.child_by_field_name("body") {
+                    Self::collect_flow_recursive(body, source, method_names, &mut body_steps, calls_list);
+                }
+
+                steps.push(FlowStep::Loop {
+                    label: label.replace('"', "'").replace('\n', " "),
+                    offset,
+                    line,
+                    body: body_steps,
+                });
+            },
+            "switch_expression" | "switch_statement" => {
+                let mut label = "switch".to_string();
+                if let Some(cond) = node.child_by_field_name("condition") {
+                     label = format!("switch {}", &source[cond.byte_range().start..cond.byte_range().end]);
+                }
+
+                let mut cases = Vec::new();
+                if let Some(body) = node.child_by_field_name("body") {
+                     let mut cursor = body.walk();
+                     for switch_child in body.children(&mut cursor) {
+                         if switch_child.kind() == "switch_block_statement_group" {
+                             let mut case_label = "case".to_string();
+                             let mut case_steps = Vec::new();
+                             
+                             let mut child_cursor = switch_child.walk();
+                             for g_child in switch_child.children(&mut child_cursor) {
+                                 if g_child.kind() == "switch_label" {
+                                     case_label = source[g_child.byte_range().start..g_child.byte_range().end].to_string();
+                                 } else {
+                                     Self::collect_flow_recursive(g_child, source, method_names, &mut case_steps, calls_list);
+                                 }
+                             }
+                             cases.push((case_label, case_steps));
                          }
-                     };
-
-                     if is_local_call && valid_methods.contains(name) {
-                         calls.push(name.to_string());
                      }
-                 }
-                 // Continue searching arguments for nested calls: methodA(methodB())
-                 if let Some(args) = child.child_by_field_name("arguments") {
-                      Self::visit_body(args, source, valid_methods, calls);
-                 }
+                }
 
-            } else {
-                // Recurse into blocks, if statements, loops, etc.
-                if child.child_count() > 0 {
-                    Self::visit_body(child, source, valid_methods, calls);
+                steps.push(FlowStep::Switch {
+                    label: label.replace('"', "'").replace('\n', " "),
+                    offset: node.byte_range().start,
+                    line: node.start_position().row + 1,
+                    cases,
+                });
+            },
+            _ => {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    Self::collect_flow_recursive(child, source, method_names, steps, calls_list);
                 }
             }
         }
     }
 
-    pub fn generate_mermaid(graph: &CallGraph, source: &str, method_name: Option<String>) -> String {
-        let mut output = String::from("flowchart TD\n");
-        
-        let mut target_methods: Vec<String> = Vec::new();
+    fn find_calls_in_expr(node: Node, source: &str, method_names: &HashSet<String>, calls: &mut Vec<(String, bool, String, usize, usize)>) {
+        if node.kind() == "method_invocation" {
+            if let Some(name_node) = node.child_by_field_name("name") {
+                let name = source[name_node.byte_range().start..name_node.byte_range().end].to_string();
+                let raw = source[node.byte_range().start..node.byte_range().end].trim().to_string();
+                let offset = node.byte_range().start;
+                let line = node.start_position().row + 1;
 
-        if let Some(name) = method_name {
-            if graph.nodes.contains_key(&name) {
-                target_methods.push(name);
+                let mut is_internal = false;
+                if let Some(obj_node) = node.child_by_field_name("object") {
+                    let obj_text = &source[obj_node.byte_range().start..obj_node.byte_range().end];
+                    if obj_text == "this" {
+                        is_internal = true;
+                    }
+                } else if method_names.contains(&name) {
+                    is_internal = true;
+                }
+
+                calls.push((name, !is_internal, raw, offset, line));
             }
-        } else {
-            // Default: Public AND Protected methods
-            target_methods = graph.nodes.iter()
-                .filter(|(_, node)| {
-                    node.modifiers.contains(&"public".to_string()) || 
-                    node.modifiers.contains(&"protected".to_string())
-                })
-                .map(|(name, _)| name.clone())
-                .collect();
-            target_methods.sort();
         }
 
-        // We need a fresh parser to traverse bodies for Control Flow logic
-        let mut parser = Parser::new();
-        if parser.set_language(tree_sitter_java::language()).is_err() {
-            return "error: failed to set language".to_string();
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            Self::find_calls_in_expr(child, source, method_names, calls);
         }
-        let tree = match parser.parse(source, None) {
-             Some(t) => t,
-             None => return "error: parse failed".to_string(),
-        };
-        let root_node = tree.root_node();
+    }
 
-        // We need to map method names to their nodes to start traversal
-        // We can reuse graph.nodes.range to find the node in the new tree? 
-        // Or just re-find them. Using graph.nodes.range is safer/faster.
-        
-        let default_ignored_vars: Vec<String> = vec![];
-        let default_ignored_svcs: Vec<String> = vec!["System.out".to_string(), "System.err".to_string()];
-
-        let mut generator = FlowGenerator {
-            source,
-            graph,
-            output: &mut output,
-            node_counter: 0,
-            ignored_variables: &default_ignored_vars,
-            ignored_services: &default_ignored_svcs,
-            collapse_details: false,
-            detected_externals: HashSet::new(),
-        };
-
-        for method_name in target_methods {
-             if let Some(node_info) = graph.nodes.get(&method_name) {
-                 let start_byte = node_info.range.0;
-                 let end_byte = node_info.range.1;
-                 if let Some(method_node) = Self::find_node_by_range(root_node, start_byte, end_byte) {
-                      generator.generate_method_flow(method_node, &method_name);
-                 }
-             }
-        }
-
-        // Styles
-        output.push_str("  classDef public fill:#f9f,stroke:#333,stroke-width:2px;\n");
-        output.push_str("  classDef internal fill:#e1f5fe,stroke:#01579b,stroke-width:1px;\n");
-        output.push_str("  classDef external fill:#ffe0b2,stroke:#e65100,stroke-width:1px,stroke-dasharray: 5 5;\n");
-        output.push_str("  classDef decision fill:#fff9c4,stroke:#fbc02d,stroke-width:1px,shape:rhombus;\n");
-        output.push_str("  classDef loop fill:#e8f5e9,stroke:#2e7d32,stroke-width:1px;\n");
-        output.push_str("  classDef endNode fill:#fce4ec,stroke:#c62828,stroke-width:2px;\n");
-
-        output
+    pub fn generate_mermaid(graph: &CallGraph, source: &str, method_name: Option<String>) -> String {
+        Self::generate_mermaid_filtered(graph, source, method_name, &[], &[], false, false).mermaid
     }
 
     pub fn generate_mermaid_filtered(
         graph: &CallGraph,
-        source: &str,
+        _source: &str, // No longer strictly needed for flow generation if model is complete
         method_name: Option<String>,
         ignored_variables: &[String],
         ignored_services: &[String],
         collapse_details: bool,
+        show_source_ref: bool,
     ) -> MermaidResult {
         let mut output = String::from("flowchart TD\n");
-
         let mut target_methods: Vec<String> = Vec::new();
 
         if let Some(ref name) = method_name {
@@ -304,49 +412,31 @@ impl JavaParser {
             target_methods.sort();
         }
 
-        let mut parser = Parser::new();
-        if parser.set_language(tree_sitter_java::language()).is_err() {
-            return MermaidResult {
-                mermaid: "error: failed to set language".to_string(),
-                external_services: vec![],
-            };
-        }
-        let tree = match parser.parse(source, None) {
-            Some(t) => t,
-            None => return MermaidResult {
-                mermaid: "error: parse failed".to_string(),
-                external_services: vec![],
-            },
-        };
-        let root_node = tree.root_node();
-
         let mut generator = FlowGenerator {
-            source,
             graph,
             output: &mut output,
             node_counter: 0,
             ignored_variables,
             ignored_services,
             collapse_details,
+            show_source_ref,
             detected_externals: HashSet::new(),
         };
 
-        // Collapse mode with no specific method: render a simplified overview
+        // Even if filtered, we want to know ALL services for the UI
+        for flow in graph.flows.values() {
+            generator.collect_all_externals(flow);
+        }
+
         if collapse_details && method_name.is_none() {
             for method_name in &target_methods {
                 let node_id = generator.next_id();
                 generator.output.push_str(&format!("    {}([\"{}\"]):::public\n", node_id, method_name));
             }
-            // Add edges based on call graph
-            // (simplified: just show who calls whom)
         } else {
             for method_name in &target_methods {
-                if let Some(node_info) = graph.nodes.get(method_name) {
-                    let start_byte = node_info.range.0;
-                    let end_byte = node_info.range.1;
-                    if let Some(method_node) = Self::find_node_by_range(root_node, start_byte, end_byte) {
-                        generator.generate_method_flow(method_node, method_name);
-                    }
+                if let Some(steps) = graph.flows.get(method_name) {
+                    generator.generate_method_flow(steps, method_name);
                 }
             }
         }
@@ -366,499 +456,213 @@ impl JavaParser {
             external_services,
         }
     }
-
-    fn find_node_by_range<'a>(root: Node<'a>, start: usize, end: usize) -> Option<Node<'a>> {        // Traverse to find the specific node. behavior of `goto_first_child_for_byte` might help but exact match is needed.
-        // Since we know the bytes, we can try to locate it.
-        // Actually, just walking declarations again is robust enough given we have structure.
-        // But for optimization, let's just do a named child search or standard walk.
-        
-        // Optimization: Recursive search check bounds
-        Self::find_node_recursive(root, start, end)
-    }
-    
-    fn find_node_recursive<'a>(node: Node<'a>, start: usize, end: usize) -> Option<Node<'a>> {
-        if node.byte_range().start == start && node.byte_range().end == end {
-            return Some(node);
-        }
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-             if child.byte_range().end > start && child.byte_range().start < end {
-                 if let Some(found) = Self::find_node_recursive(child, start, end) {
-                     return Some(found);
-                 }
-             }
-        }
-        None
-    }
 }
 
 #[allow(dead_code)]
 struct FlowGenerator<'a> {
-    source: &'a str,
     graph: &'a CallGraph,
     output: &'a mut String,
     node_counter: usize,
     ignored_variables: &'a [String],
     ignored_services: &'a [String],
     collapse_details: bool,
+    show_source_ref: bool,
     detected_externals: HashSet<String>,
 }
 
 impl<'a> FlowGenerator<'a> {
-    fn next_id(&mut self) -> String {
-        self.node_counter += 1;
-        format!("N{}", self.node_counter)
-    }
-
-    fn generate_method_flow(&mut self, method_node: Node, method_name: &str) {
+    fn generate_method_flow(&mut self, steps: &[FlowStep], method_name: &str) {
         self.output.push_str(&format!("  subgraph {}\n", method_name));
         self.output.push_str("    direction TB\n");
         
         let start_id = self.next_id();
         self.output.push_str(&format!("    {}([\"{}\"]):::public\n", start_id, method_name));
 
-        if let Some(body) = method_node.child_by_field_name("body") {
-            let end_nodes = self.traverse_block(body, vec![start_id]);
-            let end_id = self.next_id();
-            for prev in end_nodes {
-                self.output.push_str(&format!("    {} --> {}\n", prev, end_id));
-            }
-            self.output.push_str(&format!("    {}([\"End of {}\"]):::endNode\n", end_id, method_name));
+        let end_nodes = self.render_steps(steps, vec![start_id], None);
+        let end_id = self.next_id();
+        for prev in end_nodes {
+            self.output.push_str(&format!("    {} --> {}\n", prev, end_id));
         }
+        self.output.push_str(&format!("    {}([\"End of {}\"]):::endNode\n", end_id, method_name));
         
         self.output.push_str("  end\n");
     }
 
-    fn traverse_block(&mut self, block_node: Node, mut prev_ids: Vec<String>) -> Vec<String> {
-        let mut cursor = block_node.walk();
-        let children: Vec<Node> = block_node.children(&mut cursor).collect();
-        
-        for child in children {
-             if !child.is_named() { continue; }
-             let next_ids = self.dispatch_node(child, prev_ids.clone(), None);
-             if next_ids != prev_ids {
-                 prev_ids = next_ids;
-             }
+    fn collect_all_externals(&mut self, steps: &[FlowStep]) {
+        for step in steps {
+            match step {
+                FlowStep::Call { is_external, raw_text, .. } => {
+                    if *is_external {
+                         if let Some(pos) = raw_text.find('.') {
+                             self.detected_externals.insert(raw_text[..pos].to_string());
+                         } else {
+                             self.detected_externals.insert(raw_text.clone());
+                         }
+                    }
+                },
+                FlowStep::Decision { yes_branch, no_branch, .. } => {
+                    self.collect_all_externals(yes_branch);
+                    self.collect_all_externals(no_branch);
+                },
+                FlowStep::Loop { body, .. } => {
+                    self.collect_all_externals(body);
+                },
+                FlowStep::Switch { cases, .. } => {
+                    for (_, case_steps) in cases {
+                        self.collect_all_externals(case_steps);
+                    }
+                },
+                _ => {}
+            }
+        }
+    }
+
+    fn render_steps(&mut self, steps: &[FlowStep], mut prev_ids: Vec<String>, mut label: Option<String>) -> Vec<String> {
+        for step in steps {
+            let next_ids = self.render_step(step, prev_ids.clone(), label.take());
+            if next_ids != prev_ids {
+                prev_ids = next_ids;
+            }
         }
         prev_ids
     }
 
-    fn traverse_node_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
-        let mut current_ids = prev_ids;
-        let mut current_label = label;
-        
-        if node.kind() == "block" {
-             let mut cursor = node.walk();
-             let children: Vec<Node> = node.children(&mut cursor).collect();
-             
-             // If block is empty, we must just return current_ids but handle proper flow? 
-             // If empty block, we effectively "passed through".
-             // But we need to verify if label was consumed?
-             // If label supplied but no nodes generated, the label is lost unless propagated.
-             // For now, if block empty, return prevs. Label effectively points to "End of Block"?
-             
-             for child in children {
-                 if !child.is_named() { continue; }
-                 
-                 let next_ids = self.dispatch_node(child, current_ids.clone(), current_label.clone());
-                 
-                 if next_ids != current_ids {
-                      current_label = None; // Consumed
-                      current_ids = next_ids;
-                 }
-             }
-             return current_ids;
-        } else {
-            return self.dispatch_node(node, current_ids, current_label);
-        }
-    }
-    
-    fn dispatch_node(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
-         match node.kind() {
-             "expression_statement" | "local_variable_declaration" | "return_statement" => {
-                 self.process_expression_with_label(node, prev_ids, label)
-             },
-             "if_statement" => {
-                 self.process_if_with_label(node, prev_ids, label)
-             },
-             "for_statement" | "while_statement" | "do_statement" | "enhanced_for_statement" => {
-                 self.process_loop_with_label(node, prev_ids, label)
-             },
-             "switch_expression" | "switch_statement" => {
-                 self.process_switch_with_label(node, prev_ids, label)
-             },
-              _ => {
-                  self.process_generic_recursive_with_label(node, prev_ids, label)
-              }
-         }
-    }
-
-    fn process_expression_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
-        let calls = self.find_calls_in_node(node);
-        let is_return = node.kind() == "return_statement";
-        
-        if calls.is_empty() && !is_return {
-            return prev_ids;
-        }
-
-        let mut current_prevs = prev_ids;
-        let mut pending_label = label;
-         
-        for (name, is_external, raw_text, offset) in calls {
-             let node_id = self.next_id();
-             let text_label = if is_external { format!("External: {}", raw_text) } else { name.clone() };
-             let style = if is_external { "external" } else { "internal" };
-             
-             let safe_label = text_label.replace('"', "'");
-             self.output.push_str(&format!("    {}[\"{}\"]:::{}\n", node_id, safe_label, style));
-             
-             // Add click action
-             self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", node_id, offset));
-
-             for prev in &current_prevs {
-                 let arrow = match &pending_label {
-                     Some(l) => format!("-->|{}|", l),
-                     None => "-->".to_string()
-                 };
-                 self.output.push_str(&format!("    {} {} {}\n", prev, arrow, node_id));
-             }
-             
-             pending_label = None;
-             current_prevs = vec![node_id];
-         }
-         
-         if is_return {
-             let node_id = self.next_id();
-             let return_text = &self.source[node.byte_range().start..node.byte_range().end].replace('"', "'");
-             self.output.push_str(&format!("    {}[\"{}\"]\n", node_id, return_text));
-             
-             // Add click action
-             let offset = node.byte_range().start;
-             self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", node_id, offset));
-
-             for prev in &current_prevs {
-                 let arrow = match &pending_label {
-                     Some(l) => format!("-->|{}|", l),
-                     None => "-->".to_string()
-                 };
-                 self.output.push_str(&format!("    {} {} {}\n", prev, arrow, node_id));
-             }
-             current_prevs = vec![node_id]; 
-         }
-         
-         current_prevs
-    }
-
-    fn process_if_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
-        let condition_node = node.child_by_field_name("condition").unwrap();
-        let cond_calls = self.find_calls_in_node(condition_node);
-        let mut current_prevs = prev_ids;
-        let mut pending_label = label;
-
-        for (name, is_external, raw_text, offset) in cond_calls {
-             let node_id = self.next_id();
-             let text_label = if is_external { format!("External: {}", raw_text) } else { name.clone() };
-             let style = if is_external { "external" } else { "internal" };
-             let safe_label = text_label.replace('"', "'");
-             self.output.push_str(&format!("    {}[\"{}\"]:::{}\n", node_id, safe_label, style));
-             
-             // Add click action
-             self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", node_id, offset));
-
-             for prev in &current_prevs {
-                 let arrow = match &pending_label {
-                     Some(l) => format!("-->|{}|", l),
-                     None => "-->".to_string()
-                 };
-                 self.output.push_str(&format!("    {} {} {}\n", prev, arrow, node_id));
-             }
-             
-             pending_label = None; 
-             current_prevs = vec![node_id];
-        }
-
-        let cond_text = &self.source[condition_node.byte_range().start..condition_node.byte_range().end];
-        let clean_cond = cond_text.replace('\n', " ").replace('"', "'");
-        
-        let cond_id = self.next_id();
-        self.output.push_str(&format!("    {}{{\"{}\"}}:::decision\n", cond_id, clean_cond));
-        
-        // Add click action for decision node
-        let offset = condition_node.byte_range().start;
-        self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", cond_id, offset));
-
-        for prev in &current_prevs {
-             let arrow = match &pending_label {
-                 Some(l) => format!("-->|{}|", l),
-                 None => "-->".to_string()
-             };
-            self.output.push_str(&format!("    {} {} {}\n", prev, arrow, cond_id));
-        }
-
-        let consequence = node.child_by_field_name("consequence").unwrap();
-        let then_prevs = vec![cond_id.clone()];
-        let ended_then = self.traverse_node_with_label(consequence, then_prevs, Some("Yes".to_string()));
-
-        let mut ended_else = vec![cond_id.clone()];
-        if let Some(alternative) = node.child_by_field_name("alternative") {
-             let else_prevs = vec![cond_id.clone()];
-             let else_res = self.traverse_node_with_label(alternative, else_prevs, Some("No".to_string()));
-             ended_else = else_res;
-        }
-        
-        let mut result = ended_then;
-        result.extend(ended_else);
-        result
-    }
-    
-    fn process_loop_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
-        // Extract loop condition/header text based on loop type
-        let loop_text = match node.kind() {
-            "for_statement" => {
-                let mut parts = Vec::new();
-                if let Some(init) = node.child_by_field_name("init") {
-                    parts.push(self.source[init.byte_range().start..init.byte_range().end].to_string());
-                }
-                if let Some(cond) = node.child_by_field_name("condition") {
-                    parts.push(self.source[cond.byte_range().start..cond.byte_range().end].to_string());
-                }
-                if let Some(update) = node.child_by_field_name("update") {
-                    parts.push(self.source[update.byte_range().start..update.byte_range().end].to_string());
-                }
-                format!("for ({})", parts.join("; "))
-            },
-            "while_statement" => {
-                if let Some(cond) = node.child_by_field_name("condition") {
-                    let cond_text = &self.source[cond.byte_range().start..cond.byte_range().end];
-                    format!("while {}", cond_text)
-                } else {
-                    "while (...)".to_string()
-                }
-            },
-            "do_statement" => {
-                if let Some(cond) = node.child_by_field_name("condition") {
-                    let cond_text = &self.source[cond.byte_range().start..cond.byte_range().end];
-                    format!("do...while {}", cond_text)
-                } else {
-                    "do...while (...)".to_string()
-                }
-            },
-            "enhanced_for_statement" => {
-                let type_text = node.child_by_field_name("type")
-                    .map(|t| self.source[t.byte_range().start..t.byte_range().end].to_string())
-                    .unwrap_or_default();
-                let name_text = node.child_by_field_name("name")
-                    .map(|n| self.source[n.byte_range().start..n.byte_range().end].to_string())
-                    .unwrap_or_default();
-                let value_text = node.child_by_field_name("value")
-                    .map(|v| self.source[v.byte_range().start..v.byte_range().end].to_string())
-                    .unwrap_or_default();
-                format!("for ({} {} : {})", type_text, name_text, value_text)
-            },
-            _ => "loop".to_string()
-        };
-
-        let safe_text = loop_text.replace('"', "'").replace('\n', " ");
-
-        // Truncate if too long
-        let display_text = if safe_text.len() > 60 {
-            format!("{}...", &safe_text[..57])
-        } else {
-            safe_text
-        };
-
-        // Create the loop condition node (hexagon shape)
-        let loop_id = self.next_id();
-        self.output.push_str(&format!("    {}{{{{\"{}\"}}}}:::loop\n", loop_id, display_text));
-
-        // Add click handler
-        let offset = node.byte_range().start;
-        self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", loop_id, offset));
-
-        // Connect previous nodes to the loop node
-        for prev in &prev_ids {
-            let arrow = match &label {
-                Some(l) => format!("-->|{}|", l),
-                None => "-->".to_string()
-            };
-            self.output.push_str(&format!("    {} {} {}\n", prev, arrow, loop_id));
-        }
-
-        // Process the body
-        let body = node.child_by_field_name("body");
-        let body_end_ids = if let Some(body_node) = body {
-            self.traverse_node_with_label(body_node, vec![loop_id.clone()], Some("loop body".to_string()))
-        } else {
-            vec![loop_id.clone()]
-        };
-
-        // Create back-edge from end of body to loop condition (visual loop)
-        for end_id in &body_end_ids {
-            if end_id != &loop_id {
-                self.output.push_str(&format!("    {} -.->|repeat| {}\n", end_id, loop_id));
-            }
-        }
-
-        // The loop exits to the next node from the loop condition
-        vec![loop_id]
-    }
-
-    fn process_switch_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
-        // Extract the switch condition
-        let condition = node.child_by_field_name("condition")
-            .map(|c| self.source[c.byte_range().start..c.byte_range().end].to_string())
-            .unwrap_or_else(|| "...".to_string());
-
-        let safe_condition = condition.replace('"', "'").replace('\n', " ");
-
-        // Create the switch decision node (diamond shape)
-        let switch_id = self.next_id();
-        self.output.push_str(&format!("    {}{{\"switch {}\"}}:::decision\n", switch_id, safe_condition));
-
-        // Add click handler
-        let offset = node.byte_range().start;
-        self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", switch_id, offset));
-
-        // Connect previous nodes to switch
-        for prev in &prev_ids {
-            let arrow = match &label {
-                Some(l) => format!("-->|{}|", l),
-                None => "-->".to_string()
-            };
-            self.output.push_str(&format!("    {} {} {}\n", prev, arrow, switch_id));
-        }
-
-        // Process the switch body to find case branches
-        let body = node.child_by_field_name("body");
-        let mut all_exit_ids: Vec<String> = Vec::new();
-
-        if let Some(body_node) = body {
-            let mut cursor = body_node.walk();
-            let children: Vec<Node> = body_node.children(&mut cursor).collect();
-
-            for child in children {
-                if !child.is_named() { continue; }
-
-                // Extract case label text
-                let case_label = if child.kind() == "switch_block_statement_group" {
-                    let mut label_parts = Vec::new();
-                    let mut inner_cursor = child.walk();
-                    for inner_child in child.children(&mut inner_cursor) {
-                        if inner_child.kind() == "switch_label" {
-                            let label_text = &self.source[inner_child.byte_range().start..inner_child.byte_range().end];
-                            label_parts.push(label_text.trim().to_string());
-                        }
-                    }
-                    if label_parts.is_empty() { "case".to_string() } else { label_parts.join(", ") }
-                } else {
-                    let text = &self.source[child.byte_range().start..child.byte_range().end];
-                    let first_line = text.lines().next().unwrap_or("case");
-                    first_line.trim().to_string()
-                };
-
-                let safe_case_label = case_label.replace('"', "'").replace('\n', " ");
-                let display_label = if safe_case_label.len() > 30 {
-                    format!("{}...", &safe_case_label[..27])
-                } else {
-                    safe_case_label
-                };
-
-                let case_exits = self.traverse_node_with_label(
-                    child,
-                    vec![switch_id.clone()],
-                    Some(display_label)
-                );
-                all_exit_ids.extend(case_exits);
-            }
-        }
-
-        // If no cases produced exits, the switch itself is the exit
-        if all_exit_ids.is_empty() {
-            all_exit_ids.push(switch_id.clone());
-        }
-
-        all_exit_ids
-    }
-
-    fn process_generic_recursive_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
-        let mut current_ids = prev_ids;
-        let mut current_label = label;
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-             if child.is_named() {
-                 let next_ids = self.dispatch_node(child, current_ids.clone(), current_label.clone());
-                 if next_ids != current_ids {
-                      current_label = None;
-                      current_ids = next_ids;
-                 }
-             }
-        }
-        current_ids
-    }
-
-    fn find_calls_in_node(&mut self, node: Node) -> Vec<(String, bool, String, usize)> {
-        let mut calls = Vec::new();
-        self.collect_calls_recursive(node, &mut calls);
-        calls
-    }
-
-    fn collect_calls_recursive(&mut self, node: Node, calls: &mut Vec<(String, bool, String, usize)>) {
-        if node.kind() == "method_invocation" {
-            if let Some(name_node) = node.child_by_field_name("name") {
-                let name_text = &self.source[name_node.byte_range().start..name_node.byte_range().end];
-                let raw_text = &self.source[node.byte_range().start..node.byte_range().end];
-
-                // Check if this call should be ignored
-                let mut should_ignore = false;
-
-                if let Some(obj_node) = node.child_by_field_name("object") {
-                    let obj_text = &self.source[obj_node.byte_range().start..obj_node.byte_range().end];
-
-                    // Check against ignored_services (replaces hardcoded System.out/System.err)
-                    for svc in self.ignored_services.iter() {
-                        if raw_text.starts_with(svc.as_str()) || obj_text == svc.as_str() {
+    fn render_step(&mut self, step: &FlowStep, mut prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
+        match step {
+            FlowStep::Call { name, is_external, raw_text, offset, line } => {
+                // Apply filters
+                if *is_external {
+                    let mut should_ignore = false;
+                    if let Some(pos) = raw_text.find('.') {
+                        let obj = &raw_text[..pos];
+                        if self.ignored_services.contains(&obj.to_string()) || self.ignored_variables.contains(&obj.to_string()) {
                             should_ignore = true;
-                            break;
                         }
+                    } else if self.ignored_variables.contains(name) {
+                        should_ignore = true;
                     }
-
-                    // Check against ignored_variables
-                    if !should_ignore {
-                        for var in self.ignored_variables.iter() {
-                            if obj_text == var.as_str() || obj_text.starts_with(&format!("{}.", var)) {
-                                should_ignore = true;
-                                break;
-                            }
-                        }
-                    }
+                    if should_ignore { return prev_ids; }
+                } else if self.ignored_variables.contains(name) {
+                     // Local variables? The parser only has method calls as 'Call' now
+                     // but we might want to extend this.
                 }
 
-                if !should_ignore {
-                    // Determine Internal vs External
-                    let mut is_internal = false;
-                    if let Some(obj_node) = node.child_by_field_name("object") {
-                        let obj_text = &self.source[obj_node.byte_range().start..obj_node.byte_range().end];
-                        if obj_text == "this" {
-                            is_internal = true;
-                        } else {
-                            // Track detected external service
-                            self.detected_externals.insert(obj_text.to_string());
-                        }
-                    } else {
-                        if self.graph.nodes.contains_key(name_text) {
-                            is_internal = true;
-                        }
-                    }
-
-                    calls.push((name_text.to_string(), !is_internal, raw_text.to_string(), node.byte_range().start));
+                let node_id = self.next_id();
+                let mut display_name = if *is_external { format!("External: {}", raw_text) } else { name.clone() };
+                if self.show_source_ref {
+                    display_name = format!("{} (L{})", display_name, line);
                 }
+                let style = if *is_external { "external" } else { "internal" };
+                
+                self.output.push_str(&format!("    {}[\"{}\"]:::{}\n", node_id, display_name.replace('"', "'"), style));
+                self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\")\n", node_id, offset));
+
+                for prev in &prev_ids {
+                    let arrow = match &label {
+                        Some(l) => format!("-->|{}|", l),
+                        None => "-->".to_string()
+                    };
+                    self.output.push_str(&format!("    {} {} {}\n", prev, arrow, node_id));
+                }
+                vec![node_id]
+            },
+            FlowStep::Decision { label: cond_label, offset, line, yes_branch, no_branch } => {
+                let node_id = self.next_id();
+                let mut display_label = cond_label.clone();
+                if self.show_source_ref {
+                    display_label = format!("{} (L{})", display_label, line);
+                }
+                
+                self.output.push_str(&format!("    {}{{\"{}\"}}:::decision\n", node_id, display_label.replace('"', "'")));
+                self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\")\n", node_id, offset));
+
+                for prev in &prev_ids {
+                    let arrow = match &label {
+                        Some(l) => format!("-->|{}|", l),
+                        None => "-->".to_string()
+                    };
+                    self.output.push_str(&format!("    {} {} {}\n", prev, arrow, node_id));
+                }
+
+                let mut exits = self.render_steps(yes_branch, vec![node_id.clone()], Some("Yes".to_string()));
+                exits.extend(self.render_steps(no_branch, vec![node_id.clone()], Some("No".to_string())));
+                exits
+            },
+            FlowStep::Loop { label: loop_label, offset, line, body } => {
+                let node_id = self.next_id();
+                let mut display_label = loop_label.clone();
+                if self.show_source_ref {
+                    display_label = format!("{} (L{})", display_label, line);
+                }
+
+                self.output.push_str(&format!("    {}{{{{\"{}\"}}}}:::loop\n", node_id, display_label.replace('"', "'")));
+                self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\")\n", node_id, offset));
+
+                for prev in &prev_ids {
+                    let arrow = match &label {
+                        Some(l) => format!("-->|{}|", l),
+                        None => "-->".to_string()
+                    };
+                    self.output.push_str(&format!("    {} {} {}\n", prev, arrow, node_id));
+                }
+
+                let body_exits = self.render_steps(body, vec![node_id.clone()], Some("loop body".to_string()));
+                for exit in body_exits {
+                    if exit != node_id {
+                        self.output.push_str(&format!("    {} -.->|repeat| {}\n", exit, node_id));
+                    }
+                }
+                vec![node_id]
+            },
+            FlowStep::Return { label: ret_label, offset, line } => {
+                let node_id = self.next_id();
+                let mut display_label = ret_label.clone();
+                if self.show_source_ref {
+                    display_label = format!("{} (L{})", display_label, line);
+                }
+
+                self.output.push_str(&format!("    {}[\"{}\"]\n", node_id, display_label.replace('"', "'")));
+                self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\")\n", node_id, offset));
+
+                for prev in &prev_ids {
+                    let arrow = match &label {
+                        Some(l) => format!("-->|{}|", l),
+                        None => "-->".to_string()
+                    };
+                    self.output.push_str(&format!("    {} {} {}\n", prev, arrow, node_id));
+                }
+                vec![node_id]
+            },
+            FlowStep::Switch { label: sw_label, offset, line, cases } => {
+                let node_id = self.next_id();
+                let mut display_label = sw_label.clone();
+                if self.show_source_ref {
+                    display_label = format!("{} (L{})", display_label, line);
+                }
+
+                self.output.push_str(&format!("    {}{{\"{}\"}}:::decision\n", node_id, display_label.replace('"', "'")));
+                self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\")\n", node_id, offset));
+
+                for prev in &prev_ids {
+                    let arrow = match &label {
+                        Some(l) => format!("-->|{}|", l),
+                        None => "-->".to_string()
+                    };
+                    self.output.push_str(&format!("    {} {} {}\n", prev, arrow, node_id));
+                }
+
+                let mut exits = Vec::new();
+                for (case_label, case_steps) in cases {
+                    exits.extend(self.render_steps(case_steps, vec![node_id.clone()], Some(case_label.clone())));
+                }
+                if exits.is_empty() { exits.push(node_id); }
+                exits
             }
         }
-
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            self.collect_calls_recursive(child, calls);
-        }
+    }
+    fn next_id(&mut self) -> String {
+        self.node_counter += 1;
+        format!("N{}", self.node_counter)
     }
 }
 
@@ -1012,7 +816,7 @@ mod tests {
         let mermaid = JavaParser::generate_mermaid(&graph, source, None);
         println!("Recursion Flow:\n{}", mermaid);
         
-        assert!(mermaid.contains("return"));
+        assert!(mermaid.contains("return;"));
         assert!(mermaid.contains("loop"));
     }
 
@@ -1067,7 +871,7 @@ mod tests {
         let mermaid = JavaParser::generate_mermaid(&graph, source, Some("process".to_string()));
         println!("For Loop Flow:\n{}", mermaid);
 
-        assert!(mermaid.contains("for ("));
+        assert!(mermaid.contains("for (...)"));
         assert!(mermaid.contains(":::loop"));
         assert!(mermaid.contains("repeat"));
         assert!(mermaid.contains("doWork"));
@@ -1090,7 +894,7 @@ mod tests {
         let mermaid = JavaParser::generate_mermaid(&graph, source, Some("poll".to_string()));
         println!("While Loop Flow:\n{}", mermaid);
 
-        assert!(mermaid.contains("while"));
+        assert!(mermaid.contains("while (isRunning())"));
         assert!(mermaid.contains(":::loop"));
         assert!(mermaid.contains("repeat"));
     }
@@ -1110,7 +914,8 @@ mod tests {
         let mermaid = JavaParser::generate_mermaid(&graph, source, Some("processAll".to_string()));
         println!("Enhanced For Flow:\n{}", mermaid);
 
-        assert!(mermaid.contains("for ("));
+        assert!(mermaid.contains("for (item : list)"));
+        assert!(mermaid.contains("handle(item)"));
         assert!(mermaid.contains(":::loop"));
     }
 
@@ -1187,6 +992,7 @@ mod tests {
             &["logger".to_string()],
             &[],
             false,
+            false,
         );
         println!("Variable Ignore Flow:\n{}", result.mermaid);
 
@@ -1212,6 +1018,7 @@ mod tests {
             &[],
             &["emailService".to_string()],
             false,
+            false,
         );
         println!("Service Ignore Flow:\n{}", result.mermaid);
 
@@ -1234,7 +1041,7 @@ mod tests {
         let graph = JavaParser::parse(source).expect("Parse failed");
         let result = JavaParser::generate_mermaid_filtered(
             &graph, source, Some("handle".to_string()),
-            &[], &[], false,
+            &[], &[], false, false,
         );
         println!("Detected Services: {:?}", result.external_services);
 
@@ -1255,7 +1062,7 @@ mod tests {
         let graph = JavaParser::parse(source).expect("Parse failed");
         let result = JavaParser::generate_mermaid_filtered(
             &graph, source, Some("doWork".to_string()),
-            &[], &[], false,
+            &[], &[], false, false,
         );
         println!("End Node Flow:\n{}", result.mermaid);
 
@@ -1281,17 +1088,48 @@ mod tests {
         // Without collapse: both main and helper get subgraphs
         let result_expanded = JavaParser::generate_mermaid_filtered(
             &graph, source, None,
-            &[], &[], false,
+            &[], &[], false, false,
         );
         // With collapse: simplified overview
         let result_collapsed = JavaParser::generate_mermaid_filtered(
             &graph, source, None,
-            &[], &[], true,
+            &[], &[], true, false,
         );
         println!("Expanded:\n{}", result_expanded.mermaid);
         println!("Collapsed:\n{}", result_collapsed.mermaid);
 
         // Collapsed version should be shorter (no subgraph bodies)
         assert!(result_collapsed.mermaid.len() < result_expanded.mermaid.len());
+    }
+
+    #[test]
+    fn test_show_source_reference() {
+        let source = r#"
+        class SourceRef {
+            public void main() {
+                service.call();
+                if (check()) {
+                    done();
+                }
+            }
+        }
+        "#;
+        let graph = JavaParser::parse(source).expect("Parse failed");
+        
+        let result_without = JavaParser::generate_mermaid_filtered(
+            &graph, source, Some("main".to_string()),
+            &[], &[], false, false
+        );
+        let result_with = JavaParser::generate_mermaid_filtered(
+            &graph, source, Some("main".to_string()),
+            &[], &[], false, true
+        );
+        
+        println!("Without Source Ref:\n{}", result_without.mermaid);
+        println!("With Source Ref:\n{}", result_with.mermaid);
+        
+        assert!(!result_without.mermaid.contains("(L"));
+        assert!(result_with.mermaid.contains("service.call() (L4)"));
+        assert!(result_with.mermaid.contains("check() (L5)"));
     }
 }
