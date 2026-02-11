@@ -13,7 +13,7 @@ import { LabTab } from './components/LabTab';
 import { TranslateTab } from './components/TranslateTab';
 
 function App() {
-    const { activeTab, setActiveTab, setConnections } = useAppStore();
+    const { activeTab, setActiveTab } = useAppStore();
 
     useEffect(() => {
         const init = async () => {

@@ -411,8 +411,7 @@ export const TranslateTab: React.FC = () => {
         revertTKDeleteChars, setRevertTKDeleteChars,
         revertTKMapping, setRevertTKMapping,
         runShortcut,
-        connections,
-        globalLogPath
+        connections
     } = useAppStore();
 
     const [data, setData] = useState<TranslateEntry[]>([]);
@@ -2421,7 +2420,6 @@ export const TranslateTab: React.FC = () => {
                                             await invoke('save_db_settings', {
                                                 settings: {
                                                     connections,
-                                                    global_log_path: globalLogPath,
                                                     translate_file_path: translateFilePath,
                                                     column_split_enabled: columnSplitEnabled,
                                                     column_split_keywords: columnSplitKeywords,
