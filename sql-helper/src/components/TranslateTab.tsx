@@ -186,6 +186,9 @@ const RevertTKGrid = React.memo((props: {
                 const normLine = normalizeText(text);
 
                 for (const item of props.translationDict) {
+                    // Performance optimization: fast fail if phrase not in line
+                    if (!normLine.includes(item.phrase)) continue;
+
                     item.regex.lastIndex = 0;
                     let match;
                     while ((match = item.regex.exec(normLine)) !== null) {
@@ -1327,6 +1330,9 @@ export const TranslateTab: React.FC = () => {
                 const normLine = normalizeText(line);
 
                 for (const item of translationDict) {
+                    // Performance optimization: fast fail if phrase not in line
+                    if (!normLine.includes(item.phrase)) continue;
+
                     item.regex.lastIndex = 0;
                     let match;
                     while ((match = item.regex.exec(normLine)) !== null) {
@@ -1384,6 +1390,9 @@ export const TranslateTab: React.FC = () => {
                 const normLine = normalizeText(line);
 
                 for (const item of translationDict) {
+                    // Performance optimization: fast fail if phrase not in line
+                    if (!normLine.includes(item.phrase)) continue;
+
                     item.regex.lastIndex = 0;
                     let match;
                     while ((match = item.regex.exec(normLine)) !== null) {
@@ -2409,53 +2418,45 @@ export const TranslateTab: React.FC = () => {
                             )}
                         </div>
 
-                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center shrink-0">
-                            <div className="text-[9px] text-gray-400 font-bold uppercase italic">* Changes apply immediately for current session.</div>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={async () => {
-                                        try {
-                                            const btn = document.getElementById('save-tk-btn');
-                                            if (btn) btn.innerText = 'SAVING...';
-                                            await invoke('save_db_settings', {
-                                                settings: {
-                                                    connections,
-                                                    translate_file_path: translateFilePath,
-                                                    column_split_enabled: columnSplitEnabled,
-                                                    column_split_keywords: columnSplitKeywords,
-                                                    revert_tk_col_config: revertTKColConfig,
-                                                    column_split_apply_to_text: columnSplitApplyToText,
-                                                    column_split_apply_to_table: columnSplitApplyToTable,
-                                                    revert_tk_delete_chars: revertTKDeleteChars,
-                                                    revert_tk_mapping: revertTKMapping,
-                                                    excel_header_color: excelHeaderColor,
-                                                    run_shortcut: runShortcut
-                                                }
-                                            });
-                                            if (btn) {
-                                                btn.innerText = '✅ SAVED';
-                                                btn.classList.add('bg-green-600');
-                                                setTimeout(() => {
-                                                    btn.innerText = '💾 SAVE PERMANENTLY';
-                                                    btn.classList.remove('bg-green-600');
-                                                }, 2000);
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end items-center shrink-0">
+                            <button
+                                onClick={async (e) => {
+                                    const btn = e.currentTarget;
+                                    const originalText = btn.innerText;
+                                    try {
+                                        btn.innerText = 'SAVING...';
+                                        await invoke('save_db_settings', {
+                                            settings: {
+                                                connections,
+                                                translate_file_path: translateFilePath,
+                                                column_split_enabled: columnSplitEnabled,
+                                                column_split_keywords: columnSplitKeywords,
+                                                revert_tk_col_config: revertTKColConfig,
+                                                column_split_apply_to_text: columnSplitApplyToText,
+                                                column_split_apply_to_table: columnSplitApplyToTable,
+                                                revert_tk_delete_chars: revertTKDeleteChars,
+                                                revert_tk_mapping: revertTKMapping,
+                                                excel_header_color: excelHeaderColor,
+                                                run_shortcut: runShortcut
                                             }
-                                        } catch (e) {
-                                            console.error('Failed to save settings', e);
-                                        }
-                                    }}
-                                    id="save-tk-btn"
-                                    className="px-6 py-3 bg-black text-white text-[10px] font-black rounded-xl hover:bg-gray-800 transition-all shadow-md active:scale-95 uppercase tracking-widest flex items-center gap-2"
-                                >
-                                    💾 SAVE PERMANENTLY
-                                </button>
-                                <button
-                                    onClick={() => setShowRevertConfig(false)}
-                                    className="px-10 py-3 bg-indigo-600 text-white text-[10px] font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 uppercase tracking-widest"
-                                >
-                                    Apply & Close
-                                </button>
-                            </div>
+                                        });
+                                        btn.innerText = '✅ SAVED';
+                                        btn.classList.add('bg-green-600');
+                                        setTimeout(() => {
+                                            setShowRevertConfig(false);
+                                        }, 500);
+                                    } catch (e) {
+                                        console.error('Failed to save settings', e);
+                                        btn.innerText = '❌ ERROR';
+                                        setTimeout(() => {
+                                            btn.innerText = originalText;
+                                        }, 2000);
+                                    }
+                                }}
+                                className="px-10 py-3 bg-indigo-600 text-white text-[10px] font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 uppercase tracking-widest"
+                            >
+                                APPLY & SAVE
+                            </button>
                         </div>
                     </div>
                 </div>
