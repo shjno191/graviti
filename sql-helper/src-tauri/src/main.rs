@@ -16,7 +16,7 @@ use java_parser::JavaParser;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DbConfig {
-    pub id: String,
+    pub id: Option<String>,
     pub name: String,
     pub db_type: String, // "mssql", "mysql", "postgres"
     pub host: String,
@@ -325,7 +325,7 @@ fn load_db_settings() -> Result<AppSettings, String> {
         let default_id = "default".to_string();
         return Ok(AppSettings {
             connections: vec![DbConfig {
-                id: default_id.clone(),
+                id: Some(default_id.clone()),
                 name: "Default Connection".to_string(),
                 db_type: "mssql".to_string(),
                 host: "localhost".to_string(),
@@ -354,6 +354,13 @@ fn load_db_settings() -> Result<AppSettings, String> {
     let mut content = String::new();
     file.read_to_string(&mut content).map_err(|e: std::io::Error| e.to_string())?;
     let mut settings: AppSettings = serde_json::from_str(&content).map_err(|e: serde_json::Error| e.to_string())?;
+    
+    // Fill in missing IDs
+    for conn in &mut settings.connections {
+        if conn.id.is_none() {
+            conn.id = Some(chrono::Utc::now().timestamp_nanos().to_string());
+        }
+    }
     
     if settings.translate_file_path.is_none() || settings.translate_file_path.as_ref().unwrap().is_empty() {
         settings.translate_file_path = Some(default_translate_path);

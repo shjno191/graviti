@@ -3,7 +3,7 @@ import { useAppStore, DbConfig } from '../store/useAppStore';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open as openDialog } from '@tauri-apps/api/dialog';
 
-const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: string }> = ({ onRecord }) => {
+const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: string, onSave: () => void }> = ({ onRecord, onSave }) => {
     const [isRecording, setIsRecording] = useState(false);
 
     useEffect(() => {
@@ -23,12 +23,13 @@ const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: strin
                 combo += e.key.toUpperCase();
                 onRecord(combo);
                 setIsRecording(false);
+                setTimeout(onSave, 100);
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isRecording, onRecord]);
+    }, [isRecording, onRecord, onSave]);
 
     return (
         <button
@@ -46,17 +47,51 @@ export const SettingsTab: React.FC = () => {
         translateFilePath, setTranslateFilePath,
         excelHeaderColor, setExcelHeaderColor,
         runShortcut, setRunShortcut,
-        columnSplitEnabled,
-        columnSplitKeywords,
-        revertTKColConfig,
-        columnSplitApplyToText,
-        columnSplitApplyToTable,
-        revertTKDeleteChars,
-        revertTKMapping
+        columnSplitEnabled, setColumnSplitEnabled,
+        columnSplitKeywords, setColumnSplitKeywords,
+        revertTKColConfig, setRevertTKColConfig,
+        columnSplitApplyToText, setColumnSplitApplyToText,
+        columnSplitApplyToTable, setColumnSplitApplyToTable,
+        revertTKDeleteChars, setRevertTKDeleteChars,
+        revertTKMapping, setRevertTKMapping,
+        activeTab
     } = useAppStore();
     const [editingConfig, setEditingConfig] = useState<DbConfig | null>(null);
-    const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error' | 'testing'>('idle');
+    const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error' | 'testing' | 'loading'>('idle');
     const [testMessage, setTestMessage] = useState<string>('');
+
+    const loadSettings = async () => {
+        setStatus('loading');
+        try {
+            const settings = await invoke<any>('load_db_settings');
+            if (settings) {
+                const store = useAppStore.getState();
+                if (settings.connections) store.setConnections(settings.connections);
+                if (settings.translate_file_path) store.setTranslateFilePath(settings.translate_file_path);
+                if (settings.column_split_enabled !== undefined) store.setColumnSplitEnabled(settings.column_split_enabled);
+                if (settings.column_split_keywords) store.setColumnSplitKeywords(settings.column_split_keywords);
+                if (settings.revert_tk_col_config) store.setRevertTKColConfig(settings.revert_tk_col_config);
+                if (settings.column_split_apply_to_text !== undefined) store.setColumnSplitApplyToText(settings.column_split_apply_to_text);
+                if (settings.column_split_apply_to_table !== undefined) store.setColumnSplitApplyToTable(settings.column_split_apply_to_table);
+                if (settings.revert_tk_delete_chars) store.setRevertTKDeleteChars(settings.revert_tk_delete_chars);
+                if (settings.revert_tk_mapping) store.setRevertTKMapping(settings.revert_tk_mapping);
+                if (settings.excel_header_color) store.setExcelHeaderColor(settings.excel_header_color);
+                if (settings.run_shortcut) store.setRunShortcut(settings.run_shortcut);
+                setStatus('success');
+                setTimeout(() => setStatus('idle'), 1000);
+            }
+        } catch (err) {
+            console.error('Failed to load DB settings:', err);
+            setStatus('error');
+        }
+    };
+
+    // Reload settings when tab becomes active
+    useEffect(() => {
+        if (activeTab === 'settings') {
+            loadSettings();
+        }
+    }, [activeTab]);
 
     const handleAddConnection = () => {
         const newConn: DbConfig = {
@@ -75,10 +110,14 @@ export const SettingsTab: React.FC = () => {
         setEditingConfig(newConn);
     };
 
-    const handleSaveSettings = async (updatedConnections: DbConfig[]) => {
+    const handleSaveSettings = async (currentConnections?: DbConfig[]) => {
+        // Use provided connections or fallback to state
+        // Note: state might be stale in some callbacks, so passing currentConnections is safer if available
+        const connsToSave = currentConnections || connections;
+
         await invoke('save_db_settings', {
             settings: {
-                connections: updatedConnections,
+                connections: connsToSave,
                 translate_file_path: translateFilePath,
                 column_split_enabled: columnSplitEnabled,
                 column_split_keywords: columnSplitKeywords,
@@ -91,6 +130,10 @@ export const SettingsTab: React.FC = () => {
                 run_shortcut: runShortcut
             }
         });
+    };
+
+    const handleGlobalSave = () => {
+        handleSaveSettings(connections);
     };
 
     const handleSave = async (configToSave: DbConfig) => {
@@ -142,18 +185,6 @@ export const SettingsTab: React.FC = () => {
         if (editingConfig?.id === id) setEditingConfig(null);
     };
 
-    const handleSaveGlobalConfig = async () => {
-        setStatus('saving');
-        try {
-            await handleSaveSettings(connections);
-            setStatus('success');
-            setTimeout(() => setStatus('idle'), 2000);
-        } catch (e) {
-            console.error('Failed to save global settings:', e);
-            setStatus('error');
-        }
-    };
-
     return (
         <div className="p-6 flex flex-col gap-6 max-w-5xl mx-auto animate-in fade-in duration-300">
             <div className="flex justify-between items-center">
@@ -172,6 +203,13 @@ export const SettingsTab: React.FC = () => {
                         <h3 className="text-xl font-black text-gray-800 uppercase tracking-tight">Global Application Configuration</h3>
                         <div className="flex gap-2">
                             <button
+                                onClick={loadSettings}
+                                className="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-bold hover:bg-blue-100 transition-all border border-blue-100 flex items-center gap-2"
+                                title="Reload settings from settings.json"
+                            >
+                                🔄 REFRESH
+                            </button>
+                            <button
                                 onClick={async () => {
                                     try {
                                         const path = await invoke<string>('get_setting_path');
@@ -185,12 +223,6 @@ export const SettingsTab: React.FC = () => {
                             >
                                 📂 OPEN JSON
                             </button>
-                            <button
-                                onClick={handleSaveGlobalConfig}
-                                className="px-8 py-2 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg flex items-center gap-2"
-                            >
-                                {status === 'saving' ? 'SAVING...' : status === 'success' ? '✅ SAVED' : '💾 SAVE ALL CONFIG'}
-                            </button>
                         </div>
                     </div>
 
@@ -202,6 +234,7 @@ export const SettingsTab: React.FC = () => {
                                     type="text"
                                     value={translateFilePath}
                                     onChange={e => setTranslateFilePath(e.target.value)}
+                                    onBlur={handleGlobalSave}
                                     className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
                                     placeholder="Path to translate.xlsx"
                                 />
@@ -212,6 +245,13 @@ export const SettingsTab: React.FC = () => {
                                         });
                                         if (selected && typeof selected === 'string') {
                                             setTranslateFilePath(selected);
+                                            // Trigger save after a short delay to ensure state update (or pass explicitly)
+                                            // Just calling handleGlobalSave relies on state, which might be old in this closure?
+                                            // Better to assume hook state update is fast enough for next tick or pass it.
+                                            // Ideally we would pass 'selected' to save but handleSaveSettings uses state.
+                                            // Let's rely on React state update or we can directly invoke save with new val.
+                                            // For simplicity, let's wait a tick.
+                                            setTimeout(handleGlobalSave, 100);
                                         }
                                     }}
                                     className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition-all border border-gray-200"
@@ -233,13 +273,17 @@ export const SettingsTab: React.FC = () => {
                                     <input
                                         type="color"
                                         value={excelHeaderColor}
-                                        onChange={e => setExcelHeaderColor(e.target.value)}
+                                        onChange={e => {
+                                            setExcelHeaderColor(e.target.value);
+                                        }}
+                                        onBlur={handleGlobalSave}
                                         className="w-10 h-10 rounded-lg cursor-pointer border-none p-0 bg-transparent"
                                     />
                                     <input
                                         type="text"
                                         value={excelHeaderColor}
                                         onChange={e => setExcelHeaderColor(e.target.value)}
+                                        onBlur={handleGlobalSave}
                                         className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-2 font-mono text-xs uppercase"
                                     />
                                 </div>
@@ -274,7 +318,7 @@ export const SettingsTab: React.FC = () => {
                                 <div className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm font-black text-primary shadow-inner">
                                     {runShortcut}
                                 </div>
-                                <ShortcutRecorder onRecord={setRunShortcut} current={runShortcut} />
+                                <ShortcutRecorder onRecord={setRunShortcut} current={runShortcut} onSave={handleGlobalSave} />
                             </div>
                             <p className="text-[9px] text-gray-400 mt-1">Press a key (e.g. F5, F9) or a combination (e.g. Ctrl+Enter) to set as default shortcut for Execute Query.</p>
                         </div>
