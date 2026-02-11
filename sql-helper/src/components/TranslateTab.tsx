@@ -24,29 +24,41 @@ interface TranslatedLine {
     segments: TranslatedSegment[];
 }
 
-const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, onCycle, copiedKey, lIdx }: {
+const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, copiedKey, lIdx, onShowTooltip }: {
     seg: TranslatedSegment,
     hoveredKey: string | null,
     onHover: (key: string | null) => void,
     onClick: (seg: TranslatedSegment) => void,
-    onCycle: (key: string, option: string) => void,
     copiedKey: string | null,
-    lIdx: number
+    lIdx: number,
+    onShowTooltip: (seg: TranslatedSegment, rect: DOMRect) => void
 }) => {
     if (seg.type === 'text') return <>{seg.text}</>;
 
     const isCopied = copiedKey === seg.key;
+    const elementRef = useRef<HTMLSpanElement>(null);
+
+    useEffect(() => {
+        if (seg.isMultiple && hoveredKey === seg.key && elementRef.current) {
+            onShowTooltip(seg, elementRef.current.getBoundingClientRect());
+        }
+    }, [hoveredKey, seg, onShowTooltip]);
 
     return (
         <span
+            ref={elementRef}
             key={seg.key}
             className={`inline-flex items-center group/opt relative cursor-pointer mx-0.5 transition-all duration-300 font-bold
                 ${seg.isMultiple ? 'text-amber-600 border-b-2 border-amber-400/50 hover:border-amber-400' : 'text-indigo-600 border-b border-indigo-200 hover:border-indigo-400'}
                 ${hoveredKey === seg.key ? '!text-indigo-900 !border-indigo-600 !border-b-2 scale-[1.02]' : ''}
                 ${isCopied ? '!text-green-600 !border-green-600 !border-b-2' : ''}
             `}
-            onMouseEnter={() => onHover(seg.key)}
-            onMouseLeave={() => onHover(null)}
+            onMouseEnter={() => {
+                onHover(seg.key);
+            }}
+            onMouseLeave={() => {
+                onHover(null);
+            }}
             onClick={() => onClick(seg)}
         >
             <span className="relative z-10">{seg.text}</span>
@@ -55,42 +67,6 @@ const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, onCycle
                 <span className="ml-1 text-[8px] opacity-60 bg-indigo-50 px-1 rounded-full border border-indigo-200 select-none">
                     {seg.options.length}
                 </span>
-            )}
-
-            {/* Hover Tooltip / Selection Menu */}
-            {seg.isMultiple && hoveredKey === seg.key && (
-                <div
-                    className="absolute left-full top-0 z-[9999] flex flex-col bg-white rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.4),0_0_1px_rgba(0,0,0,0.1)] border border-indigo-200 py-1.5 min-w-[140px] animate-in slide-in-from-left-2 duration-200 pointer-events-auto cursor-default translate-x-2"
-                    onClick={(e) => e.stopPropagation()}
-                    onMouseEnter={(e) => e.stopPropagation()}
-                >
-                    {/* Transparent bridge to maintain hover state while moving mouse to tooltip */}
-                    <div className="absolute -left-2 top-0 bottom-0 w-2" />
-
-                    {/* Speech bubble arrow */}
-                    <div className="absolute top-3 -left-1.5 w-3 h-3 bg-white border-l border-b border-indigo-200 rotate-45"></div>
-
-                    <div className="max-h-[220px] overflow-y-auto custom-scrollbar flex flex-col pt-0.5">
-                        {seg.options.map((opt, oIdx) => (
-                            <button
-                                key={oIdx}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onCycle(seg.key, opt);
-                                }}
-                                className={`px-3 py-2 text-[11px] font-bold transition-all text-left flex items-center gap-2
-                                    ${seg.text === opt
-                                        ? 'bg-indigo-600 text-white'
-                                        : 'text-gray-700 hover:bg-indigo-50 hover:text-indigo-600'}
-                                `}
-                            >
-                                <span className="opacity-40 text-[9px] w-3">{oIdx + 1}</span>
-                                <span className="flex-1 truncate">{opt}</span>
-                                {seg.text === opt && <span className="text-[10px]">✓</span>}
-                            </button>
-                        ))}
-                    </div>
-                </div>
             )}
 
             {isCopied && (
@@ -174,6 +150,13 @@ const RevertTKGrid = React.memo((props: {
     const dataRows = useMemo(() => lines.map(line => line.split('\t')), [lines]);
     const maxCols = useMemo(() => Math.max(...dataRows.map(row => row.length)), [dataRows]);
     const [copiedCell, setCopiedCell] = useState<{ r: number, c: number } | null>(null);
+    const [tooltipState, setTooltipState] = useState<{ seg: TranslatedSegment, rect: DOMRect } | null>(null);
+
+    useEffect(() => {
+        if (!props.hoveredKey) {
+            setTooltipState(null);
+        }
+    }, [props.hoveredKey]);
 
     const segmentedRows = useMemo(() => {
         if (props.translationDict.length === 0) return [];
@@ -313,17 +296,11 @@ const RevertTKGrid = React.memo((props: {
                                                             hoveredKey={props.hoveredKey}
                                                             onHover={props.onHover}
                                                             copiedKey={props.copiedKey}
+                                                            onShowTooltip={(s, r) => setTooltipState({ seg: s, rect: r })}
                                                             onClick={(s) => {
                                                                 if (window.getSelection()?.toString()) return;
                                                                 navigator.clipboard.writeText(s.text);
                                                                 props.onCopySegment(s.key);
-                                                            }}
-                                                            onCycle={(key, option) => {
-                                                                props.onSelectionChange(key, option);
-                                                                if (!window.getSelection()?.toString()) {
-                                                                    navigator.clipboard.writeText(option);
-                                                                    props.onCopySegment(key);
-                                                                }
                                                             }}
                                                         />
                                                     ))
@@ -342,6 +319,45 @@ const RevertTKGrid = React.memo((props: {
                     ))}
                 </tbody>
             </table>
+            {tooltipState && props.hoveredKey === tooltipState.seg.key && (
+                <div
+                    className="fixed z-[99999] flex flex-col bg-white rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.4),0_0_1px_rgba(0,0,0,0.1)] border border-indigo-200 py-1.5 min-w-[140px] animate-in slide-in-from-left-2 duration-200 pointer-events-auto cursor-default"
+                    style={{
+                        top: tooltipState.rect.top,
+                        left: tooltipState.rect.right + 8, // +8 for padding
+                    }}
+                    onMouseEnter={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {/* Speech bubble arrow */}
+                    <div className="absolute top-3 -left-1.5 w-3 h-3 bg-white border-l border-b border-indigo-200 rotate-45"></div>
+
+                    <div className="max-h-[220px] overflow-y-auto custom-scrollbar flex flex-col pt-0.5">
+                        {tooltipState.seg.options.map((opt, oIdx) => (
+                            <button
+                                key={oIdx}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    props.onSelectionChange(tooltipState.seg.key, opt);
+                                    if (!window.getSelection()?.toString()) {
+                                        navigator.clipboard.writeText(opt);
+                                        props.onCopySegment(tooltipState.seg.key);
+                                    }
+                                }}
+                                className={`px-3 py-2 text-[11px] font-bold transition-all text-left flex items-center gap-2
+                                    ${tooltipState.seg.text === opt
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'text-gray-700 hover:bg-indigo-50 hover:text-indigo-600'}
+                                `}
+                            >
+                                <span className="opacity-40 text-[9px] w-3">{oIdx + 1}</span>
+                                <span className="flex-1 truncate">{opt}</span>
+                                {tooltipState.seg.text === opt && <span className="text-[10px]">✓</span>}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 });

@@ -47,13 +47,13 @@ export const SettingsTab: React.FC = () => {
         translateFilePath, setTranslateFilePath,
         excelHeaderColor, setExcelHeaderColor,
         runShortcut, setRunShortcut,
-        columnSplitEnabled, setColumnSplitEnabled,
-        columnSplitKeywords, setColumnSplitKeywords,
-        revertTKColConfig, setRevertTKColConfig,
-        columnSplitApplyToText, setColumnSplitApplyToText,
-        columnSplitApplyToTable, setColumnSplitApplyToTable,
-        revertTKDeleteChars, setRevertTKDeleteChars,
-        revertTKMapping, setRevertTKMapping,
+        columnSplitEnabled,
+        columnSplitKeywords,
+        revertTKColConfig,
+        columnSplitApplyToText,
+        columnSplitApplyToTable,
+        revertTKDeleteChars,
+        revertTKMapping,
         activeTab
     } = useAppStore();
     const [editingConfig, setEditingConfig] = useState<DbConfig | null>(null);
