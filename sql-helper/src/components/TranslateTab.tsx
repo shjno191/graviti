@@ -402,7 +402,17 @@ export const TranslateTab: React.FC = () => {
         formatSqlAppend,
         setFormatSqlAppend,
         searchStrict,
-        setSearchStrict
+        setSearchStrict,
+        columnSplitEnabled, setColumnSplitEnabled,
+        columnSplitKeywords, setColumnSplitKeywords,
+        revertTKColConfig, setRevertTKColConfig,
+        columnSplitApplyToText, setColumnSplitApplyToText,
+        columnSplitApplyToTable, setColumnSplitApplyToTable,
+        revertTKDeleteChars, setRevertTKDeleteChars,
+        revertTKMapping, setRevertTKMapping,
+        runShortcut,
+        connections,
+        globalLogPath
     } = useAppStore();
 
     const [data, setData] = useState<TranslateEntry[]>([]);
@@ -430,7 +440,10 @@ export const TranslateTab: React.FC = () => {
     const deferredSearchTerm = useDeferredValue(searchTerm);
     const [showFormatSettings, setShowFormatSettings] = useState(false);
     const [newSectionLabel, setNewSectionLabel] = useState('');
-    const [revertTKColConfig, setRevertTKColConfig] = useState('A:150, B:250');
+    const [revertTKMode, setRevertTKMode] = useState<'TKtoCode' | 'CodetoTK'>('CodetoTK');
+    const [revertTKResultFormat, setRevertTKResultFormat] = useState<'text' | 'table'>('table');
+
+    const [revertConfigTab, setRevertConfigTab] = useState<'general' | 'codeToTk' | 'tkToCode'>('general');
     const defaultColWidth = 100;
     const parsedCustomWidths = useMemo<Record<number, number>>(() => {
         const widths: Record<number, number> = {};
@@ -454,21 +467,6 @@ export const TranslateTab: React.FC = () => {
     }, [revertTKColConfig]);
 
     const [showRevertConfig, setShowRevertConfig] = useState(false);
-    const [revertTKMapping, setRevertTKMapping] = useState<Array<{
-        id: string;
-        label: string;
-        offsets: number[]; // relative offsets: [dist_to_A, dist_to_1, dist_to_2, ...]
-        type: 'text' | 'table';
-    }>>([
-        { id: 'logic-name', label: '【SQL論理名】', offsets: [1, 1], type: 'text' },
-        { id: 'def-name', label: '【SQL定義名】', offsets: [1, 1], type: 'text' },
-        { id: 'target-table', label: '■ 対象テーブル', offsets: [1, 1], type: 'text' },
-        { id: 'extraction-cond', label: '■ 抽出条件', offsets: [1, 1], type: 'text' },
-        { id: 'ext-items', label: '■ 抽出項目', offsets: [1, 1], type: 'table' },
-        { id: 'sort-order', label: '■ 並び順', offsets: [1, 1], type: 'text' },
-        { id: 'join-cond', label: '■ 結合条件', offsets: [1, 1], type: 'text' },
-        { id: 'log-output', label: '・ログを出力する。', offsets: [1, 1], type: 'table' },
-    ]);
     const settingsPanelRef = useRef<HTMLDivElement>(null);
 
     // Close settings when clicking outside
@@ -596,10 +594,68 @@ export const TranslateTab: React.FC = () => {
         setBulkInput(processedText);
     };
 
+    const convertTKToCode = (input: string): string => {
+        const lines = input.split('\n');
+        const codeLines: string[] = [];
+        let inTable = false;
+
+        lines.forEach(line => {
+            const trimmed = line.trim();
+            if (!trimmed) {
+                codeLines.push('sb.append(" ");');
+                return;
+            }
+
+            // Detect section headers
+            if (trimmed.startsWith('■') || trimmed.startsWith('【')) {
+                codeLines.push(`// ${trimmed}`);
+                inTable = false;
+                return;
+            }
+
+            // Detect table headers
+            if (trimmed.includes('カラム名') || trimmed.includes('セット内容')) {
+                inTable = true;
+                return;
+            }
+
+            if (inTable && line.includes('\t')) {
+                const parts = line.split('\t');
+                const colName = (parts[0] || '').trim();
+                const expression = (parts[1] || '').trim();
+                if (expression) {
+                    codeLines.push(`sb.append(" , ${expression} /* ${colName} */ ");`);
+                } else if (colName) {
+                    codeLines.push(`sb.append(" /* ${colName} */ ");`);
+                }
+            } else {
+                // Raw text, wrap in append
+                codeLines.push(`sb.append(" ${trimmed} ");`);
+            }
+        });
+
+        return codeLines.join('\n');
+    };
+
     const handleRevertTK = () => {
         if (!revertTKInput.trim()) return;
-        const formatted = smartFormatSqlDesign(revertTKInput);
-        setRevertTKResult(formatted);
+        let result = '';
+        if (revertTKMode === 'TKtoCode') {
+            result = convertTKToCode(revertTKInput);
+        } else {
+            // Check if column split should be applied based on current preview format
+            const shouldSplit = columnSplitEnabled && (
+                (revertTKResultFormat === 'text' && columnSplitApplyToText) ||
+                (revertTKResultFormat === 'table' && columnSplitApplyToTable)
+            );
+
+            result = smartFormatSqlDesign(revertTKInput, {
+                splitEnabled: shouldSplit,
+                keywords: columnSplitKeywords.split(',').map(k => k.trim()).filter(Boolean),
+                deleteChars: revertTKDeleteChars.split(',').map(k => k.trim()).filter(Boolean)
+            });
+        }
+        setRevertTKResult(result);
     };
 
     // Reset selections when input changes or target language changes
@@ -786,15 +842,49 @@ export const TranslateTab: React.FC = () => {
 
 
 
+    const splitSqlColumn = (val: string, keywords: string[]): string[] => {
+        if (!val) return [''];
+        let expression = val.trim();
+
+        const sortedKeywords = keywords
+            .map(k => k.trim())
+            .filter(Boolean)
+            .sort((a, b) => b.length - a.length);
+
+        if (sortedKeywords.length === 0) return [expression];
+
+        // Escape keywords and add word boundaries for text-based keywords (CASE, AS, etc.)
+        const escaped = sortedKeywords.map(k => {
+            const pattern = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Use \b for keywords that are purely alphanumeric to prevent matching inside other words
+            return /^[a-zA-Z0-9_]+$/.test(k) ? `\\b${pattern}\\b` : pattern;
+        });
+
+        // Build regex with capturing group () to keep the delimiters (keywords) as separate elements
+        const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+
+        // Split and clean up parts
+        return expression.split(regex)
+            .map(p => p.trim())
+            .filter(p => p !== '');
+    };
+
     /**
      * Smart formatter for SQL design documents based on rules in CHANGES.md.
      */
-    const smartFormatSqlDesign = (input: string): string => {
+    const smartFormatSqlDesign = (input: string, config?: { splitEnabled: boolean, keywords: string[], deleteChars?: string[] }): string => {
         if (!input.trim()) return input;
 
-        // STEP 0: Basic cleanup of Java/C# append-style SQL (re-use current behavior)
         let text = input;
 
+        // STEP 0: Clean up specified characters (e.g. quotes, commas if configured)
+        if (config?.deleteChars && config.deleteChars.length > 0) {
+            const escapedChars = config.deleteChars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+            const deleteRegex = new RegExp(`[${escapedChars.join('')}]`, 'g');
+            text = text.replace(deleteRegex, '');
+        }
+
+        // STEP 0: Basic cleanup of Java/C# append-style SQL (re-use current behavior)
         // Remove StringBuilder initialization lines
         text = text.replace(/StringBuilder\s+\w+\s*=\s*new\s+StringBuilder\(\s*\)\s*;/gi, '');
 
@@ -859,7 +949,13 @@ export const TranslateTab: React.FC = () => {
 
                         let header = "";
                         const gap = "\t".repeat(cfg.offsets[1] || 1);
-                        if (cfg.id === 'ext-items') header = `カラム名${gap}セット内容`;
+                        if (cfg.id === 'ext-items' || cfg.id === 'ins-items') {
+                            if (config?.splitEnabled) {
+                                header = `エイリアス${gap}カラム名${gap}セット内容`;
+                            } else {
+                                header = `カラム名${gap}セット内容`;
+                            }
+                        }
                         else if (cfg.id === 'log-output') header = `レベル${gap}メッセージ`;
 
                         if (header && !nextLine.includes(header.split('\t')[0])) {
@@ -880,6 +976,8 @@ export const TranslateTab: React.FC = () => {
             const tableHeaderKeywords = [
                 'カラム名',
                 'セット内容',
+                '抽出項目',
+                '挿入項目',
                 'レベル',
                 'メッセージ'
             ];
@@ -956,7 +1054,18 @@ export const TranslateTab: React.FC = () => {
                 if (rows.length > 0) {
                     // Tab-separated: copy sang Excel → 2 cột vào 2 ô (giữ nguyên table như ảnh)
                     rows.forEach(({ idx: lineIdx, col1, col2 }) => {
-                        result[lineIdx] = `${col1}\t${col2}`;
+                        const blockHeader = result[start].toLowerCase();
+                        const isSplittableBlock = blockHeader.includes('セット内容') ||
+                            blockHeader.includes('抽出項目') ||
+                            blockHeader.includes('挿入項目');
+
+                        if (config?.splitEnabled && isSplittableBlock) {
+                            const splitParts = splitSqlColumn(col2, config.keywords);
+                            // col1 stays, then split parts
+                            result[lineIdx] = `${col1}\t` + splitParts.join('\t');
+                        } else {
+                            result[lineIdx] = `${col1}\t${col2}`;
+                        }
                     });
                 }
 
@@ -1129,6 +1238,19 @@ export const TranslateTab: React.FC = () => {
         lines = formatTwoColumnTables(lines);
         lines = formatJoinBlocks(lines);
         lines = formatHeaderBlocks(lines);
+
+        // Final pass: if splitEnabled is ON, split any remaining lines that don't have Tabs yet (except headers)
+        if (config?.splitEnabled) {
+            lines = lines.map(line => {
+                if (line.includes('\t')) return line;
+                const trimmed = line.trim();
+                // Don't split section headers or bullet points
+                if (!trimmed || trimmed.startsWith('■') || trimmed.startsWith('・') || trimmed.startsWith('【')) return line;
+
+                const split = splitSqlColumn(line, config.keywords);
+                return split.length > 1 ? split.join('\t') : line;
+            });
+        }
 
         return lines.join('\n');
     };
@@ -1645,28 +1767,54 @@ export const TranslateTab: React.FC = () => {
                     <div className="flex-1 flex flex-row overflow-hidden bg-white divide-x divide-gray-200">
                         {/* Left: Input Section */}
                         <div className="flex-[4] flex flex-col min-h-0">
-                            <div className="bg-amber-50/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-600/60 border-b border-amber-100/50 flex justify-between items-center h-10 shrink-0 select-none">
-                                <div className="flex items-center gap-2">
-                                    <span className="w-5 h-5 flex items-center justify-center bg-amber-100 rounded text-[9px]">1</span>
-                                    <span>CODE SOURCE / SQL APPEND</span>
+                            <div className="bg-amber-50/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-600/60 border-b border-amber-100/50 flex items-center justify-between shrink-0 h-14 select-none">
+                                <div className="flex items-center gap-6">
+                                    <div className="flex flex-col gap-0.5">
+                                        <span className="text-[8px] text-amber-600/50">INPUT TYPE</span>
+                                        <div className="flex bg-white p-0.5 rounded-lg border border-amber-200">
+                                            <button
+                                                onClick={() => setRevertTKMode('CodetoTK')}
+                                                className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${revertTKMode === 'CodetoTK' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-400 hover:text-amber-600'}`}
+                                            >
+                                                CODE
+                                            </button>
+                                            <button
+                                                onClick={() => setRevertTKMode('TKtoCode')}
+                                                className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${revertTKMode === 'TKtoCode' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-400 hover:text-amber-600'}`}
+                                            >
+                                                TK/SPEC
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
+
                                 <div className="flex items-center gap-2">
                                     <button
                                         onClick={() => { setRevertTKInput(''); setRevertTKResult(''); }}
-                                        className="text-red-400 hover:text-red-600 text-[9px] font-black border border-red-100 px-2 py-1.5 rounded-lg hover:bg-red-50"
+                                        className="text-red-400 hover:text-red-600 text-[9px] font-black border border-red-100 px-3 py-2 rounded-xl hover:bg-red-50 transition-colors"
                                     >
                                         CLEAR
+                                    </button>
+                                    <button
+                                        onClick={handleRevertTK}
+                                        className="px-10 py-2 bg-amber-600 text-white text-[10px] font-black rounded-xl hover:bg-amber-700 transition-all shadow-lg active:scale-95 flex items-center gap-2"
+                                    >
+                                        <span className="text-sm">🔄</span>
+                                        REVERT
                                     </button>
                                 </div>
                             </div>
                             <div className="flex-1 overflow-hidden bg-white relative flex">
                                 {/* Left: Input with line numbers */}
                                 <div
-                                    className="w-10 bg-gray-50 border-r border-gray-100 flex flex-col font-mono text-[13px] text-gray-400 pt-6 select-none overflow-y-auto overflow-x-hidden shrink-0 custom-scrollbar"
-                                    style={{ lineHeight: `${lineSpacing}` }}
+                                    className="w-12 bg-gray-50 border-r border-gray-100 flex flex-col font-mono text-sm text-gray-400 pt-6 pb-20 select-none overflow-y-auto overflow-x-hidden shrink-0 custom-scrollbar scrollbar-hide"
+                                    style={{
+                                        lineHeight: `${lineSpacing}`,
+                                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                                    }}
                                 >
                                     {(revertTKInput.split('\n').length > 0 ? revertTKInput.split('\n') : ['']).map((_, i) => (
-                                        <div key={i} className="text-right pr-2" style={{ lineHeight: `${lineSpacing}` }}>{i + 1}</div>
+                                        <div key={i} className="text-right pr-3" style={{ lineHeight: `${lineSpacing}` }}>{i + 1}</div>
                                     ))}
                                 </div>
                                 <div className="flex-1 relative overflow-hidden">
@@ -1702,12 +1850,27 @@ export const TranslateTab: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Right: Result Section (Excel-like Grid) */}
                         <div className="flex-[6] flex flex-col min-h-0 bg-white">
-                            <div className="bg-white px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-700 border-b border-gray-100 flex justify-between items-center h-10 shrink-0 select-none">
-                                <div className="flex items-center gap-2">
-                                    <span className="w-5 h-5 flex items-center justify-center bg-amber-100 rounded text-[9px]">2</span>
-                                    <span>SQL DESIGN PREVIEW</span>
+                            <div className="bg-white px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-700 border-b border-gray-100 flex justify-between items-center h-14 shrink-0 select-none">
+                                <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-5 h-5 flex items-center justify-center bg-amber-100 rounded text-[9px]">2</span>
+                                        <span>SQL DESIGN PREVIEW</span>
+                                    </div>
+                                    <div className="flex bg-gray-50 p-0.5 rounded-lg border border-gray-200">
+                                        <button
+                                            onClick={() => setRevertTKResultFormat('text')}
+                                            className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${revertTKResultFormat === 'text' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-400 hover:text-amber-600'}`}
+                                        >
+                                            TEXT
+                                        </button>
+                                        <button
+                                            onClick={() => setRevertTKResultFormat('table')}
+                                            className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${revertTKResultFormat === 'table' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-400 hover:text-amber-600'}`}
+                                        >
+                                            TABLE
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-2 mr-2">
                                     <button
@@ -1719,29 +1882,57 @@ export const TranslateTab: React.FC = () => {
                                     <button
                                         onClick={() => revertTKResult && navigator.clipboard.writeText(revertTKResult)}
                                         disabled={!revertTKResult}
-                                        className="px-3 py-1.5 rounded-lg text-[10px] font-black bg-white text-amber-600 border border-amber-100 hover:bg-amber-50 disabled:opacity-50 hover:shadow-sm active:scale-95 transition-all"
+                                        className="px-3 py-1.5 rounded-lg text-[10px] font-black bg-white text-amber-600 border border-amber-100 hover:bg-amber-50 disabled:opacity-50 hover:shadow-sm active:scale-95 transition-all flex items-center gap-1.5"
                                     >
-                                        📋 COPY RESULT
+                                        <span>📋</span>
+                                        COPY
                                     </button>
                                 </div>
                             </div>
                             <div className="flex-1 overflow-hidden flex flex-col bg-white">
                                 {revertTKResult ? (
-                                    <RevertTKGrid
-                                        content={revertTKResult}
-                                        defaultWidth={defaultColWidth}
-                                        customWidths={parsedCustomWidths}
-                                        translationDict={translationDict}
-                                        selections={selections}
-                                        onSelectionChange={(key, val) => setSelections(prev => ({ ...prev, [key]: val }))}
-                                        hoveredKey={hoveredKey}
-                                        onHover={setHoveredKey}
-                                        copiedKey={segmentCopyFeedback}
-                                        onCopySegment={(key) => {
-                                            setSegmentCopyFeedback(key);
-                                            setTimeout(() => setSegmentCopyFeedback(null), 1000);
-                                        }}
-                                    />
+                                    revertTKResultFormat === 'table' ? (
+                                        <RevertTKGrid
+                                            content={revertTKResult}
+                                            defaultWidth={defaultColWidth}
+                                            customWidths={parsedCustomWidths}
+                                            translationDict={translationDict}
+                                            selections={selections}
+                                            onSelectionChange={(key, val) => setSelections(prev => ({ ...prev, [key]: val }))}
+                                            hoveredKey={hoveredKey}
+                                            onHover={setHoveredKey}
+                                            copiedKey={segmentCopyFeedback}
+                                            onCopySegment={(key) => {
+                                                setSegmentCopyFeedback(key);
+                                                setTimeout(() => setSegmentCopyFeedback(null), 1000);
+                                            }}
+                                        />
+                                    ) : (
+                                        <div className="flex-1 overflow-hidden relative flex">
+                                            <div
+                                                className="w-12 bg-gray-50 border-r border-gray-100 flex flex-col font-mono text-sm text-gray-400 pt-6 pb-20 select-none overflow-y-auto overflow-x-hidden shrink-0 custom-scrollbar scrollbar-hide"
+                                                style={{
+                                                    lineHeight: `${lineSpacing}`,
+                                                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                                                }}
+                                            >
+                                                {(revertTKResult.split('\n').length > 0 ? revertTKResult.split('\n') : ['']).map((_, i) => (
+                                                    <div key={i} className="text-right pr-3" style={{ lineHeight: `${lineSpacing}` }}>{i + 1}</div>
+                                                ))}
+                                            </div>
+                                            <textarea
+                                                readOnly
+                                                wrap="off"
+                                                className="flex-1 p-6 font-mono text-sm outline-none resize-none bg-white text-gray-800 caret-gray-800 overflow-auto"
+                                                style={{
+                                                    lineHeight: `${lineSpacing}`,
+                                                    whiteSpace: 'pre',
+                                                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                                                }}
+                                                value={revertTKResult}
+                                            />
+                                        </div>
+                                    )
                                 ) : (
                                     <div className="flex-1 flex items-center justify-center p-4 text-center bg-amber-50/5 text-amber-900/40 italic text-sm">
                                         Kết quả revert/format sẽ hiện ở đây dạng bảng Excel. Bấm REVERT / FORMAT bên trên.
@@ -1766,11 +1957,14 @@ export const TranslateTab: React.FC = () => {
                                 <div className="flex-1 relative min-h-0 bg-white group/input flex">
                                     {/* Line Numbers Source */}
                                     <div
-                                        className="w-10 bg-gray-50 border-r border-gray-100 flex flex-col font-mono text-[14px] text-gray-400 pt-6 select-none overflow-y-auto overflow-x-hidden shrink-0 custom-scrollbar"
-                                        style={{ lineHeight: `${lineSpacing}` }}
+                                        className="w-12 bg-gray-50 border-r border-gray-100 flex flex-col font-mono text-sm text-gray-400 pt-6 pb-20 select-none overflow-y-auto overflow-x-hidden shrink-0 custom-scrollbar scrollbar-hide"
+                                        style={{
+                                            lineHeight: `${lineSpacing}`,
+                                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                                        }}
                                     >
                                         {(bulkInput.split('\n').length > 0 ? bulkInput.split('\n') : ['']).map((_, i) => (
-                                            <div key={i} className="text-right pr-2" style={{ lineHeight: `${lineSpacing}` }}>{i + 1}</div>
+                                            <div key={i} className="text-right pr-3" style={{ lineHeight: `${lineSpacing}` }}>{i + 1}</div>
                                         ))}
                                     </div>
                                     <div className="flex-1 relative overflow-hidden">
@@ -1853,13 +2047,16 @@ export const TranslateTab: React.FC = () => {
                                 <div className="flex-1 flex overflow-hidden">
                                     {/* Line Numbers Result */}
                                     <div
-                                        className="w-10 bg-indigo-50/50 border-r border-indigo-100 flex flex-col font-mono text-[14px] text-indigo-400 pt-6 select-none overflow-y-auto overflow-x-hidden shrink-0 custom-scrollbar"
-                                        style={{ lineHeight: `${lineSpacing}` }}
+                                        className="w-12 bg-indigo-50/50 border-r border-indigo-100 flex flex-col font-mono text-sm text-indigo-400 pt-6 pb-20 select-none overflow-y-auto overflow-x-hidden shrink-0 custom-scrollbar scrollbar-hide"
+                                        style={{
+                                            lineHeight: `${lineSpacing}`,
+                                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                                        }}
                                     >
                                         {translatedLines.length > 0 ? translatedLines.map((_, i) => (
-                                            <div key={i} className="text-right pr-2" style={{ lineHeight: `${lineSpacing}` }}>{i + 1}</div>
+                                            <div key={i} className="text-right pr-3" style={{ lineHeight: `${lineSpacing}` }}>{i + 1}</div>
                                         )) : (
-                                            <div className="text-right pr-2" style={{ lineHeight: `${lineSpacing}` }}>1</div>
+                                            <div className="text-right pr-3" style={{ lineHeight: `${lineSpacing}` }}>1</div>
                                         )}
                                     </div>
 
@@ -1934,181 +2131,333 @@ export const TranslateTab: React.FC = () => {
             {showRevertConfig && (
                 <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                     <div className="bg-white rounded-3xl shadow-2xl border border-gray-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in duration-300">
+                        {/* Header */}
                         <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center shrink-0">
                             <div>
                                 <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">SQL Specification Layout Configuration</h3>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Map SQL elements to Excel columns</p>
+                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Customize conversion behavior and layout</p>
                             </div>
-                            <button
-                                onClick={() => setShowRevertConfig(false)}
-                                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        <div className="px-6 py-4 bg-white border-b border-gray-100 flex gap-4 items-end shrink-0">
-                            <div className="flex-1">
-                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 mb-1 block">Add New Section Header</label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. ■ Ghi chú"
-                                    value={newSectionLabel}
-                                    onChange={(e) => setNewSectionLabel(e.target.value)}
-                                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                                />
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            const path = await invoke<string>('get_setting_path');
+                                            await invoke('open_file', { path });
+                                        } catch (e) {
+                                            console.error('Failed to open settings file', e);
+                                        }
+                                    }}
+                                    className="px-3 py-1.5 bg-gray-100 text-gray-500 text-[10px] font-black rounded-lg hover:bg-indigo-50 hover:text-indigo-600 transition-all flex items-center gap-1.5"
+                                    title="Open setting.json"
+                                >
+                                    📂 OPEN JSON
+                                </button>
+                                <button
+                                    onClick={() => setShowRevertConfig(false)}
+                                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                                >
+                                    ✕
+                                </button>
                             </div>
-                            <button
-                                onClick={() => {
-                                    if (!newSectionLabel.trim()) return;
-                                    const id = newSectionLabel.trim().toLowerCase().replace(/\s+/g, '-');
-                                    const currentOffsets = revertTKMapping[0]?.offsets || [1, 1];
-                                    setRevertTKMapping([...revertTKMapping, {
-                                        id,
-                                        label: newSectionLabel.trim(),
-                                        offsets: [...currentOffsets],
-                                        type: 'text'
-                                    }]);
-                                    setNewSectionLabel('');
-                                }}
-                                className="px-6 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 shadow-md transition-all active:scale-95"
-                            >
-                                + ADD SECTION
-                            </button>
                         </div>
 
-                        <div className="px-6 py-4 bg-amber-50 border-b border-amber-100 flex flex-col gap-2 shrink-0">
-                            <label className="text-[10px] font-black text-amber-700 uppercase tracking-widest ml-1 block">Column Width Configuration (Excel Style)</label>
-                            <input
-                                type="text"
-                                placeholder="e.g. A:150, B:250, C:100"
-                                value={revertTKColConfig}
-                                onChange={(e) => setRevertTKColConfig(e.target.value)}
-                                className="w-full bg-white border border-amber-200 rounded-xl px-4 py-2 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-amber-500 transition-all placeholder:text-gray-300"
-                            />
-                            <p className="text-[9px] text-amber-600/60 font-medium ml-1 italic">
-                                Use format [Column]:[Width], separated by commas. Example: A:200, B:300
-                            </p>
+                        {/* Tabs Navigation */}
+                        <div className="px-6 bg-white border-b border-gray-100 flex gap-1 shrink-0">
+                            {[
+                                { id: 'general', label: 'GENERAL' },
+                                { id: 'codeToTk', label: 'CODE → TK' },
+                                { id: 'tkToCode', label: 'TK → CODE' }
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setRevertConfigTab(tab.id as any)}
+                                    className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest transition-all relative
+                                        ${revertConfigTab === tab.id
+                                            ? 'text-indigo-600'
+                                            : 'text-gray-400 hover:text-gray-600'}
+                                    `}
+                                >
+                                    {tab.label}
+                                    {revertConfigTab === tab.id && (
+                                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 rounded-t-full" />
+                                    )}
+                                </button>
+                            ))}
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-6 bg-gray-50/30 custom-scrollbar">
-                            <div className="flex flex-col gap-4">
-                                {revertTKMapping.map((cfg, idx) => (
-                                    <div key={cfg.id} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-6 group hover:border-indigo-200 transition-all">
-                                        <div className="w-48 shrink-0">
-                                            <div className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">Section Header</div>
-                                            <div className="text-xs font-black text-gray-800">{cfg.label}</div>
+                        {/* Modal Body */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50/30">
+                            {revertConfigTab === 'general' && (
+                                <div className="p-8 flex flex-col gap-6 animate-in slide-in-from-bottom-2 duration-300">
+                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col gap-3">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">📐</div>
+                                            <label className="text-xs font-black text-gray-700 uppercase tracking-widest">Column Width Configuration (Excel Style)</label>
                                         </div>
-
-                                        <div className="w-20 shrink-0 flex flex-col items-center">
-                                            <div className="text-[9px] font-black text-gray-400 uppercase mb-1">Title Col</div>
-                                            <div className="w-full py-2 bg-gray-100 border border-gray-200 rounded-lg text-center text-xs font-black text-gray-400">A</div>
-                                        </div>
-
-                                        <div className="flex-1 flex flex-col gap-2">
-                                            <div className="flex items-center gap-4">
-                                                <div className="flex items-center gap-2">
-                                                    {cfg.offsets.map((off, oIdx) => (
-                                                        <div key={oIdx} className="flex items-center bg-gray-50 border border-gray-200 rounded-xl px-2 py-1 gap-2 shadow-inner group/off">
-                                                            <div className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">
-                                                                {oIdx === 0 ? "Base" : `D${oIdx}`}
-                                                            </div>
-                                                            <input
-                                                                type="number"
-                                                                value={off}
-                                                                onChange={(e) => {
-                                                                    const val = parseInt(e.target.value) || 1;
-                                                                    const newMapping = [...revertTKMapping];
-                                                                    newMapping[idx].offsets[oIdx] = val;
-                                                                    setRevertTKMapping(newMapping);
-                                                                }}
-                                                                className="w-10 bg-transparent text-xs font-black text-indigo-600 text-center outline-none focus:text-indigo-800"
-                                                            />
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <div className="flex items-center gap-1.5 border-l border-gray-100 pl-4 ml-2">
-                                                    <button
-                                                        onClick={() => {
-                                                            const newMapping = revertTKMapping.map(item => ({
-                                                                ...item,
-                                                                offsets: [...item.offsets, 1]
-                                                            }));
-                                                            setRevertTKMapping(newMapping);
-                                                        }}
-                                                        className="w-7 h-7 flex items-center justify-center bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
-                                                        title="Add value column to ALL sections"
-                                                    >
-                                                        <span className="text-lg font-light">+</span>
-                                                    </button>
-                                                    {cfg.offsets.length > 1 && (
-                                                        <button
-                                                            onClick={() => {
-                                                                const newMapping = revertTKMapping.map(item => ({
-                                                                    ...item,
-                                                                    offsets: item.offsets.slice(0, -1)
-                                                                }));
-                                                                setRevertTKMapping(newMapping);
-                                                            }}
-                                                            className="w-7 h-7 flex items-center justify-center bg-red-50 text-red-400 rounded-full hover:bg-red-500 hover:text-white transition-all shadow-sm"
-                                                            title="Remove last column from ALL sections"
-                                                        >
-                                                            <span className="text-lg font-light">×</span>
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="w-28 shrink-0 flex flex-col gap-1">
-                                            <div className="text-[9px] font-black text-gray-400 uppercase text-center mb-1">Display Type</div>
-                                            <div className="flex bg-gray-100 p-0.5 rounded-xl border border-gray-200">
-                                                <button
-                                                    onClick={() => {
-                                                        const newMapping = [...revertTKMapping];
-                                                        newMapping[idx].type = 'text';
-                                                        setRevertTKMapping(newMapping);
-                                                    }}
-                                                    className={`flex-1 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${cfg.type === 'text' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                                                >
-                                                    Text
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        const newMapping = [...revertTKMapping];
-                                                        newMapping[idx].type = 'table';
-                                                        setRevertTKMapping(newMapping);
-                                                    }}
-                                                    className={`flex-1 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${cfg.type === 'table' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                                                >
-                                                    Table
-                                                </button>
-                                            </div>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. A:150, B:250, C:100"
+                                            value={revertTKColConfig}
+                                            onChange={(e) => setRevertTKColConfig(e.target.value)}
+                                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:text-gray-300"
+                                        />
+                                        <div className="p-3 bg-indigo-50/50 rounded-xl">
+                                            <p className="text-[10px] text-indigo-600/80 font-medium italic leading-relaxed">
+                                                Use format <b>[Column]:[Width]</b>, separated by commas. Example: <b>A:200, B:300</b>.<br />
+                                                This applies to the Preview grid to match your Excel template.
+                                            </p>
                                         </div>
                                     </div>
-                                ))}
 
-                                <div className="mt-4 p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-4 items-start">
-                                    <span className="text-xl">💡</span>
-                                    <div className="text-xs text-amber-800 font-medium leading-relaxed">
-                                        <p className="font-black uppercase tracking-wider mb-1">Hướng dẫn cấu hình:</p>
-                                        <ul className="list-disc ml-4 space-y-1">
-                                            <li><b>Base:</b> Khoảng cách từ cột tiêu đề A đến cột giá trị đầu tiên.</li>
-                                            <li><b>Dist N:</b> Khoảng cách từ cột giá trị (N) đến cột giá trị (N+1).</li>
-                                            <li>Ví dụ: Base=1 → Cột B, Dist 1=2 → Cột D.</li>
-                                        </ul>
+                                    {/* Delete Characters Config */}
+                                    <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col gap-3">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-600 shrink-0">🗑️</div>
+                                            <label className="text-[10px] font-black text-gray-700 uppercase tracking-widest">Delete Characters (Input cleaner)</label>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. ', ., /"
+                                            value={revertTKDeleteChars}
+                                            onChange={(e) => setRevertTKDeleteChars(e.target.value)}
+                                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-red-500 transition-all font-mono"
+                                        />
+                                        <p className="text-[9px] text-gray-400 font-bold uppercase ml-1">Ký tự sẽ bị xóa trước khi xử lý (ngăn cách bằng dấu phẩy)</p>
+                                    </div>
+
+                                    {/* Column Split Logic is now a General Setting */}
+                                    <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col gap-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">✂️</div>
+                                                <div className="flex flex-col">
+                                                    <div className="text-xs font-black text-gray-700 uppercase tracking-widest">Keyword Detected</div>
+                                                    <div className="flex items-center gap-4 mt-1">
+                                                        <div className="flex items-center gap-1.5 cursor-pointer group" onClick={() => setColumnSplitApplyToText(!columnSplitApplyToText)}>
+                                                            <input type="checkbox" checked={columnSplitApplyToText} onChange={() => { }} className="w-3 h-3 accent-amber-600 rounded pointer-events-none" />
+                                                            <span className="text-[9px] font-black text-gray-400 uppercase group-hover:text-amber-600 transition-colors">Apply to Text</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5 cursor-pointer group" onClick={() => setColumnSplitApplyToTable(!columnSplitApplyToTable)}>
+                                                            <input type="checkbox" checked={columnSplitApplyToTable} onChange={() => { }} className="w-3 h-3 accent-amber-600 rounded pointer-events-none" />
+                                                            <span className="text-[9px] font-black text-gray-400 uppercase group-hover:text-amber-600 transition-colors">Apply to Table</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    className="sr-only peer"
+                                                    checked={columnSplitEnabled}
+                                                    onChange={(e) => setColumnSplitEnabled(e.target.checked)}
+                                                />
+                                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                                            </label>
+                                        </div>
+
+                                        <div className="relative">
+                                            {!columnSplitEnabled && (
+                                                <div className="absolute -inset-2 bg-white/60 backdrop-blur-[0.5px] z-[60] rounded-2xl cursor-not-allowed flex items-center justify-center">
+                                                    <div className="bg-white/90 px-3 py-1 rounded-full border border-amber-100 shadow-sm text-[8px] font-black text-amber-600 uppercase tracking-widest animate-in zoom-in duration-300">
+                                                        DISABLED
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <div className={`flex flex-col gap-4 transition-all duration-300 ${columnSplitEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                                                <div className="flex flex-col gap-1.5">
+                                                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Keywords</span>
+                                                    <input
+                                                        type="text"
+                                                        value={columnSplitKeywords}
+                                                        onChange={(e) => setColumnSplitKeywords(e.target.value)}
+                                                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-amber-500 font-mono transition-all"
+                                                        placeholder="e.g. AS, XX , YY, ZZ,..."
+                                                    />
+                                                </div>
+
+                                                <div className="px-4 py-2.5 bg-amber-50/50 rounded-xl border border-amber-100/50 flex gap-2 items-center">
+                                                    <span className="text-sm">💡</span>
+                                                    <p className="text-[9px] text-amber-800 font-bold uppercase tracking-tight">
+                                                        Nó sẽ tách các từ khóa trong chuỗi, các keyword sẽ phân chia với nhau bằng dấu phẩy ","
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
+
+                            {revertConfigTab === 'codeToTk' && (
+                                <div className="p-8 flex flex-col gap-6 animate-in slide-in-from-bottom-2 duration-300">
+                                    <div className="bg-white p-8 rounded-3xl border border-dashed border-gray-200 flex flex-col items-center justify-center text-center">
+                                        <div className="text-4xl mb-4">⚙️</div>
+                                        <h4 className="text-sm font-black text-gray-800 uppercase tracking-widest mb-1">CODE TO TK CONFIGURATION</h4>
+                                        <p className="text-[10px] text-gray-400 font-bold max-w-xs leading-relaxed">
+                                            Rules for reverting code/SQL into Technical Specifications.
+                                            Specific logic settings will be added here soon.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {revertConfigTab === 'tkToCode' && (
+                                <div className="p-8 flex flex-col gap-6 animate-in slide-in-from-bottom-2 duration-300">
+
+                                    {/* Moved Layout config here temporarily as it's part of how we handle TK structures */}
+                                    <div className="flex flex-col gap-4">
+                                        <div className="flex justify-between items-center px-2">
+                                            <div className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Section Mappings (Spec structure)</div>
+                                        </div>
+                                        {/* New Section Input */}
+                                        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex gap-4 items-end">
+                                            <div className="flex-1">
+                                                <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Label for new section</div>
+                                                <input
+                                                    type="text"
+                                                    placeholder="e.g. ■ Ghi chú"
+                                                    value={newSectionLabel}
+                                                    onChange={(e) => setNewSectionLabel(e.target.value)}
+                                                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    if (!newSectionLabel.trim()) return;
+                                                    const id = newSectionLabel.trim().toLowerCase().replace(/\s+/g, '-');
+                                                    const currentOffsets = revertTKMapping[0]?.offsets || [1, 1];
+                                                    setRevertTKMapping([...revertTKMapping, {
+                                                        id,
+                                                        label: newSectionLabel.trim(),
+                                                        offsets: [...currentOffsets],
+                                                        type: 'text'
+                                                    }]);
+                                                    setNewSectionLabel('');
+                                                }}
+                                                className="px-6 py-3 bg-indigo-600 text-white text-[10px] font-black rounded-xl hover:bg-indigo-700 shadow-md transition-all active:scale-95 uppercase tracking-widest"
+                                            >
+                                                Add Section
+                                            </button>
+                                        </div>
+
+                                        {revertTKMapping.map((cfg, idx) => (
+                                            <div key={cfg.id} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-6 group hover:border-indigo-200 transition-all">
+                                                <div className="w-48 shrink-0">
+                                                    <div className="text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-1">Section Title</div>
+                                                    <div className="text-xs font-black text-gray-800">{cfg.label}</div>
+                                                </div>
+
+                                                <div className="w-20 shrink-0 flex flex-col items-center">
+                                                    <div className="text-[9px] font-black text-gray-400 uppercase mb-1">Base Col</div>
+                                                    <div className="w-full py-2 bg-gray-100 border border-gray-200 rounded-lg text-center text-xs font-black text-gray-400">A</div>
+                                                </div>
+
+                                                <div className="flex-1 flex flex-col gap-2">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="flex items-center gap-2">
+                                                            {cfg.offsets.map((off, oIdx) => (
+                                                                <div key={oIdx} className="flex items-center bg-gray-50 border border-gray-200 rounded-xl px-2 py-1.5 gap-2 shadow-inner group/off">
+                                                                    <div className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">
+                                                                        {oIdx === 0 ? "Offset" : `Col ${oIdx}`}
+                                                                    </div>
+                                                                    <input
+                                                                        type="number"
+                                                                        value={off}
+                                                                        onChange={(e) => {
+                                                                            const val = parseInt(e.target.value) || 1;
+                                                                            const newMapping = [...revertTKMapping];
+                                                                            newMapping[idx].offsets[oIdx] = val;
+                                                                            setRevertTKMapping(newMapping);
+                                                                        }}
+                                                                        className="w-10 bg-transparent text-xs font-black text-indigo-600 text-center outline-none focus:text-indigo-800"
+                                                                    />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5 border-l border-gray-100 pl-4 ml-2">
+                                                            <button
+                                                                onClick={() => {
+                                                                    const newMapping = revertTKMapping.map(item => ({
+                                                                        ...item,
+                                                                        offsets: [...item.offsets, 1]
+                                                                    }));
+                                                                    setRevertTKMapping(newMapping);
+                                                                }}
+                                                                className="w-7 h-7 flex items-center justify-center bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
+                                                            >
+                                                                <span className="text-lg font-light">+</span>
+                                                            </button>
+                                                            {cfg.offsets.length > 1 && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const newMapping = revertTKMapping.map(item => ({
+                                                                            ...item,
+                                                                            offsets: item.offsets.slice(0, -1)
+                                                                        }));
+                                                                        setRevertTKMapping(newMapping);
+                                                                    }}
+                                                                    className="w-7 h-7 flex items-center justify-center bg-red-50 text-red-400 rounded-full hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                                                                >
+                                                                    <span className="text-lg font-light">×</span>
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
-                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end shrink-0">
-                            <button
-                                onClick={() => setShowRevertConfig(false)}
-                                className="px-8 py-2.5 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
-                            >
-                                CLOSE & SAVE
-                            </button>
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center shrink-0">
+                            <div className="text-[9px] text-gray-400 font-bold uppercase italic">* Changes apply immediately for current session.</div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            const btn = document.getElementById('save-tk-btn');
+                                            if (btn) btn.innerText = 'SAVING...';
+                                            await invoke('save_db_settings', {
+                                                settings: {
+                                                    connections,
+                                                    global_log_path: globalLogPath,
+                                                    translate_file_path: translateFilePath,
+                                                    column_split_enabled: columnSplitEnabled,
+                                                    column_split_keywords: columnSplitKeywords,
+                                                    revert_tk_col_config: revertTKColConfig,
+                                                    column_split_apply_to_text: columnSplitApplyToText,
+                                                    column_split_apply_to_table: columnSplitApplyToTable,
+                                                    revert_tk_delete_chars: revertTKDeleteChars,
+                                                    revert_tk_mapping: revertTKMapping,
+                                                    excel_header_color: excelHeaderColor,
+                                                    run_shortcut: runShortcut
+                                                }
+                                            });
+                                            if (btn) {
+                                                btn.innerText = '✅ SAVED';
+                                                btn.classList.add('bg-green-600');
+                                                setTimeout(() => {
+                                                    btn.innerText = '💾 SAVE PERMANENTLY';
+                                                    btn.classList.remove('bg-green-600');
+                                                }, 2000);
+                                            }
+                                        } catch (e) {
+                                            console.error('Failed to save settings', e);
+                                        }
+                                    }}
+                                    id="save-tk-btn"
+                                    className="px-6 py-3 bg-black text-white text-[10px] font-black rounded-xl hover:bg-gray-800 transition-all shadow-md active:scale-95 uppercase tracking-widest flex items-center gap-2"
+                                >
+                                    💾 SAVE PERMANENTLY
+                                </button>
+                                <button
+                                    onClick={() => setShowRevertConfig(false)}
+                                    className="px-10 py-3 bg-indigo-600 text-white text-[10px] font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 uppercase tracking-widest"
+                                >
+                                    Apply & Close
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

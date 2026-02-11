@@ -30,10 +30,26 @@ pub struct DbConfig {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RevertTKMapping {
+    pub id: String,
+    pub label: String,
+    pub offsets: Vec<i32>,
+    pub r#type: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppSettings {
     pub connections: Vec<DbConfig>,
-    pub global_log_path: Option<String>,
     pub translate_file_path: Option<String>,
+    pub column_split_enabled: Option<bool>,
+    pub column_split_keywords: Option<String>,
+    pub revert_tk_col_config: Option<String>,
+    pub column_split_apply_to_text: Option<bool>,
+    pub column_split_apply_to_table: Option<bool>,
+    pub revert_tk_delete_chars: Option<String>,
+    pub revert_tk_mapping: Option<Vec<RevertTKMapping>>,
+    pub excel_header_color: Option<String>,
+    pub run_shortcut: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -273,10 +289,23 @@ async fn test_connection(config: DbConfig) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn save_db_settings(handle: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
-    let path = handle.path_resolver().app_config_dir().ok_or("Could not find app config dir")?;
-    fs::create_dir_all(&path).map_err(|e: std::io::Error| e.to_string())?;
-    let config_path = path.join("db_settings.json");
+fn get_setting_path() -> Result<String, String> {
+    let mut exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+    exe_path.pop(); // Remove exe name
+    let config_path = exe_path.join("data").join("settings.json");
+    Ok(config_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn save_db_settings(settings: AppSettings) -> Result<(), String> {
+    let path_str = get_setting_path()?;
+    let config_path = std::path::Path::new(&path_str);
+    
+    // Ensure the data directory exists
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
     let content = serde_json::to_string_pretty(&settings).map_err(|e: serde_json::Error| e.to_string())?;
     let mut file = File::create(config_path).map_err(|e: std::io::Error| e.to_string())?;
     file.write_all(content.as_bytes()).map_err(|e: std::io::Error| e.to_string())?;
@@ -284,9 +313,9 @@ fn save_db_settings(handle: tauri::AppHandle, settings: AppSettings) -> Result<(
 }
 
 #[tauri::command]
-fn load_db_settings(handle: tauri::AppHandle) -> Result<AppSettings, String> {
-    let path = handle.path_resolver().app_config_dir().ok_or("Could not find app config dir")?;
-    let config_path = path.join("db_settings.json");
+fn load_db_settings() -> Result<AppSettings, String> {
+    let path_str = get_setting_path()?;
+    let config_path = std::path::Path::new(&path_str);
     
     let default_translate_path = std::env::current_exe()
         .map(|p| p.parent().unwrap_or(&p).join("data").join("translate.xlsx").to_string_lossy().to_string())
@@ -308,8 +337,16 @@ fn load_db_settings(handle: tauri::AppHandle) -> Result<AppSettings, String> {
                 encrypt: Some(false),
                 verified: Some(false),
             }],
-            global_log_path: Some("".to_string()),
             translate_file_path: Some(default_translate_path),
+            column_split_enabled: Some(true),
+            column_split_keywords: None,
+            revert_tk_col_config: None,
+            column_split_apply_to_text: None,
+            column_split_apply_to_table: None,
+            revert_tk_delete_chars: None,
+            revert_tk_mapping: None,
+            excel_header_color: None,
+            run_shortcut: None,
         });
     }
     
@@ -335,7 +372,8 @@ fn main() {
             generate_mermaid_graph,
             save_db_settings, 
             load_db_settings,
-            open_file
+            open_file,
+            get_setting_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

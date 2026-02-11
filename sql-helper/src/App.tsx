@@ -20,17 +20,25 @@ function App() {
             try {
                 const settings = await invoke<any>('load_db_settings');
                 if (settings) {
-                    setConnections(settings.connections);
-                    if (settings.translate_file_path) {
-                        useAppStore.getState().setTranslateFilePath(settings.translate_file_path);
-                    }
+                    const store = useAppStore.getState();
+                    if (settings.connections) store.setConnections(settings.connections);
+                    if (settings.translate_file_path) store.setTranslateFilePath(settings.translate_file_path);
+                    if (settings.column_split_enabled !== undefined) store.setColumnSplitEnabled(settings.column_split_enabled);
+                    if (settings.column_split_keywords) store.setColumnSplitKeywords(settings.column_split_keywords);
+                    if (settings.revert_tk_col_config) store.setRevertTKColConfig(settings.revert_tk_col_config);
+                    if (settings.column_split_apply_to_text !== undefined) store.setColumnSplitApplyToText(settings.column_split_apply_to_text);
+                    if (settings.column_split_apply_to_table !== undefined) store.setColumnSplitApplyToTable(settings.column_split_apply_to_table);
+                    if (settings.revert_tk_delete_chars) store.setRevertTKDeleteChars(settings.revert_tk_delete_chars);
+                    if (settings.revert_tk_mapping) store.setRevertTKMapping(settings.revert_tk_mapping);
+                    if (settings.excel_header_color) store.setExcelHeaderColor(settings.excel_header_color);
+                    if (settings.run_shortcut) store.setRunShortcut(settings.run_shortcut);
                 }
             } catch (err) {
                 console.error('Failed to load DB settings:', err);
             }
         };
         init();
-    }, [setConnections]);
+    }, []);
 
     return (
         <div className="flex flex-col min-h-screen bg-bg font-sans">

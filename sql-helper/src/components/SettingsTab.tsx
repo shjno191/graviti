@@ -42,15 +42,17 @@ const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: strin
 
 export const SettingsTab: React.FC = () => {
     const {
-        connections,
-        setConnections,
-        globalLogPath,
-        setTranslateFilePath,
-        translateFilePath,
-        excelHeaderColor,
-        setExcelHeaderColor,
-        runShortcut,
-        setRunShortcut
+        connections, setConnections,
+        translateFilePath, setTranslateFilePath,
+        excelHeaderColor, setExcelHeaderColor,
+        runShortcut, setRunShortcut,
+        columnSplitEnabled,
+        columnSplitKeywords,
+        revertTKColConfig,
+        columnSplitApplyToText,
+        columnSplitApplyToTable,
+        revertTKDeleteChars,
+        revertTKMapping
     } = useAppStore();
     const [editingConfig, setEditingConfig] = useState<DbConfig | null>(null);
     const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error' | 'testing'>('idle');
@@ -73,6 +75,24 @@ export const SettingsTab: React.FC = () => {
         setEditingConfig(newConn);
     };
 
+    const handleSaveSettings = async (updatedConnections: DbConfig[]) => {
+        await invoke('save_db_settings', {
+            settings: {
+                connections: updatedConnections,
+                translate_file_path: translateFilePath,
+                column_split_enabled: columnSplitEnabled,
+                column_split_keywords: columnSplitKeywords,
+                revert_tk_col_config: revertTKColConfig,
+                column_split_apply_to_text: columnSplitApplyToText,
+                column_split_apply_to_table: columnSplitApplyToTable,
+                revert_tk_delete_chars: revertTKDeleteChars,
+                revert_tk_mapping: revertTKMapping,
+                excel_header_color: excelHeaderColor,
+                run_shortcut: runShortcut
+            }
+        });
+    };
+
     const handleSave = async (configToSave: DbConfig) => {
         setStatus('saving');
         try {
@@ -81,13 +101,7 @@ export const SettingsTab: React.FC = () => {
                 updatedConnections.push(configToSave);
             }
 
-            await invoke('save_db_settings', {
-                settings: {
-                    connections: updatedConnections,
-                    global_log_path: globalLogPath,
-                    translate_file_path: translateFilePath
-                }
-            });
+            await handleSaveSettings(updatedConnections);
 
             setConnections(updatedConnections);
             setStatus('success');
@@ -110,13 +124,7 @@ export const SettingsTab: React.FC = () => {
             setEditingConfig(updatedConfig);
 
             const updatedConnections = connections.map(c => c.id === updatedConfig.id ? updatedConfig : c);
-            await invoke('save_db_settings', {
-                settings: {
-                    connections: updatedConnections,
-                    global_log_path: globalLogPath,
-                    translate_file_path: translateFilePath
-                }
-            });
+            await handleSaveSettings(updatedConnections);
             setConnections(updatedConnections);
         } catch (error: any) {
             setTestMessage(error || 'Kết nối thất bại');
@@ -129,14 +137,21 @@ export const SettingsTab: React.FC = () => {
     const handleDelete = async (id: string) => {
         if (!confirm('Are you sure you want to delete this connection?')) return;
         const updatedConnections = connections.filter(c => c.id !== id);
-        await invoke('save_db_settings', {
-            settings: {
-                connections: updatedConnections,
-                global_log_path: globalLogPath,
-                translate_file_path: translateFilePath
-            }
-        });
+        await handleSaveSettings(updatedConnections);
         setConnections(updatedConnections);
+        if (editingConfig?.id === id) setEditingConfig(null);
+    };
+
+    const handleSaveGlobalConfig = async () => {
+        setStatus('saving');
+        try {
+            await handleSaveSettings(connections);
+            setStatus('success');
+            setTimeout(() => setStatus('idle'), 2000);
+        } catch (e) {
+            console.error('Failed to save global settings:', e);
+            setStatus('error');
+        }
     };
 
     return (
@@ -151,10 +166,35 @@ export const SettingsTab: React.FC = () => {
                 </button>
             </div>
 
-            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 flex flex-col gap-6">
+            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 flex flex-col gap-8">
                 <div>
-                    <h3 className="text-xl font-black text-gray-800 uppercase tracking-tight mb-4">General Settings</h3>
-                    <div className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-black text-gray-800 uppercase tracking-tight">Global Application Configuration</h3>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        const path = await invoke<string>('get_setting_path');
+                                        await invoke('open_file', { path });
+                                    } catch (e) {
+                                        console.error('Failed to open settings file', e);
+                                    }
+                                }}
+                                className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-bold hover:bg-indigo-100 transition-all border border-indigo-100 flex items-center gap-2"
+                                title="Open settings.json"
+                            >
+                                📂 OPEN JSON
+                            </button>
+                            <button
+                                onClick={handleSaveGlobalConfig}
+                                className="px-8 py-2 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg flex items-center gap-2"
+                            >
+                                {status === 'saving' ? 'SAVING...' : status === 'success' ? '✅ SAVED' : '💾 SAVE ALL CONFIG'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-6">
                         <div className="flex flex-col gap-2">
                             <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Translate Excel Path (Source)</label>
                             <div className="flex gap-2">
@@ -178,29 +218,7 @@ export const SettingsTab: React.FC = () => {
                                 >
                                     Browse
                                 </button>
-                                <button
-                                    onClick={async () => {
-                                        setStatus('saving');
-                                        try {
-                                            await invoke('save_db_settings', {
-                                                settings: {
-                                                    connections: connections,
-                                                    global_log_path: globalLogPath,
-                                                    translate_file_path: translateFilePath
-                                                }
-                                            });
-                                            setStatus('success');
-                                            setTimeout(() => setStatus('idle'), 2000);
-                                        } catch (e) {
-                                            setStatus('error');
-                                        }
-                                    }}
-                                    className="px-6 py-2 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-md"
-                                >
-                                    {status === 'saving' ? 'SETTING...' : 'SAVE CONFIG'}
-                                </button>
                             </div>
-                            <p className="text-[10px] text-gray-400 italic font-medium">Default path is in 'data' folder relative to the executable.</p>
                         </div>
                     </div>
                 </div>
