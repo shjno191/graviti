@@ -30,7 +30,7 @@ export function TextCompareTab() {
     }, [expectedText, currentText, isOrdered, ignoreCase, trimWhitespace]);
 
     return (
-        <div className="flex flex-col h-[calc(95vh-140px)] gap-4 p-4">
+        <div className="flex flex-col h-[calc(100vh-140px)] gap-4 p-4">
             {/* Input Area */}
             <div className="flex gap-4 h-1/2">
                 <div className="flex-1 flex flex-col">
