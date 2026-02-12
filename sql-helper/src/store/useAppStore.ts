@@ -109,6 +109,11 @@ export interface AppState {
     setTextCompareRemoveAppend: (val: boolean) => void;
     textCompareTruncateDuplicate: boolean;
     setTextCompareTruncateDuplicate: (val: boolean) => void;
+
+    translateDeleteChars: string;
+    setTranslateDeleteChars: (val: string) => void;
+    translateTruncateDuplicate: boolean;
+    setTranslateTruncateDuplicate: (val: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -216,4 +221,9 @@ export const useAppStore = create<AppState>((set) => ({
     setTextCompareRemoveAppend: (val) => set({ textCompareRemoveAppend: val }),
     textCompareTruncateDuplicate: false,
     setTextCompareTruncateDuplicate: (val) => set({ textCompareTruncateDuplicate: val }),
+
+    translateDeleteChars: '',
+    setTranslateDeleteChars: (val) => set({ translateDeleteChars: val }),
+    translateTruncateDuplicate: false,
+    setTranslateTruncateDuplicate: (val) => set({ translateTruncateDuplicate: val }),
 }));

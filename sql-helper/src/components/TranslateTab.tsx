@@ -429,6 +429,8 @@ export const TranslateTab: React.FC = () => {
         columnSplitApplyToTable, setColumnSplitApplyToTable,
         revertTKDeleteChars, setRevertTKDeleteChars,
         revertTKMapping, setRevertTKMapping,
+        translateDeleteChars, setTranslateDeleteChars,
+        translateTruncateDuplicate, setTranslateTruncateDuplicate,
         runShortcut,
         connections
     } = useAppStore();
@@ -596,17 +598,33 @@ export const TranslateTab: React.FC = () => {
             }
         }
 
+        // Custom delete chars (Independent)
+        if (translateDeleteChars) {
+            const escapeIdx = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const charsPattern = '[' + escapeIdx(translateDeleteChars) + ']';
+            const regex = new RegExp(charsPattern, 'g');
+            processedText = processedText.replace(regex, '');
+        }
+
         // Logic 1 & 3: Remove space, tab, and commas
         if (formatRemoveSpaces) {
             // Remove commas first
             processedText = processedText.replace(/,/g, '');
 
             const lines = processedText.split('\n');
-            const formattedLines = lines.map(line => {
+            let formattedLines = lines.map(line => {
                 // Replace tabs and multiple spaces with a single space, then trim
                 return line.replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
             }).filter(line => line.length > 0);
+
             processedText = formattedLines.join('\n');
+        }
+
+        // Truncate duplicates (Apply generally)
+        if (translateTruncateDuplicate) {
+            const lines = processedText.split('\n');
+            const uniqueLines = Array.from(new Set(lines));
+            processedText = uniqueLines.join('\n');
         }
 
         setBulkInput(processedText);
@@ -1604,8 +1622,34 @@ export const TranslateTab: React.FC = () => {
                                                     />
                                                     <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[10px]">✓</span>
                                                 </div>
-                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Xóa .append()</span>
+                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Clean .append("...")</span>
                                             </label>
+
+                                            <label className="flex items-center gap-3 cursor-pointer group">
+                                                <div className="relative flex items-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={translateTruncateDuplicate}
+                                                        onChange={(e) => setTranslateTruncateDuplicate(e.target.checked)}
+                                                        className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border border-gray-300 transition-all checked:border-indigo-600 checked:bg-indigo-600"
+                                                    />
+                                                    <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[10px]">✓</span>
+                                                </div>
+                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Truncate Duplicate</span>
+                                            </label>
+
+                                            <div className="border-t border-gray-200 my-1"></div>
+
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Remove Characters</label>
+                                                <input
+                                                    type="text"
+                                                    value={translateDeleteChars}
+                                                    onChange={(e) => setTranslateDeleteChars(e.target.value)}
+                                                    placeholder="e.g. ,;()"
+                                                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                />
+                                            </div>
 
                                             <label className="flex items-center gap-3 cursor-pointer group">
                                                 <div className="relative flex items-center">
@@ -1652,20 +1696,6 @@ export const TranslateTab: React.FC = () => {
                 </div>
 
                 <div className="flex gap-2">
-                    <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl border border-gray-200 shadow-inner shrink-0">
-                        {(['jp', 'en', 'vi'] as const).map(lang => (
-                            <button
-                                key={lang}
-                                onClick={() => setTargetLang(lang)}
-                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${targetLang === lang
-                                    ? 'bg-white text-indigo-600 shadow-sm scale-105'
-                                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-                                    }`}
-                            >
-                                {lang}
-                            </button>
-                        ))}
-                    </div>
                     {subTab !== 'revertTK' && (
                         <>
                             <button
