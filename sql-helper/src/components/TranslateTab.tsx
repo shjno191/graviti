@@ -3,6 +3,7 @@ import { readBinaryFile, writeBinaryFile, readTextFile, writeTextFile } from '@t
 import { invoke } from '@tauri-apps/api/tauri';
 import { open as openDialog } from '@tauri-apps/api/dialog';
 import * as XLSX from 'xlsx';
+import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/useAppStore';
 
 interface TranslateEntry {
@@ -498,6 +499,8 @@ export const TranslateTab: React.FC = () => {
     const [lineSpacing, setLineSpacing] = useState(1.6);
     const [segmentCopyFeedback, setSegmentCopyFeedback] = useState<string | null>(null);
     const [resultCopyFeedback, setResultCopyFeedback] = useState(false);
+    const [tooltip, setTooltip] = useState<{ seg: TranslatedSegment, rect: DOMRect } | null>(null);
+    const [isMouseInTooltip, setIsMouseInTooltip] = useState(false);
     const [dictionaryLimit, setDictionaryLimit] = useState(200);
 
     // Edit modal state
@@ -826,16 +829,19 @@ export const TranslateTab: React.FC = () => {
 
                 for (let i = startIndex; i < jsonData.length; i++) {
                     const row = jsonData[i];
-                    if (row && row.length >= 2) {
+                    if (row) {
+                        // Smart cleaning: trim and normalize everything first
                         const jp = String(row[0] || "").trim();
                         const en = String(row[1] || "").trim();
                         const vi = String(row[2] || "").trim();
 
                         if (jp || en || vi) {
-                            // Unique key is now combination of JP and EN to only remove exact duplicates of these two.
-                            const pairKey = `${jp.toLowerCase()}|${en.toLowerCase()}`;
-                            if (!seenEntries.has(pairKey)) {
-                                seenEntries.add(pairKey);
+                            // Unique key: Combination of all 3 trimmed/lowercased fields for standard cleaning
+                            // This ensures we remove exact duplicates regardless of which column they are in.
+                            const uniqueKey = `${jp.toLowerCase()}|${en.toLowerCase()}|${vi.toLowerCase()}`;
+
+                            if (!seenEntries.has(uniqueKey)) {
+                                seenEntries.add(uniqueKey);
                                 uniqueResults.push({ japanese: jp, english: en, vietnamese: vi });
                             } else {
                                 duplicateCount++;
@@ -928,6 +934,15 @@ export const TranslateTab: React.FC = () => {
         }
     };
 
+    useEffect(() => {
+        if (!hoveredKey && !isMouseInTooltip && tooltip) {
+            const timer = setTimeout(() => {
+                setTooltip(null);
+            }, 50);
+            return () => clearTimeout(timer);
+        }
+    }, [hoveredKey, isMouseInTooltip, tooltip]);
+
     const handleSync = () => loadData(true);
 
     const filteredData = useMemo(() => {
@@ -956,7 +971,9 @@ export const TranslateTab: React.FC = () => {
         setTimeout(() => setCopyFeedback(null), 600);
     }, []);
 
-    const noopShowTooltip = React.useCallback(() => { }, []);
+    const handleShowTooltip = React.useCallback((seg: TranslatedSegment, rect: DOMRect) => {
+        setTooltip({ seg, rect });
+    }, []);
 
     const handleSegmentClick = React.useCallback((s: TranslatedSegment) => {
         if (window.getSelection()?.toString()) return;
@@ -2498,7 +2515,7 @@ export const TranslateTab: React.FC = () => {
                                                                     onHover={setHoveredKey}
                                                                     copiedKey={segmentCopyFeedback}
                                                                     onClick={handleSegmentClick}
-                                                                    onShowTooltip={noopShowTooltip}
+                                                                    onShowTooltip={handleShowTooltip}
                                                                 />
                                                             )) : '\u200B'}
                                                         </div>
@@ -2846,6 +2863,44 @@ export const TranslateTab: React.FC = () => {
                     </div>
                 )
             }
+
+            {tooltip && createPortal(
+                <div className="fixed inset-0 z-[99999] pointer-events-none">
+                    <div
+                        className="absolute bg-white rounded-xl shadow-2xl border border-indigo-100 py-2 min-w-[200px] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 pointer-events-auto"
+                        onMouseEnter={() => setIsMouseInTooltip(true)}
+                        onMouseLeave={() => setIsMouseInTooltip(false)}
+                        style={{
+                            top: Math.max(10, Math.min(tooltip.rect.top + (tooltip.rect.height / 2) - 40, window.innerHeight - 300)),
+                            left: Math.min(tooltip.rect.right + 12, window.innerWidth - 240),
+                        }}
+                    >
+                        <div className="px-3 py-1.5 bg-indigo-50/50 border-b border-indigo-50 flex items-center justify-between">
+                            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Select Version</span>
+                            <span className="text-[10px] font-bold text-indigo-300">{tooltip.seg.options.length} options</span>
+                        </div>
+                        <div className="max-h-[250px] overflow-y-auto custom-scrollbar">
+                            {tooltip.seg.options.map((opt, i) => (
+                                <button
+                                    key={i}
+                                    onClick={() => {
+                                        setSelections(prev => ({ ...prev, [tooltip.seg.key]: opt }));
+                                        setTooltip(null);
+                                    }}
+                                    className={`w-full text-left px-4 py-2.5 text-xs font-bold transition-all border-l-4
+                                        ${selections[tooltip.seg.key] === opt
+                                            ? 'bg-indigo-50 text-indigo-600 border-indigo-500'
+                                            : 'text-gray-600 border-transparent hover:bg-gray-50 hover:text-indigo-600 hover:border-indigo-200'}
+                                    `}
+                                >
+                                    {opt}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div >
     );
 };

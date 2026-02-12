@@ -57,11 +57,13 @@ export const SettingsTab: React.FC = () => {
         activeTab
     } = useAppStore();
     const [editingConfig, setEditingConfig] = useState<DbConfig | null>(null);
-    const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error' | 'testing' | 'loading'>('idle');
-    const [testMessage, setTestMessage] = useState<string>('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isTesting, setIsTesting] = useState(false);
+    const [testResult, setTestResult] = useState<{ success: boolean, message: string } | null>(null);
 
     const loadSettings = async () => {
-        setStatus('loading');
+        setIsLoading(true);
         try {
             const settings = await invoke<any>('load_db_settings');
             if (settings) {
@@ -84,12 +86,11 @@ export const SettingsTab: React.FC = () => {
 
                 if (settings.excel_header_color) store.setExcelHeaderColor(settings.excel_header_color);
                 if (settings.run_shortcut) store.setRunShortcut(settings.run_shortcut);
-                setStatus('success');
-                setTimeout(() => setStatus('idle'), 1000);
             }
         } catch (err) {
             console.error('Failed to load DB settings:', err);
-            setStatus('error');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -144,12 +145,21 @@ export const SettingsTab: React.FC = () => {
         });
     };
 
-    const handleGlobalSave = () => {
-        handleSaveSettings(connections);
+    const handleGlobalSave = async () => {
+        setIsSaving(true);
+        try {
+            await handleSaveSettings(connections);
+            alert('Settings saved successfully!');
+        } catch (e) {
+            console.error(e);
+            alert('Failed to save settings');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleSave = async (configToSave: DbConfig) => {
-        setStatus('saving');
+        setIsSaving(true);
         try {
             const updatedConnections = connections.map(c => c.id === configToSave.id ? configToSave : c);
             if (!updatedConnections.find(c => c.id === configToSave.id)) {
@@ -157,35 +167,33 @@ export const SettingsTab: React.FC = () => {
             }
 
             await handleSaveSettings(updatedConnections);
-
             setConnections(updatedConnections);
-            setStatus('success');
-            setTimeout(() => setStatus('idle'), 3000);
         } catch (error) {
             console.error('Failed to save settings:', error);
-            setStatus('error');
+        } finally {
+            setIsSaving(false);
         }
     };
 
     const handleTest = async (configToTest: DbConfig) => {
-        setStatus('testing');
-        setTestMessage('');
+        setIsTesting(true);
+        setTestResult(null);
         try {
             const result = await invoke<string>('test_connection', { config: configToTest });
-            setTestMessage(result);
-            setStatus('success');
+            setTestResult({ success: true, message: result || 'Kết nối thành công!' });
 
             const updatedConfig = { ...configToTest, verified: true };
-            setEditingConfig(updatedConfig);
+            if (editingConfig?.id === configToTest.id) setEditingConfig(updatedConfig);
 
             const updatedConnections = connections.map(c => c.id === updatedConfig.id ? updatedConfig : c);
             await handleSaveSettings(updatedConnections);
             setConnections(updatedConnections);
         } catch (error: any) {
-            setTestMessage(error || 'Kết nối thất bại');
-            setStatus('error');
+            setTestResult({ success: false, message: error?.toString() || 'Kết nối thất bại' });
             const updatedConfig = { ...configToTest, verified: false };
-            setEditingConfig(updatedConfig);
+            if (editingConfig?.id === configToTest.id) setEditingConfig(updatedConfig);
+        } finally {
+            setIsTesting(false);
         }
     };
 
@@ -215,11 +223,20 @@ export const SettingsTab: React.FC = () => {
                         <h3 className="text-xl font-black text-gray-800 uppercase tracking-tight">Global Application Configuration</h3>
                         <div className="flex gap-2">
                             <button
+                                onClick={handleGlobalSave}
+                                disabled={isSaving}
+                                className={`px-4 py-2 rounded-xl font-bold transition-all shadow-md flex items-center gap-2 ${isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-800'}`}
+                                title="Save all settings to setting.json"
+                            >
+                                {isSaving ? '⏳ SAVING...' : '💾 SAVE ALL'}
+                            </button>
+                            <button
                                 onClick={loadSettings}
-                                className="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-bold hover:bg-blue-100 transition-all border border-blue-100 flex items-center gap-2"
+                                disabled={isLoading || isSaving}
+                                className={`px-4 py-2 rounded-xl font-bold transition-all border flex items-center gap-2 ${isLoading ? 'bg-gray-50 text-gray-400 border-gray-100 cursor-not-allowed' : 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100'}`}
                                 title="Reload settings from settings.json"
                             >
-                                🔄 REFRESH
+                                {isLoading ? '⏳ LOADING...' : '🔄 REFRESH'}
                             </button>
                             <button
                                 onClick={async () => {
@@ -460,21 +477,39 @@ export const SettingsTab: React.FC = () => {
                         <div className="flex gap-4 mt-10">
                             <button
                                 onClick={() => handleSave(editingConfig)}
-                                className="flex-1 bg-black text-white rounded-2xl py-4 font-black uppercase tracking-widest hover:bg-gray-800 transition-all shadow-lg active:scale-95"
+                                disabled={isSaving || isTesting}
+                                className={`flex-1 flex items-center justify-center gap-2 rounded-2xl py-4 font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 ${isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-800'}`}
                             >
-                                {status === 'saving' ? 'Saving...' : 'Save Connection'}
+                                {isSaving ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        <span>Saving...</span>
+                                    </>
+                                ) : 'Save Connection'}
                             </button>
                             <button
                                 onClick={() => handleTest(editingConfig)}
-                                className="flex-1 bg-gray-100 text-gray-800 rounded-2xl py-4 font-black uppercase tracking-widest hover:bg-gray-200 transition-all border border-gray-200 active:scale-95"
+                                disabled={isSaving || isTesting}
+                                className={`flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-800 rounded-2xl py-4 font-black uppercase tracking-widest hover:bg-gray-200 transition-all border border-gray-200 active:scale-95 disabled:opacity-50`}
                             >
-                                {status === 'testing' ? 'Testing...' : 'Test Connection'}
+                                {isTesting ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-gray-400 border-t-gray-800 rounded-full animate-spin" />
+                                        <span>Testing...</span>
+                                    </>
+                                ) : 'Test Connection'}
                             </button>
                         </div>
 
-                        {testMessage && (
-                            <div className={`mt-6 p-4 rounded-2xl border text-xs font-bold font-mono whitespace-pre-wrap break-all ${status === 'success' ? 'bg-green-50 border-green-100 text-green-600' : 'bg-red-50 border-red-100 text-red-600'}`}>
-                                {testMessage}
+                        {testResult && (
+                            <div className={`mt-6 p-5 rounded-2xl border-2 animate-in slide-in-from-top-4 duration-300 flex flex-col gap-2 ${testResult.success ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xl">{testResult.success ? '✅' : '❌'}</span>
+                                    <span className="font-black uppercase tracking-wider text-[10px]">{testResult.success ? 'Connection Successful' : 'Connection Failed'}</span>
+                                </div>
+                                <div className="text-xs font-bold font-mono whitespace-pre-wrap break-all opacity-80 pl-8">
+                                    {testResult.message}
+                                </div>
                             </div>
                         )}
                     </div>
