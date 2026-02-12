@@ -75,6 +75,9 @@ export const SettingsTab: React.FC = () => {
                 if (settings.column_split_apply_to_table !== undefined) store.setColumnSplitApplyToTable(settings.column_split_apply_to_table);
                 if (settings.revert_tk_delete_chars) store.setRevertTKDeleteChars(settings.revert_tk_delete_chars);
                 if (settings.revert_tk_mapping) store.setRevertTKMapping(settings.revert_tk_mapping);
+                if (settings.text_compare_delete_chars) store.setTextCompareDeleteChars(settings.text_compare_delete_chars);
+                if (settings.text_compare_remove_append !== undefined) store.setTextCompareRemoveAppend(settings.text_compare_remove_append);
+                if (settings.text_compare_truncate_duplicate !== undefined) store.setTextCompareTruncateDuplicate(settings.text_compare_truncate_duplicate);
                 if (settings.excel_header_color) store.setExcelHeaderColor(settings.excel_header_color);
                 if (settings.run_shortcut) store.setRunShortcut(settings.run_shortcut);
                 setStatus('success');
@@ -126,6 +129,9 @@ export const SettingsTab: React.FC = () => {
                 column_split_apply_to_table: columnSplitApplyToTable,
                 revert_tk_delete_chars: revertTKDeleteChars,
                 revert_tk_mapping: revertTKMapping,
+                text_compare_delete_chars: useAppStore.getState().textCompareDeleteChars,
+                text_compare_remove_append: useAppStore.getState().textCompareRemoveAppend,
+                text_compare_truncate_duplicate: useAppStore.getState().textCompareTruncateDuplicate,
                 excel_header_color: excelHeaderColor,
                 run_shortcut: runShortcut
             }

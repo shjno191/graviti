@@ -102,11 +102,20 @@ export interface AppState {
     setRevertTKDeleteChars: (val: string) => void;
     revertTKMapping: Array<{ id: string, label: string, offsets: number[], type: 'text' | 'table' }>;
     setRevertTKMapping: (val: Array<{ id: string, label: string, offsets: number[], type: 'text' | 'table' }>) => void;
+
+    textCompareDeleteChars: string;
+    setTextCompareDeleteChars: (val: string) => void;
+    textCompareRemoveAppend: boolean;
+    setTextCompareRemoveAppend: (val: boolean) => void;
+    textCompareTruncateDuplicate: boolean;
+    setTextCompareTruncateDuplicate: (val: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
     activeTab: 'params',
     setActiveTab: (tab) => set({ activeTab: tab }),
+
+    // ... (existing initializers) ...
 
     logFileContent: '',
     setLogFileContent: (content) => set({ logFileContent: content }),
@@ -200,4 +209,11 @@ export const useAppStore = create<AppState>((set) => ({
         { id: 'log-output', label: '・ログを出力する。', offsets: [1, 1], type: 'table' },
     ],
     setRevertTKMapping: (val) => set({ revertTKMapping: val }),
+
+    textCompareDeleteChars: ',);\t"',
+    setTextCompareDeleteChars: (val) => set({ textCompareDeleteChars: val }),
+    textCompareRemoveAppend: false,
+    setTextCompareRemoveAppend: (val) => set({ textCompareRemoveAppend: val }),
+    textCompareTruncateDuplicate: false,
+    setTextCompareTruncateDuplicate: (val) => set({ textCompareTruncateDuplicate: val }),
 }));
