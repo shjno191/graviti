@@ -15,6 +15,13 @@ function App() {
     useEffect(() => {
         const init = async () => {
             try {
+                // Set title based on environment
+                if (import.meta.env.DEV) {
+                    document.title = "DEV MODE - SQL Helper";
+                } else {
+                    document.title = "SQL Helper";
+                }
+
                 const settings = await invoke<any>('load_db_settings');
                 if (settings) {
                     const store = useAppStore.getState();
@@ -40,7 +47,9 @@ function App() {
     return (
         <div className="flex flex-col min-h-screen bg-bg font-sans">
             <header className="bg-gradient-to-br from-primary to-secondary text-white p-5 text-center shadow-md">
-                <h1 className="text-2xl font-bold">SQL Helper</h1>
+                <h1 className="text-2xl font-bold">
+                    {import.meta.env.DEV ? "DEV MODE - SQL Helper" : "SQL Helper"}
+                </h1>
             </header>
 
             <div className="flex justify-center border-b border-gray-200 bg-white sticky top-0 z-[100] shadow-sm">
