@@ -367,9 +367,10 @@ const RevertTKGrid = React.memo((props: {
 });
 
 
-const DictionaryRow = React.memo(({ item, idx, copyFeedback, onCopy, onEdit, onDelete }: {
+const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback, onCopy, onEdit, onDelete }: {
     item: TranslateEntry,
-    idx: number,
+    displayIdx: number,
+    originalIdx: number,
     copyFeedback: any,
     onCopy: any,
     onEdit: (item: TranslateEntry, idx: number) => void,
@@ -377,59 +378,59 @@ const DictionaryRow = React.memo(({ item, idx, copyFeedback, onCopy, onEdit, onD
 }) => (
     <tr className="border-b border-gray-200 hover:bg-indigo-50/60 transition-colors group/row">
         <td className="w-12 px-2 py-2.5 text-center border-r border-gray-100 text-[10px] text-gray-400 font-bold select-none bg-gray-50/30 group-hover/row:bg-indigo-50/0 transition-colors">
-            {idx + 1}
+            {displayIdx + 1}
         </td>
 
         <td
             className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
-                ${copyFeedback?.row === idx && copyFeedback.col === 'jp' ? 'bg-green-100' : ''}
+                ${copyFeedback?.row === originalIdx && copyFeedback.col === 'jp' ? 'bg-green-100' : ''}
             `}
-            onClick={() => onCopy(item.japanese, idx, 'jp')}
+            onClick={() => onCopy(item.japanese, originalIdx, 'jp')}
         >
             <div className="flex justify-between items-center group/cell">
                 <span className="text-[12px] font-bold text-gray-700 leading-tight whitespace-pre-wrap break-words group-hover/row:text-gray-900">
                     {item.japanese}
                 </span>
-                {copyFeedback?.row === idx && copyFeedback.col === 'jp' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
+                {copyFeedback?.row === originalIdx && copyFeedback.col === 'jp' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
             </div>
         </td>
 
         <td
             className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
-                ${copyFeedback?.row === idx && copyFeedback.col === 'en' ? 'bg-green-100' : ''}
+                ${copyFeedback?.row === originalIdx && copyFeedback.col === 'en' ? 'bg-green-100' : ''}
             `}
-            onClick={() => onCopy(item.english, idx, 'en')}
+            onClick={() => onCopy(item.english, originalIdx, 'en')}
         >
             <div className="flex justify-between items-center">
                 <span className="text-[12px] font-mono font-black text-indigo-600 leading-tight break-all uppercase group-hover/row:text-indigo-700">
                     {item.english}
                 </span>
-                {copyFeedback?.row === idx && copyFeedback.col === 'en' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
+                {copyFeedback?.row === originalIdx && copyFeedback.col === 'en' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
             </div>
         </td>
 
         <td
             className={`px-4 py-2.5 cursor-pointer align-middle transition-all duration-300 relative group/last
-                ${copyFeedback?.row === idx && copyFeedback.col === 'vi' ? 'bg-green-100' : ''}
+                ${copyFeedback?.row === originalIdx && copyFeedback.col === 'vi' ? 'bg-green-100' : ''}
             `}
-            onClick={() => onCopy(item.vietnamese, idx, 'vi')}
+            onClick={() => onCopy(item.vietnamese, originalIdx, 'vi')}
         >
             <div className="flex justify-between items-center">
                 <span className="text-[12px] font-bold text-teal-600 leading-tight break-words font-sans group-hover/row:text-teal-700">
                     {item.vietnamese}
                 </span>
-                {copyFeedback?.row === idx && copyFeedback.col === 'vi' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
+                {copyFeedback?.row === originalIdx && copyFeedback.col === 'vi' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
 
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity bg-white/90 backdrop-blur-sm p-1 rounded-lg shadow-sm border border-gray-100 ring-1 ring-black/5" onClick={(e) => e.stopPropagation()}>
                     <button
-                        onClick={(e) => { e.stopPropagation(); onEdit(item, idx); }}
+                        onClick={(e) => { e.stopPropagation(); onEdit(item, originalIdx); }}
                         className="p-1.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded transition-colors"
                         title="Edit"
                     >
                         ✏️
                     </button>
                     <button
-                        onClick={(e) => { e.stopPropagation(); onDelete(idx); }}
+                        onClick={(e) => { e.stopPropagation(); onDelete(originalIdx); }}
                         className="p-1.5 text-red-400 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
                         title="Delete"
                     >
@@ -930,11 +931,13 @@ export const TranslateTab: React.FC = () => {
     const handleSync = () => loadData(true);
 
     const filteredData = useMemo(() => {
+        const results = data.map((item, originalIndex) => ({ item, originalIndex }));
         const trimmedSearch = deferredSearchTerm.trim();
-        if (!trimmedSearch) return data;
+
+        if (!trimmedSearch) return results;
         const lowerSearch = trimmedSearch.toLowerCase();
 
-        return data.filter(item => {
+        return results.filter(({ item }) => {
             if (searchStrict) {
                 return item.japanese.toLowerCase() === lowerSearch ||
                     item.english.toLowerCase() === lowerSearch ||
@@ -2078,11 +2081,12 @@ export const TranslateTab: React.FC = () => {
                                 <div className="divide-y divide-gray-100">
                                     <table className="w-full border-collapse table-fixed">
                                         <tbody>
-                                            {filteredData.slice(0, dictionaryLimit).map((item, idx) => (
+                                            {filteredData.slice(0, dictionaryLimit).map(({ item, originalIndex }, idx) => (
                                                 <DictionaryRow
-                                                    key={`${item.japanese}-${item.english}-${idx}`}
+                                                    key={`${item.japanese}-${item.english}-${originalIndex}`}
                                                     item={item}
-                                                    idx={idx}
+                                                    displayIdx={idx}
+                                                    originalIdx={originalIndex}
                                                     copyFeedback={copyFeedback}
                                                     onCopy={handleCopy}
                                                     onEdit={setEditingEntryAndIndex}
