@@ -363,16 +363,27 @@ const RevertTKGrid = React.memo((props: {
 });
 
 
-const DictionaryRow = React.memo(({ item, idx, copyFeedback, onCopy }: { item: TranslateEntry, idx: number, copyFeedback: any, onCopy: any }) => (
-    <tr className="border-b border-gray-200 group transition-colors">
+const DictionaryRow = React.memo(({ item, idx, copyFeedback, onCopy, onEdit, onDelete }: {
+    item: TranslateEntry,
+    idx: number,
+    copyFeedback: any,
+    onCopy: any,
+    onEdit: (item: TranslateEntry, idx: number) => void,
+    onDelete: (idx: number) => void
+}) => (
+    <tr className="border-b border-gray-200 hover:bg-indigo-50/60 transition-colors group/row">
+        <td className="w-12 px-2 py-2.5 text-center border-r border-gray-100 text-[10px] text-gray-400 font-bold select-none bg-gray-50/30 group-hover/row:bg-indigo-50/0 transition-colors">
+            {idx + 1}
+        </td>
+
         <td
             className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
-                ${copyFeedback?.row === idx && copyFeedback.col === 'jp' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
+                ${copyFeedback?.row === idx && copyFeedback.col === 'jp' ? 'bg-green-100' : ''}
             `}
             onClick={() => onCopy(item.japanese, idx, 'jp')}
         >
-            <div className="flex justify-between items-center">
-                <span className="text-[12px] font-bold text-gray-700 leading-tight whitespace-pre-wrap break-words">
+            <div className="flex justify-between items-center group/cell">
+                <span className="text-[12px] font-bold text-gray-700 leading-tight whitespace-pre-wrap break-words group-hover/row:text-gray-900">
                     {item.japanese}
                 </span>
                 {copyFeedback?.row === idx && copyFeedback.col === 'jp' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
@@ -381,12 +392,12 @@ const DictionaryRow = React.memo(({ item, idx, copyFeedback, onCopy }: { item: T
 
         <td
             className={`px-4 py-2.5 border-r border-gray-200 cursor-pointer align-middle transition-all duration-300 relative
-                ${copyFeedback?.row === idx && copyFeedback.col === 'en' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
+                ${copyFeedback?.row === idx && copyFeedback.col === 'en' ? 'bg-green-100' : ''}
             `}
             onClick={() => onCopy(item.english, idx, 'en')}
         >
             <div className="flex justify-between items-center">
-                <span className="text-[12px] font-mono font-black text-indigo-600 leading-tight break-all uppercase">
+                <span className="text-[12px] font-mono font-black text-indigo-600 leading-tight break-all uppercase group-hover/row:text-indigo-700">
                     {item.english}
                 </span>
                 {copyFeedback?.row === idx && copyFeedback.col === 'en' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
@@ -394,16 +405,33 @@ const DictionaryRow = React.memo(({ item, idx, copyFeedback, onCopy }: { item: T
         </td>
 
         <td
-            className={`px-4 py-2.5 cursor-pointer align-middle transition-all duration-300 relative
-                ${copyFeedback?.row === idx && copyFeedback.col === 'vi' ? 'bg-green-100' : 'hover:bg-indigo-50/50'}
+            className={`px-4 py-2.5 cursor-pointer align-middle transition-all duration-300 relative group/last
+                ${copyFeedback?.row === idx && copyFeedback.col === 'vi' ? 'bg-green-100' : ''}
             `}
             onClick={() => onCopy(item.vietnamese, idx, 'vi')}
         >
             <div className="flex justify-between items-center">
-                <span className="text-[12px] font-bold text-teal-600 leading-tight break-words font-sans">
+                <span className="text-[12px] font-bold text-teal-600 leading-tight break-words font-sans group-hover/row:text-teal-700">
                     {item.vietnamese}
                 </span>
                 {copyFeedback?.row === idx && copyFeedback.col === 'vi' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
+
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity bg-white/90 backdrop-blur-sm p-1 rounded-lg shadow-sm border border-gray-100 ring-1 ring-black/5" onClick={(e) => e.stopPropagation()}>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onEdit(item, idx); }}
+                        className="p-1.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded transition-colors"
+                        title="Edit"
+                    >
+                        ✏️
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onDelete(idx); }}
+                        className="p-1.5 text-red-400 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                        title="Delete"
+                    >
+                        🗑️
+                    </button>
+                </div>
             </div>
         </td>
     </tr>
@@ -1487,8 +1515,157 @@ export const TranslateTab: React.FC = () => {
         }
     }, [activeTab]);
 
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingEntry, setEditingEntry] = useState<TranslateEntry | null>(null);
+    const [editingIndex, setEditingIndex] = useState<number | null>(null); // null if adding new
+
+    const handleSaveEntry = async (entry: TranslateEntry) => {
+        if (!entry.japanese && !entry.english && !entry.vietnamese) return;
+
+        let newData = [...data];
+        if (editingIndex !== null) {
+            // Edit existing
+            newData[editingIndex] = entry;
+        } else {
+            // Add new
+            newData = [entry, ...newData];
+        }
+
+        setData(newData);
+        setShowEditModal(false);
+        setEditingEntry(null);
+        setEditingIndex(null);
+
+        // Save to file logic
+        if (!translateFilePath) return;
+
+        try {
+            const excelPath = translateFilePath.toLowerCase().endsWith('.xlsx')
+                ? translateFilePath
+                : translateFilePath.replace(/\.json$/i, '.xlsx');
+            const jsonPath = translateFilePath.toLowerCase().endsWith('.json')
+                ? translateFilePath
+                : translateFilePath.replace(/\.xlsx$/i, '.json');
+
+            // Write JSON
+            await writeTextFile(jsonPath, JSON.stringify(newData, null, 2));
+
+            // Write Excel (re-using logic from loadData would be better but simple write here)
+            const aoa = [
+                ['Japanese', 'English', 'Vietnamese'], // Header
+                ...newData.map(item => [item.japanese, item.english, item.vietnamese])
+            ];
+            const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+            const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            await writeBinaryFile(excelPath, new Uint8Array(excelBuffer));
+
+        } catch (e) {
+            console.error("Failed to save data", e);
+            setError("Lỗi khi lưu dữ liệu: " + String(e));
+        }
+    };
+
+    const handleDeleteEntry = async (idx: number) => {
+        if (!confirm("Bạn có chắc muốn xóa từ này không?")) return;
+
+        const newData = [...data];
+        newData.splice(idx, 1);
+        setData(newData);
+
+        // Save to file logic
+        if (!translateFilePath) return;
+
+        try {
+            const excelPath = translateFilePath.toLowerCase().endsWith('.xlsx')
+                ? translateFilePath
+                : translateFilePath.replace(/\.json$/i, '.xlsx');
+            const jsonPath = translateFilePath.toLowerCase().endsWith('.json')
+                ? translateFilePath
+                : translateFilePath.replace(/\.xlsx$/i, '.json');
+
+            // Write JSON
+            await writeTextFile(jsonPath, JSON.stringify(newData, null, 2));
+
+            // Write Excel
+            const aoa = [
+                ['Japanese', 'English', 'Vietnamese'],
+                ...newData.map(item => [item.japanese, item.english, item.vietnamese])
+            ];
+            const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+            const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            await writeBinaryFile(excelPath, new Uint8Array(excelBuffer));
+
+        } catch (e) {
+            console.error("Failed to save data", e);
+            setError("Lỗi khi xóa dữ liệu: " + String(e));
+        }
+    };
+
+
     return (
-        <div className="flex flex-col h-[calc(100vh-140px)] gap-4 p-4 animate-in fade-in duration-300 overflow-hidden font-sans">
+        <div className="flex flex-col h-[calc(100vh-140px)] gap-4 p-4 animate-in fade-in duration-300 overflow-hidden font-sans relative">
+            {/* Edit Modal */}
+            {showEditModal && (
+                <div className="absolute inset-0 z-[2000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowEditModal(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                        <div className="bg-indigo-600 px-6 py-4 flex justify-between items-center">
+                            <h3 className="font-bold text-white text-lg">
+                                {editingIndex !== null ? '✏️ Edit Entry' : '✨ New Entry'}
+                            </h3>
+                            <button onClick={() => setShowEditModal(false)} className="text-white/80 hover:text-white font-bold text-xl">×</button>
+                        </div>
+                        <div className="p-6 flex flex-col gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Japanese</label>
+                                <textarea
+                                    className="w-full border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-medium min-h-[80px]"
+                                    value={editingEntry?.japanese || ''}
+                                    onChange={e => setEditingEntry(prev => ({ ...prev!, japanese: e.target.value }))}
+                                    placeholder="Enter Japanese text..."
+                                    autoFocus
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">English</label>
+                                <textarea
+                                    className="w-full border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-mono min-h-[60px]"
+                                    value={editingEntry?.english || ''}
+                                    onChange={e => setEditingEntry(prev => ({ ...prev!, english: e.target.value }))}
+                                    placeholder="Enter English translation..."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Vietnamese</label>
+                                <textarea
+                                    className="w-full border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-medium min-h-[60px]"
+                                    value={editingEntry?.vietnamese || ''}
+                                    onChange={e => setEditingEntry(prev => ({ ...prev!, vietnamese: e.target.value }))}
+                                    placeholder="Enter Vietnamese translation..."
+                                />
+                            </div>
+                        </div>
+                        <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-100">
+                            <button
+                                onClick={() => setShowEditModal(false)}
+                                className="px-4 py-2 text-gray-500 font-bold text-sm hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => editingEntry && handleSaveEntry(editingEntry)}
+                                className="px-6 py-2 bg-indigo-600 text-white font-bold text-sm rounded-lg hover:bg-indigo-700 shadow-lg active:scale-95 transition-all"
+                            >
+                                Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex items-center gap-6">
                 <div className="shrink-0 flex items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shadow-sm">
                     <button
@@ -1796,6 +1973,12 @@ export const TranslateTab: React.FC = () => {
                                                     idx={idx}
                                                     copyFeedback={copyFeedback}
                                                     onCopy={handleCopy}
+                                                    onEdit={(item, idx) => {
+                                                        setEditingEntry(item);
+                                                        setEditingIndex(idx);
+                                                        setShowEditModal(true);
+                                                    }}
+                                                    onDelete={handleDeleteEntry}
                                                 />
                                             ))}
                                         </tbody>
@@ -1813,6 +1996,20 @@ export const TranslateTab: React.FC = () => {
                                             </button>
                                         </div>
                                     )}
+
+                                    {/* Floating Add Button */}
+                                    <button
+                                        onClick={() => {
+                                            setEditingEntry({ japanese: '', english: '', vietnamese: '' });
+                                            setEditingIndex(null);
+                                            setShowEditModal(true);
+                                        }}
+                                        className="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-indigo-700 hover:scale-105 active:scale-95 transition-all z-50 group"
+                                        title="Add New Entry"
+                                    >
+                                        <span className="text-3xl font-light leading-none pb-1">+</span>
+                                        <span className="absolute right-full mr-2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none font-bold">Add Entry</span>
+                                    </button>
                                 </div>
                             )}
                         </div>
