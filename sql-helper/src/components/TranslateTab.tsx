@@ -97,24 +97,28 @@ const HighlighterOverlay = React.memo(({
     lineSpacing: number
 }) => {
     return (
-        <>
+        <div style={{ tabSize: 4, MozTabSize: 4 }}>
             {translatedLines.map((line, lIdx) => (
                 <div
                     key={lIdx}
-                    className={`transition-colors duration-200 whitespace-nowrap overflow-hidden ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/10' : ''}`}
-                    style={{ minHeight: `${lineSpacing}em` }}
+                    className={`transition-colors duration-200 whitespace-pre ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/10' : ''}`}
+                    style={{ minHeight: `${lineSpacing}em`, lineHeight: lineSpacing }}
                 >
                     {line.segments.length > 0 ? line.segments.map(seg => (
                         <span
                             key={seg.key}
-                            className={`transition-colors duration-300 inline ${seg.type === 'phrase' ? (hoveredKey === seg.key ? 'text-indigo-600 underline decoration-2 underline-offset-4' : 'text-indigo-600/40 underline decoration-1 underline-offset-4') : ''}`}
+                            className={`transition-colors duration-300 ${seg.type === 'phrase'
+                                ? (hoveredKey === seg.key
+                                    ? 'text-indigo-600 underline decoration-2 underline-offset-4 bg-indigo-50'
+                                    : 'text-indigo-600 underline decoration-1 underline-offset-4 bg-indigo-50/30')
+                                : 'text-gray-800'}`}
                         >
                             {seg.original}
                         </span>
                     )) : '\u200B'}
                 </div>
             ))}
-        </>
+        </div>
     );
 });
 
@@ -1930,25 +1934,7 @@ export const TranslateTab: React.FC = () => {
                                 )}
                             </div>
                         </div>
-                    ) : subTab === 'revertTK' ? (
-                        <div className="flex-1 flex items-center justify-end gap-3">
-                            {/* Actions like REVERT / FORMAT go here, lang toggle is global */}
-                            <div className="relative flex items-center gap-1">
-                                <button
-                                    onClick={handleRevertTK}
-                                    disabled={!revertTKInput.trim()}
-                                    className="px-6 py-2 bg-amber-600 text-white text-xs font-black rounded-xl hover:bg-amber-700 shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all uppercase tracking-widest"
-                                    title="Revert thiết kế từ code, format theo rule SQL"
-                                >
-                                    🔄 REVERT / FORMAT
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex-1 flex items-center justify-end">
-                            <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Revert thiết kế từ code → format SQL</span>
-                        </div>
-                    )}
+                    ) : ""}
                 </div>
 
                 <div className="flex flex-wrap gap-2 justify-end">
@@ -1991,7 +1977,10 @@ export const TranslateTab: React.FC = () => {
             <div className="flex-1 overflow-hidden bg-white rounded-2xl border border-gray-300 shadow-sm flex flex-col">
                 {subTab === 'dictionary' ? (
                     <>
-                        <div className="grid grid-cols-3 border-b border-gray-300 sticky top-0 z-10" style={{ backgroundColor: excelHeaderColor }}>
+                        <div className="grid grid-cols-[3rem_1fr_1fr_1fr] border-b border-gray-300 sticky top-0 z-10" style={{ backgroundColor: excelHeaderColor }}>
+                            <div className="w-12 py-3 border-r border-white/20 flex items-center justify-center text-[10px] font-medium text-white opacity-60 uppercase tracking-widest">
+                                #
+                            </div>
                             <div className="px-4 py-3 text-[10px] font-medium text-white uppercase tracking-widest border-r border-white/20 flex items-center gap-2">
                                 🇯🇵 Japanese
                             </div>
@@ -2168,9 +2157,10 @@ export const TranslateTab: React.FC = () => {
                                 <div className="flex-1 relative overflow-hidden">
                                     <div
                                         ref={highlighterRef}
-                                        className="absolute inset-0 p-6 font-mono text-sm pointer-events-none text-transparent whitespace-pre overflow-auto box-border z-10"
+                                        className="absolute inset-0 p-6 font-mono text-sm pointer-events-none overflow-hidden box-border z-10"
                                         style={{
                                             lineHeight: `${lineSpacing}`,
+                                            tabSize: 4, MozTabSize: 4,
                                             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
                                         }}
                                     >
@@ -2184,10 +2174,11 @@ export const TranslateTab: React.FC = () => {
                                         ref={revertTKInputRef}
                                         wrap="off"
                                         onScroll={handleRevertTKInputScroll}
-                                        className="absolute inset-0 w-full h-full p-6 font-mono text-sm outline-none resize-none bg-transparent focus:bg-amber-50/5 transition-colors overflow-auto z-20 border-none box-border text-gray-800 caret-gray-800"
+                                        className="absolute inset-0 w-full h-full p-6 font-mono text-sm outline-none resize-none bg-transparent focus:bg-amber-50/5 transition-colors overflow-auto z-20 border-none box-border text-transparent caret-gray-800"
                                         style={{
                                             lineHeight: `${lineSpacing}`,
                                             whiteSpace: 'pre',
+                                            tabSize: 4, MozTabSize: 4,
                                             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
                                         }}
                                         placeholder="Dán code (Java/C# sql.append, hoặc đoạn thiết kế SQL thô)..."
@@ -2321,6 +2312,7 @@ export const TranslateTab: React.FC = () => {
                                             className="absolute inset-0 p-6 font-mono text-sm pointer-events-none text-transparent whitespace-pre overflow-auto box-border z-10"
                                             style={{
                                                 lineHeight: `${lineSpacing}`,
+                                                tabSize: 4, MozTabSize: 4,
                                                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
                                             }}
                                         >
@@ -2339,10 +2331,11 @@ export const TranslateTab: React.FC = () => {
                                                 const gutter = e.currentTarget.parentElement?.previousElementSibling;
                                                 if (gutter) gutter.scrollTop = e.currentTarget.scrollTop;
                                             }}
-                                            className="absolute inset-0 w-full h-full p-6 font-mono text-sm outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors overflow-auto z-20 border-none box-border text-gray-800 caret-gray-800"
+                                            className="absolute inset-0 w-full h-full p-6 font-mono text-sm outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors overflow-auto z-20 border-none box-border text-transparent caret-gray-800"
                                             style={{
                                                 lineHeight: `${lineSpacing}`,
                                                 whiteSpace: 'pre',
+                                                tabSize: 4, MozTabSize: 4,
                                                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
                                             }}
                                             placeholder="Paste code or text here..."
