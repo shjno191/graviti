@@ -564,40 +564,62 @@ export const TranslateTab: React.FC = () => {
     const revertTKInputRef = useRef<HTMLTextAreaElement>(null);
     const [revertTKTranslatedLines, setRevertTKTranslatedLines] = useState<TranslatedLine[]>([]);
 
+    const scrollSourceRef = useRef<HTMLElement | null>(null);
+
     const handleInputScroll = React.useCallback(() => {
-        if (inputRef.current) {
-            const { scrollTop, scrollLeft } = inputRef.current;
-            requestAnimationFrame(() => {
-                if (outputRef.current) {
-                    outputRef.current.scrollTop = scrollTop;
-                    outputRef.current.scrollLeft = scrollLeft;
-                    const outputGutter = outputRef.current.previousElementSibling;
-                    if (outputGutter) outputGutter.scrollTop = scrollTop;
-                }
-                if (highlighterRef.current) {
-                    highlighterRef.current.scrollTop = scrollTop;
-                    highlighterRef.current.scrollLeft = scrollLeft;
-                }
-            });
-        }
+        if (!inputRef.current) return;
+        if (scrollSourceRef.current && scrollSourceRef.current !== inputRef.current) return;
+
+        scrollSourceRef.current = inputRef.current;
+        const { scrollTop, scrollLeft } = inputRef.current;
+
+        requestAnimationFrame(() => {
+            if (outputRef.current) {
+                outputRef.current.scrollTop = scrollTop;
+                outputRef.current.scrollLeft = scrollLeft;
+            }
+            if (highlighterRef.current) {
+                highlighterRef.current.scrollTop = scrollTop;
+                highlighterRef.current.scrollLeft = scrollLeft;
+            }
+            // Sync input gutter
+            const inputGutter = inputRef.current?.parentElement?.previousElementSibling;
+            if (inputGutter) inputGutter.scrollTop = scrollTop;
+
+            // Sync output gutter
+            const outputGutter = outputRef.current?.previousElementSibling;
+            if (outputGutter) outputGutter.scrollTop = scrollTop;
+
+            setTimeout(() => { if (scrollSourceRef.current === inputRef.current) scrollSourceRef.current = null; }, 50);
+        });
     }, []);
 
     const handleOutputScroll = React.useCallback(() => {
-        if (outputRef.current) {
-            const { scrollTop, scrollLeft } = outputRef.current;
-            requestAnimationFrame(() => {
-                if (inputRef.current) {
-                    inputRef.current.scrollTop = scrollTop;
-                    inputRef.current.scrollLeft = scrollLeft;
-                    const inputGutter = inputRef.current.parentElement?.previousElementSibling;
-                    if (inputGutter) inputGutter.scrollTop = scrollTop;
-                }
-                if (highlighterRef.current) {
-                    highlighterRef.current.scrollTop = scrollTop;
-                    highlighterRef.current.scrollLeft = scrollLeft;
-                }
-            });
-        }
+        if (!outputRef.current) return;
+        if (scrollSourceRef.current && scrollSourceRef.current !== outputRef.current) return;
+
+        scrollSourceRef.current = outputRef.current;
+        const { scrollTop, scrollLeft } = outputRef.current;
+
+        requestAnimationFrame(() => {
+            if (inputRef.current) {
+                inputRef.current.scrollTop = scrollTop;
+                inputRef.current.scrollLeft = scrollLeft;
+            }
+            if (highlighterRef.current) {
+                highlighterRef.current.scrollTop = scrollTop;
+                highlighterRef.current.scrollLeft = scrollLeft;
+            }
+            // Sync input gutter
+            const inputGutter = inputRef.current?.parentElement?.previousElementSibling;
+            if (inputGutter) inputGutter.scrollTop = scrollTop;
+
+            // Sync output gutter
+            const outputGutter = outputRef.current?.previousElementSibling;
+            if (outputGutter) outputGutter.scrollTop = scrollTop;
+
+            setTimeout(() => { if (scrollSourceRef.current === outputRef.current) scrollSourceRef.current = null; }, 50);
+        });
     }, []);
 
     const handleRevertTKInputScroll = React.useCallback(() => {
@@ -752,7 +774,7 @@ export const TranslateTab: React.FC = () => {
     // Reset selections when input changes or target language changes
     useEffect(() => {
         setSelections({});
-    }, [bulkInput, targetLang]);
+    }, [bulkInput, revertTKInput, targetLang]);
 
     const loadData = async (forceSync = false) => {
         if (!translateFilePath) {
@@ -2210,6 +2232,29 @@ export const TranslateTab: React.FC = () => {
                                             TABLE
                                         </button>
                                     </div>
+                                    <div className="flex items-center gap-2 ml-4 border-l border-gray-100 pl-4">
+                                        <span className="text-amber-600 font-black text-[9px] whitespace-nowrap uppercase">Result To:</span>
+                                        <div className="flex bg-gray-50 p-0.5 rounded-lg border border-gray-200 shadow-sm">
+                                            <button
+                                                onClick={() => setTargetLang('en')}
+                                                className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${targetLang === 'en' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-400 hover:text-amber-600'}`}
+                                            >
+                                                🔡 EN
+                                            </button>
+                                            <button
+                                                onClick={() => setTargetLang('jp')}
+                                                className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${targetLang === 'jp' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-400 hover:text-amber-600'}`}
+                                            >
+                                                🇯🇵 JP
+                                            </button>
+                                            <button
+                                                onClick={() => setTargetLang('vi')}
+                                                className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${targetLang === 'vi' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-400 hover:text-amber-600'}`}
+                                            >
+                                                🇻🇳 VI
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-2 mr-2">
                                     <button
@@ -2325,12 +2370,7 @@ export const TranslateTab: React.FC = () => {
                                         <textarea
                                             ref={inputRef}
                                             wrap="off"
-                                            onScroll={(e) => {
-                                                handleInputScroll();
-                                                // Sync line number gutter if scrollable
-                                                const gutter = e.currentTarget.parentElement?.previousElementSibling;
-                                                if (gutter) gutter.scrollTop = e.currentTarget.scrollTop;
-                                            }}
+                                            onScroll={handleInputScroll}
                                             className="absolute inset-0 w-full h-full p-6 font-mono text-sm outline-none resize-none bg-transparent focus:bg-indigo-50/5 transition-colors overflow-auto z-20 border-none box-border text-transparent caret-gray-800"
                                             style={{
                                                 lineHeight: `${lineSpacing}`,
@@ -2425,11 +2465,7 @@ export const TranslateTab: React.FC = () => {
                                             const x = e.clientX + 220 > window.innerWidth ? e.clientX - 220 : e.clientX;
                                             setContextMenu({ x, y: e.clientY });
                                         }}
-                                        onScroll={(e) => {
-                                            handleOutputScroll();
-                                            const gutter = e.currentTarget.previousElementSibling;
-                                            if (gutter) gutter.scrollTop = e.currentTarget.scrollTop;
-                                        }}
+                                        onScroll={handleOutputScroll}
                                         className="flex-1 p-6 font-mono text-sm outline-none overflow-auto custom-scrollbar bg-indigo-50/10 text-indigo-900 shadow-inner box-border"
                                         style={{
                                             lineHeight: `${lineSpacing}`,
