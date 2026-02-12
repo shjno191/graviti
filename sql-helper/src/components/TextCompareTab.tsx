@@ -61,14 +61,12 @@ export function TextCompareTab() {
     const {
         textCompareDeleteChars, setTextCompareDeleteChars,
         textCompareRemoveAppend, setTextCompareRemoveAppend,
-        textCompareTruncateDuplicate, setTextCompareTruncateDuplicate
+        textCompareTruncateDuplicate, setTextCompareTruncateDuplicate,
+        textCompareExpectedInput: expectedInput, setTextCompareExpectedInput: setExpectedInput,
+        textCompareCurrentInput: currentInput, setTextCompareCurrentInput: setCurrentInput,
+        setActiveTab, setTranslateSubTab
     } = useAppStore();
 
-    // Input states
-    const [expectedInput, setExpectedInput] = useState('');
-    const [currentInput, setCurrentInput] = useState('');
-
-    // Comparison states
     const [diffInputs, setDiffInputs] = useState({ expected: '', current: '' });
     const [isOrdered, setIsOrdered] = useState(false);
     const [ignoreCase, setIgnoreCase] = useState(false);
@@ -140,6 +138,17 @@ export function TextCompareTab() {
 
         return processed;
     };
+
+    // Auto-compare on mount if data exists (e.g. from Translate Tab)
+    useEffect(() => {
+        if (expectedInput || currentInput) {
+            setDiffInputs({
+                expected: preprocessText(expectedInput),
+                current: preprocessText(currentInput)
+            });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Handle auto-compare
     useEffect(() => {
@@ -317,9 +326,20 @@ export function TextCompareTab() {
                     </span>
                 </div>
 
-                <span className="text-gray-500 text-sm ml-auto">
-                    {diffResult.lines.length} lines result
-                </span>
+                <div className="ml-auto flex items-center gap-4">
+                    <button
+                        onClick={() => {
+                            setActiveTab('translate');
+                            setTranslateSubTab('quick');
+                        }}
+                        className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100 transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-100 flex items-center gap-1 active:scale-95 shimmer"
+                    >
+                        <span>⚡ TO QUICK TRANSLATE</span>
+                    </button>
+                    <span className="text-gray-500 text-sm font-mono whitespace-nowrap">
+                        {diffResult.lines.length} lines result
+                    </span>
+                </div>
             </div>
 
             {/* Diff Result */}

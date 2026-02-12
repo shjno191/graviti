@@ -15,7 +15,8 @@ export function CompareSuiteTab() {
         else if (activeTab === 'compare') setActiveSubTab('schema');
         else if (activeTab === 'text-compare') setActiveSubTab('text');
         else if (activeTab === 'generate') setActiveSubTab('generate');
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab]);
 
     return (
         <div className="flex flex-col h-full fade-in animate-in duration-300">

@@ -114,11 +114,23 @@ export interface AppState {
     setTranslateDeleteChars: (val: string) => void;
     translateTruncateDuplicate: boolean;
     setTranslateTruncateDuplicate: (val: boolean) => void;
+
+    // Shared Text Compare Inputs
+    textCompareExpectedInput: string;
+    setTextCompareExpectedInput: (val: string) => void;
+    textCompareCurrentInput: string;
+    setTextCompareCurrentInput: (val: string) => void;
+
+    translateSubTab: 'dictionary' | 'quick' | 'revertTK';
+    setTranslateSubTab: (tab: 'dictionary' | 'quick' | 'revertTK') => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
     activeTab: 'params',
     setActiveTab: (tab) => set({ activeTab: tab }),
+
+    translateSubTab: 'dictionary',
+    setTranslateSubTab: (tab) => set({ translateSubTab: tab }),
 
     // ... (existing initializers) ...
 
@@ -226,4 +238,9 @@ export const useAppStore = create<AppState>((set) => ({
     setTranslateDeleteChars: (val) => set({ translateDeleteChars: val }),
     translateTruncateDuplicate: false,
     setTranslateTruncateDuplicate: (val) => set({ translateTruncateDuplicate: val }),
+
+    textCompareExpectedInput: '',
+    setTextCompareExpectedInput: (val) => set({ textCompareExpectedInput: val }),
+    textCompareCurrentInput: '',
+    setTextCompareCurrentInput: (val) => set({ textCompareCurrentInput: val }),
 }));
