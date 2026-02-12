@@ -438,33 +438,43 @@ const DictionaryRow = React.memo(({ item, idx, copyFeedback, onCopy, onEdit, onD
 ));
 
 export const TranslateTab: React.FC = () => {
-    const {
-        activeTab,
-        translateFilePath,
-        setTranslateFilePath,
-        setActiveTab,
-        excelHeaderColor,
-        formatRemoveSpaces,
-        setFormatRemoveSpaces,
-        formatSqlAppend,
-        setFormatSqlAppend,
-        searchStrict,
-        setSearchStrict,
-        columnSplitEnabled, setColumnSplitEnabled,
-        columnSplitKeywords, setColumnSplitKeywords,
-        revertTKColConfig, setRevertTKColConfig,
-        columnSplitApplyToText, setColumnSplitApplyToText,
-        columnSplitApplyToTable, setColumnSplitApplyToTable,
-        revertTKDeleteChars, setRevertTKDeleteChars,
-        revertTKMapping, setRevertTKMapping,
-        translateDeleteChars, setTranslateDeleteChars,
-        translateTruncateDuplicate, setTranslateTruncateDuplicate,
-        textCompareExpectedInput, setTextCompareExpectedInput,
-        textCompareCurrentInput, setTextCompareCurrentInput,
-        runShortcut,
-        connections,
-        translateSubTab: subTab, setTranslateSubTab: setSubTab
-    } = useAppStore();
+    const activeTab = useAppStore(state => state.activeTab);
+    const translateFilePath = useAppStore(state => state.translateFilePath);
+    const setTranslateFilePath = useAppStore(state => state.setTranslateFilePath);
+    const setActiveTab = useAppStore(state => state.setActiveTab);
+    const excelHeaderColor = useAppStore(state => state.excelHeaderColor);
+    const formatRemoveSpaces = useAppStore(state => state.formatRemoveSpaces);
+    const setFormatRemoveSpaces = useAppStore(state => state.setFormatRemoveSpaces);
+    const formatSqlAppend = useAppStore(state => state.formatSqlAppend);
+    const setFormatSqlAppend = useAppStore(state => state.setFormatSqlAppend);
+    const searchStrict = useAppStore(state => state.searchStrict);
+    const setSearchStrict = useAppStore(state => state.setSearchStrict);
+    const columnSplitEnabled = useAppStore(state => state.columnSplitEnabled);
+    const setColumnSplitEnabled = useAppStore(state => state.setColumnSplitEnabled);
+    const columnSplitKeywords = useAppStore(state => state.columnSplitKeywords);
+    const setColumnSplitKeywords = useAppStore(state => state.setColumnSplitKeywords);
+    const revertTKColConfig = useAppStore(state => state.revertTKColConfig);
+    const setRevertTKColConfig = useAppStore(state => state.setRevertTKColConfig);
+    const columnSplitApplyToText = useAppStore(state => state.columnSplitApplyToText);
+    const setColumnSplitApplyToText = useAppStore(state => state.setColumnSplitApplyToText);
+    const columnSplitApplyToTable = useAppStore(state => state.columnSplitApplyToTable);
+    const setColumnSplitApplyToTable = useAppStore(state => state.setColumnSplitApplyToTable);
+    const revertTKDeleteChars = useAppStore(state => state.revertTKDeleteChars);
+    const setRevertTKDeleteChars = useAppStore(state => state.setRevertTKDeleteChars);
+    const revertTKMapping = useAppStore(state => state.revertTKMapping);
+    const setRevertTKMapping = useAppStore(state => state.setRevertTKMapping);
+    const translateDeleteChars = useAppStore(state => state.translateDeleteChars);
+    const setTranslateDeleteChars = useAppStore(state => state.setTranslateDeleteChars);
+    const translateTruncateDuplicate = useAppStore(state => state.translateTruncateDuplicate);
+    const setTranslateTruncateDuplicate = useAppStore(state => state.setTranslateTruncateDuplicate);
+    const textCompareExpectedInput = useAppStore(state => state.textCompareExpectedInput);
+    const setTextCompareExpectedInput = useAppStore(state => state.setTextCompareExpectedInput);
+    const textCompareCurrentInput = useAppStore(state => state.textCompareCurrentInput);
+    const setTextCompareCurrentInput = useAppStore(state => state.setTextCompareCurrentInput);
+    const runShortcut = useAppStore(state => state.runShortcut);
+    const connections = useAppStore(state => state.connections);
+    const subTab = useAppStore(state => state.translateSubTab);
+    const setSubTab = useAppStore(state => state.setTranslateSubTab);
 
     const [data, setData] = useState<TranslateEntry[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -550,52 +560,55 @@ export const TranslateTab: React.FC = () => {
     const revertTKInputRef = useRef<HTMLTextAreaElement>(null);
     const [revertTKTranslatedLines, setRevertTKTranslatedLines] = useState<TranslatedLine[]>([]);
 
-    const handleInputScroll = () => {
+    const handleInputScroll = React.useCallback(() => {
         if (inputRef.current) {
             const { scrollTop, scrollLeft } = inputRef.current;
-            if (outputRef.current) {
-                outputRef.current.scrollTop = scrollTop;
-                outputRef.current.scrollLeft = scrollLeft;
-                // Sync output gutter
-                const outputGutter = outputRef.current.previousElementSibling;
-                if (outputGutter) outputGutter.scrollTop = scrollTop;
-            }
-            if (highlighterRef.current) {
-                highlighterRef.current.scrollTop = scrollTop;
-                highlighterRef.current.scrollLeft = scrollLeft;
-            }
+            requestAnimationFrame(() => {
+                if (outputRef.current) {
+                    outputRef.current.scrollTop = scrollTop;
+                    outputRef.current.scrollLeft = scrollLeft;
+                    const outputGutter = outputRef.current.previousElementSibling;
+                    if (outputGutter) outputGutter.scrollTop = scrollTop;
+                }
+                if (highlighterRef.current) {
+                    highlighterRef.current.scrollTop = scrollTop;
+                    highlighterRef.current.scrollLeft = scrollLeft;
+                }
+            });
         }
-    };
+    }, []);
 
-    const handleOutputScroll = () => {
+    const handleOutputScroll = React.useCallback(() => {
         if (outputRef.current) {
             const { scrollTop, scrollLeft } = outputRef.current;
-            if (inputRef.current) {
-                inputRef.current.scrollTop = scrollTop;
-                inputRef.current.scrollLeft = scrollLeft;
-                // Sync input gutter
-                const inputGutter = inputRef.current.parentElement?.previousElementSibling;
-                if (inputGutter) inputGutter.scrollTop = scrollTop;
-            }
-            if (highlighterRef.current) {
-                highlighterRef.current.scrollTop = scrollTop;
-                highlighterRef.current.scrollLeft = scrollLeft;
-            }
+            requestAnimationFrame(() => {
+                if (inputRef.current) {
+                    inputRef.current.scrollTop = scrollTop;
+                    inputRef.current.scrollLeft = scrollLeft;
+                    const inputGutter = inputRef.current.parentElement?.previousElementSibling;
+                    if (inputGutter) inputGutter.scrollTop = scrollTop;
+                }
+                if (highlighterRef.current) {
+                    highlighterRef.current.scrollTop = scrollTop;
+                    highlighterRef.current.scrollLeft = scrollLeft;
+                }
+            });
         }
-    };
+    }, []);
 
-    const handleRevertTKInputScroll = () => {
+    const handleRevertTKInputScroll = React.useCallback(() => {
         if (revertTKInputRef.current) {
             const { scrollTop, scrollLeft } = revertTKInputRef.current;
-            if (highlighterRef.current) {
-                highlighterRef.current.scrollTop = scrollTop;
-                highlighterRef.current.scrollLeft = scrollLeft;
-            }
-            // Sync gutter
-            const gutter = revertTKInputRef.current.parentElement?.previousElementSibling;
-            if (gutter) gutter.scrollTop = scrollTop;
+            requestAnimationFrame(() => {
+                if (highlighterRef.current) {
+                    highlighterRef.current.scrollTop = scrollTop;
+                    highlighterRef.current.scrollLeft = scrollLeft;
+                }
+                const gutter = revertTKInputRef.current?.parentElement?.previousElementSibling;
+                if (gutter) gutter.scrollTop = scrollTop;
+            });
         }
-    };
+    }, []);
 
     const handleFormatInput = () => {
         if (!bulkInput.trim()) return;
@@ -907,12 +920,27 @@ export const TranslateTab: React.FC = () => {
         });
     }, [data, deferredSearchTerm, searchStrict]);
 
-    const handleCopy = (text: string, rowIdx: number, col: 'jp' | 'en' | 'vi') => {
+    const handleCopy = React.useCallback((text: string, rowIdx: number, col: 'jp' | 'en' | 'vi') => {
         if (!text) return;
         navigator.clipboard.writeText(text);
         setCopyFeedback({ row: rowIdx, col });
         setTimeout(() => setCopyFeedback(null), 600);
-    };
+    }, []);
+
+    const noopShowTooltip = React.useCallback(() => { }, []);
+
+    const handleSegmentClick = React.useCallback((s: TranslatedSegment) => {
+        if (window.getSelection()?.toString()) return;
+        navigator.clipboard.writeText(s.text);
+        setSegmentCopyFeedback(s.key);
+        setTimeout(() => setSegmentCopyFeedback(null), 1000);
+    }, []);
+
+    const setEditingEntryAndIndex = React.useCallback((item: TranslateEntry, idx: number) => {
+        setEditingEntry(item);
+        setEditingIndex(idx);
+        setShowEditModal(true);
+    }, []);
 
 
 
@@ -1526,15 +1554,13 @@ export const TranslateTab: React.FC = () => {
     }, [activeTab]);
 
 
-    const handleSaveEntry = async (entry: TranslateEntry) => {
+    const handleSaveEntry = React.useCallback(async (entry: TranslateEntry) => {
         if (!entry.japanese && !entry.english && !entry.vietnamese) return;
 
         let newData = [...data];
         if (editingIndex !== null) {
-            // Edit existing
             newData[editingIndex] = entry;
         } else {
-            // Add new
             newData = [entry, ...newData];
         }
 
@@ -1543,7 +1569,6 @@ export const TranslateTab: React.FC = () => {
         setEditingEntry(null);
         setEditingIndex(null);
 
-        // Save to file logic
         if (!translateFilePath) return;
 
         try {
@@ -1554,12 +1579,10 @@ export const TranslateTab: React.FC = () => {
                 ? translateFilePath
                 : translateFilePath.replace(/\.xlsx$/i, '.json');
 
-            // Write JSON
             await writeTextFile(jsonPath, JSON.stringify(newData, null, 2));
 
-            // Write Excel (re-using logic from loadData would be better but simple write here)
             const aoa = [
-                ['Japanese', 'English', 'Vietnamese'], // Header
+                ['Japanese', 'English', 'Vietnamese'],
                 ...newData.map(item => [item.japanese, item.english, item.vietnamese])
             ];
             const worksheet = XLSX.utils.aoa_to_sheet(aoa);
@@ -1572,16 +1595,15 @@ export const TranslateTab: React.FC = () => {
             console.error("Failed to save data", e);
             setError("Lỗi khi lưu dữ liệu: " + String(e));
         }
-    };
+    }, [data, editingIndex, translateFilePath]);
 
-    const handleDeleteEntry = async (idx: number) => {
+    const handleDeleteEntry = React.useCallback(async (idx: number) => {
         if (!confirm("Bạn có chắc muốn xóa từ này không?")) return;
 
         const newData = [...data];
         newData.splice(idx, 1);
         setData(newData);
 
-        // Save to file logic
         if (!translateFilePath) return;
 
         try {
@@ -1592,10 +1614,8 @@ export const TranslateTab: React.FC = () => {
                 ? translateFilePath
                 : translateFilePath.replace(/\.xlsx$/i, '.json');
 
-            // Write JSON
             await writeTextFile(jsonPath, JSON.stringify(newData, null, 2));
 
-            // Write Excel
             const aoa = [
                 ['Japanese', 'English', 'Vietnamese'],
                 ...newData.map(item => [item.japanese, item.english, item.vietnamese])
@@ -1610,7 +1630,7 @@ export const TranslateTab: React.FC = () => {
             console.error("Failed to save data", e);
             setError("Lỗi khi xóa dữ liệu: " + String(e));
         }
-    };
+    }, [data, translateFilePath]);
 
 
     return (
@@ -1725,20 +1745,20 @@ export const TranslateTab: React.FC = () => {
                 </>
             )}
 
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex items-center gap-6">
-                <div className="shrink-0 flex items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shadow-sm">
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-wrap items-center gap-4">
+                <div className="flex items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shadow-sm overflow-x-auto max-w-full">
                     <button
                         onClick={() => setSubTab('dictionary')}
-                        className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${subTab === 'dictionary'
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap ${subTab === 'dictionary'
                             ? 'bg-white text-indigo-600 shadow-md scale-105'
                             : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
                             }`}
                     >
-                        <span>📚 DICTIONARY</span>
+                        <span>📖 DICTIONARY</span>
                     </button>
                     <button
                         onClick={() => setSubTab('quick')}
-                        className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${subTab === 'quick'
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap ${subTab === 'quick'
                             ? 'bg-white text-indigo-600 shadow-md scale-105'
                             : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
                             }`}
@@ -1747,7 +1767,7 @@ export const TranslateTab: React.FC = () => {
                     </button>
                     <button
                         onClick={() => setSubTab('revertTK')}
-                        className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${subTab === 'revertTK'
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap ${subTab === 'revertTK'
                             ? 'bg-white text-amber-600 shadow-md scale-105'
                             : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
                             }`}
@@ -1756,7 +1776,7 @@ export const TranslateTab: React.FC = () => {
                     </button>
                 </div>
 
-                <div className="flex-1 flex items-center gap-4">
+                <div className="flex-1 flex flex-wrap items-center gap-4 min-w-[200px]">
                     {subTab === 'dictionary' ? (
                         <div className="flex-1 flex items-center gap-4">
                             <div className="flex-1 relative group">
@@ -1931,7 +1951,7 @@ export const TranslateTab: React.FC = () => {
                     )}
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 justify-end">
                     {subTab !== 'revertTK' && (
                         <>
                             <button
@@ -2000,7 +2020,29 @@ export const TranslateTab: React.FC = () => {
                                                     filters: [{ name: 'Data', extensions: ['json', 'xlsx'] }]
                                                 });
                                                 if (selected && typeof selected === 'string') {
-                                                    setTranslateFilePath(selected);
+                                                    const newPath = selected;
+                                                    setTranslateFilePath(newPath);
+
+                                                    // Auto-save to persist setting
+                                                    try {
+                                                        await invoke('save_db_settings', {
+                                                            settings: {
+                                                                connections,
+                                                                translate_file_path: newPath,
+                                                                column_split_enabled: columnSplitEnabled,
+                                                                column_split_keywords: columnSplitKeywords,
+                                                                revert_tk_col_config: revertTKColConfig,
+                                                                column_split_apply_to_text: columnSplitApplyToText,
+                                                                column_split_apply_to_table: columnSplitApplyToTable,
+                                                                revert_tk_delete_chars: revertTKDeleteChars,
+                                                                revert_tk_mapping: revertTKMapping,
+                                                                excel_header_color: excelHeaderColor,
+                                                                run_shortcut: runShortcut
+                                                            }
+                                                        });
+                                                    } catch (e) {
+                                                        console.error("Failed to persist translate file path", e);
+                                                    }
                                                 }
                                             }}
                                             className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-indigo-700 transition-all active:scale-95"
@@ -2027,16 +2069,12 @@ export const TranslateTab: React.FC = () => {
                                         <tbody>
                                             {filteredData.slice(0, dictionaryLimit).map((item, idx) => (
                                                 <DictionaryRow
-                                                    key={idx}
+                                                    key={`${item.japanese}-${item.english}-${idx}`}
                                                     item={item}
                                                     idx={idx}
                                                     copyFeedback={copyFeedback}
                                                     onCopy={handleCopy}
-                                                    onEdit={(item, idx) => {
-                                                        setEditingEntry(item);
-                                                        setEditingIndex(idx);
-                                                        setShowEditModal(true);
-                                                    }}
+                                                    onEdit={setEditingEntryAndIndex}
                                                     onDelete={handleDeleteEntry}
                                                 />
                                             ))}
@@ -2426,13 +2464,8 @@ export const TranslateTab: React.FC = () => {
                                                                     hoveredKey={hoveredKey}
                                                                     onHover={setHoveredKey}
                                                                     copiedKey={segmentCopyFeedback}
-                                                                    onClick={(s) => {
-                                                                        if (window.getSelection()?.toString()) return;
-                                                                        navigator.clipboard.writeText(s.text);
-                                                                        setSegmentCopyFeedback(s.key);
-                                                                        setTimeout(() => setSegmentCopyFeedback(null), 1000);
-                                                                    }}
-                                                                    onShowTooltip={() => { }}
+                                                                    onClick={handleSegmentClick}
+                                                                    onShowTooltip={noopShowTooltip}
                                                                 />
                                                             )) : '\u200B'}
                                                         </div>

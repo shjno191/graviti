@@ -58,14 +58,18 @@ const InputWithLineNumbers = ({
 
 export function TextCompareTab() {
     // Global settings
-    const {
-        textCompareDeleteChars, setTextCompareDeleteChars,
-        textCompareRemoveAppend, setTextCompareRemoveAppend,
-        textCompareTruncateDuplicate, setTextCompareTruncateDuplicate,
-        textCompareExpectedInput: expectedInput, setTextCompareExpectedInput: setExpectedInput,
-        textCompareCurrentInput: currentInput, setTextCompareCurrentInput: setCurrentInput,
-        setActiveTab, setTranslateSubTab
-    } = useAppStore();
+    const textCompareDeleteChars = useAppStore(state => state.textCompareDeleteChars);
+    const setTextCompareDeleteChars = useAppStore(state => state.setTextCompareDeleteChars);
+    const textCompareRemoveAppend = useAppStore(state => state.textCompareRemoveAppend);
+    const setTextCompareRemoveAppend = useAppStore(state => state.setTextCompareRemoveAppend);
+    const textCompareTruncateDuplicate = useAppStore(state => state.textCompareTruncateDuplicate);
+    const setTextCompareTruncateDuplicate = useAppStore(state => state.setTextCompareTruncateDuplicate);
+    const expectedInput = useAppStore(state => state.textCompareExpectedInput);
+    const setExpectedInput = useAppStore(state => state.setTextCompareExpectedInput);
+    const currentInput = useAppStore(state => state.textCompareCurrentInput);
+    const setCurrentInput = useAppStore(state => state.setTextCompareCurrentInput);
+    const setActiveTab = useAppStore(state => state.setActiveTab);
+    const setTranslateSubTab = useAppStore(state => state.setTranslateSubTab);
 
     const [diffInputs, setDiffInputs] = useState({ expected: '', current: '' });
     const [isOrdered, setIsOrdered] = useState(false);
