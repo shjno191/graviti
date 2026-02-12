@@ -38,8 +38,8 @@ export interface TableScript {
 }
 
 export interface AppState {
-    activeTab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser';
-    setActiveTab: (tab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser') => void;
+    activeTab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser' | 'compare-suite';
+    setActiveTab: (tab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser' | 'compare-suite') => void;
 
     logFileContent: string;
     setLogFileContent: (content: string) => void;

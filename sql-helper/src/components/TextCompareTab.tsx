@@ -30,7 +30,7 @@ export function TextCompareTab() {
     }, [expectedText, currentText, isOrdered, ignoreCase, trimWhitespace]);
 
     return (
-        <div className="flex flex-col h-[calc(100vh-140px)] gap-4 p-4">
+        <div className="flex flex-col h-full gap-4 p-4">
             {/* Input Area */}
             <div className="flex gap-4 h-1/2">
                 <div className="flex-1 flex flex-col">
@@ -91,11 +91,11 @@ export function TextCompareTab() {
             <div className="flex-1 flex gap-4 min-h-0">
                 {/* Main Diff View */}
                 <div className="flex-1 border border-gray-300 rounded bg-white overflow-auto flex flex-col">
-                     {/* Header for Side-by-Side */}
-                     <div className="flex border-b border-gray-200 bg-gray-50 text-xs font-bold text-gray-500 uppercase select-none sticky top-0 z-10">
+                    {/* Header for Side-by-Side */}
+                    <div className="flex border-b border-gray-200 bg-gray-50 text-xs font-bold text-gray-500 uppercase select-none sticky top-0 z-10">
                         <div className="w-1/2 px-2 py-1 border-r border-gray-200">Expected</div>
                         <div className="w-1/2 px-2 py-1">Current</div>
-                     </div>
+                    </div>
                     <div className="flex flex-col font-mono text-sm whitespace-pre min-h-0">
                         {diffResult.lines.map((line, idx) => (
                             <div
@@ -139,7 +139,7 @@ export function TextCompareTab() {
                                 </div>
                             </div>
                         ))}
-                         {diffResult.lines.length === 0 && (
+                        {diffResult.lines.length === 0 && (
                             <div className="p-8 text-center text-gray-400">
                                 No differences to show or empty input.
                             </div>
@@ -150,10 +150,10 @@ export function TextCompareTab() {
                 {/* Summary / Missing Lines Panel */}
                 <div className="w-64 border border-gray-300 rounded bg-gray-50 flex flex-col overflow-hidden">
                     <div className="p-2 bg-gray-100 border-b border-gray-200 font-bold text-gray-700 text-xs uppercase">
-                         Analysis
+                        Analysis
                     </div>
                     <div className="overflow-auto flex-1 p-2 space-y-4">
-                        
+
                         {/* Missing */}
                         <div>
                             <h4 className="text-red-700 font-bold text-xs mb-1 flex items-center justify-between">
