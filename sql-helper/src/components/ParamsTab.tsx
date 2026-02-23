@@ -10,8 +10,10 @@ export const ParamsTab: React.FC = () => {
     const {
         queryGroups, addQueryGroup, updateQueryGroup, removeQueryGroup,
         autoClipboard, setAutoClipboard, connections,
-        globalLogPath, setGlobalLogPath, runShortcut
+        runShortcut
     } = useAppStore();
+
+    const [globalLogPath, setGlobalLogPath] = React.useState<string>('');
 
     const [selectedConnId, setSelectedConnId] = React.useState<string | null>(null);
     const [showExecPicker, setShowExecPicker] = React.useState(false);
@@ -49,12 +51,6 @@ export const ParamsTab: React.FC = () => {
 
             if (selected && typeof selected === 'string') {
                 setGlobalLogPath(selected);
-                await invoke('save_db_settings', {
-                    settings: {
-                        connections,
-                        global_log_path: selected
-                    }
-                });
             }
         } catch (error) {
             console.error('Error selecting file:', error);
@@ -63,12 +59,6 @@ export const ParamsTab: React.FC = () => {
 
     const clearLogFile = () => {
         setGlobalLogPath('');
-        invoke('save_db_settings', {
-            settings: {
-                connections,
-                global_log_path: ''
-            }
-        });
     };
 
     const readFileContent = async (path: string): Promise<string> => {

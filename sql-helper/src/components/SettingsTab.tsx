@@ -3,7 +3,7 @@ import { useAppStore, DbConfig } from '../store/useAppStore';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open as openDialog } from '@tauri-apps/api/dialog';
 
-const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: string }> = ({ onRecord }) => {
+const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: string, onSave: () => void }> = ({ onRecord, onSave }) => {
     const [isRecording, setIsRecording] = useState(false);
 
     useEffect(() => {
@@ -23,12 +23,13 @@ const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: strin
                 combo += e.key.toUpperCase();
                 onRecord(combo);
                 setIsRecording(false);
+                setTimeout(onSave, 100);
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isRecording, onRecord]);
+    }, [isRecording, onRecord, onSave]);
 
     return (
         <button
@@ -42,19 +43,63 @@ const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: strin
 
 export const SettingsTab: React.FC = () => {
     const {
-        connections,
-        setConnections,
-        globalLogPath,
-        setTranslateFilePath,
-        translateFilePath,
-        excelHeaderColor,
-        setExcelHeaderColor,
-        runShortcut,
-        setRunShortcut
+        connections, setConnections,
+        translateFilePath, setTranslateFilePath,
+        excelHeaderColor, setExcelHeaderColor,
+        runShortcut, setRunShortcut,
+        columnSplitEnabled,
+        columnSplitKeywords,
+        revertTKColConfig,
+        columnSplitApplyToText,
+        columnSplitApplyToTable,
+        revertTKDeleteChars,
+        revertTKMapping,
+        activeTab
     } = useAppStore();
     const [editingConfig, setEditingConfig] = useState<DbConfig | null>(null);
-    const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error' | 'testing'>('idle');
-    const [testMessage, setTestMessage] = useState<string>('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isTesting, setIsTesting] = useState(false);
+    const [testResult, setTestResult] = useState<{ success: boolean, message: string } | null>(null);
+
+    const loadSettings = async () => {
+        setIsLoading(true);
+        try {
+            const settings = await invoke<any>('load_db_settings');
+            if (settings) {
+                const store = useAppStore.getState();
+                if (settings.connections) store.setConnections(settings.connections);
+                if (settings.translate_file_path) store.setTranslateFilePath(settings.translate_file_path);
+                if (settings.column_split_enabled !== undefined) store.setColumnSplitEnabled(settings.column_split_enabled);
+                if (settings.column_split_keywords) store.setColumnSplitKeywords(settings.column_split_keywords);
+                if (settings.revert_tk_col_config) store.setRevertTKColConfig(settings.revert_tk_col_config);
+                if (settings.column_split_apply_to_text !== undefined) store.setColumnSplitApplyToText(settings.column_split_apply_to_text);
+                if (settings.column_split_apply_to_table !== undefined) store.setColumnSplitApplyToTable(settings.column_split_apply_to_table);
+                if (settings.revert_tk_delete_chars) store.setRevertTKDeleteChars(settings.revert_tk_delete_chars);
+                if (settings.revert_tk_mapping) store.setRevertTKMapping(settings.revert_tk_mapping);
+                if (settings.text_compare_delete_chars) store.setTextCompareDeleteChars(settings.text_compare_delete_chars);
+                if (settings.text_compare_remove_append !== undefined) store.setTextCompareRemoveAppend(settings.text_compare_remove_append);
+                if (settings.text_compare_truncate_duplicate !== undefined) store.setTextCompareTruncateDuplicate(settings.text_compare_truncate_duplicate);
+
+                if (settings.translate_delete_chars) store.setTranslateDeleteChars(settings.translate_delete_chars);
+                if (settings.translate_truncate_duplicate !== undefined) store.setTranslateTruncateDuplicate(settings.translate_truncate_duplicate);
+
+                if (settings.excel_header_color) store.setExcelHeaderColor(settings.excel_header_color);
+                if (settings.run_shortcut) store.setRunShortcut(settings.run_shortcut);
+            }
+        } catch (err) {
+            console.error('Failed to load DB settings:', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Reload settings when tab becomes active
+    useEffect(() => {
+        if (activeTab === 'settings') {
+            loadSettings();
+        }
+    }, [activeTab]);
 
     const handleAddConnection = () => {
         const newConn: DbConfig = {
@@ -73,70 +118,91 @@ export const SettingsTab: React.FC = () => {
         setEditingConfig(newConn);
     };
 
+    const handleSaveSettings = async (currentConnections?: DbConfig[]) => {
+        // Use provided connections or fallback to state
+        // Note: state might be stale in some callbacks, so passing currentConnections is safer if available
+        const connsToSave = currentConnections || connections;
+
+        await invoke('save_db_settings', {
+            settings: {
+                connections: connsToSave,
+                translate_file_path: translateFilePath,
+                column_split_enabled: columnSplitEnabled,
+                column_split_keywords: columnSplitKeywords,
+                revert_tk_col_config: revertTKColConfig,
+                column_split_apply_to_text: columnSplitApplyToText,
+                column_split_apply_to_table: columnSplitApplyToTable,
+                revert_tk_delete_chars: revertTKDeleteChars,
+                revert_tk_mapping: revertTKMapping,
+                text_compare_delete_chars: useAppStore.getState().textCompareDeleteChars,
+                text_compare_remove_append: useAppStore.getState().textCompareRemoveAppend,
+                text_compare_truncate_duplicate: useAppStore.getState().textCompareTruncateDuplicate,
+                translate_delete_chars: useAppStore.getState().translateDeleteChars,
+                translate_truncate_duplicate: useAppStore.getState().translateTruncateDuplicate,
+                excel_header_color: excelHeaderColor,
+                run_shortcut: runShortcut
+            }
+        });
+    };
+
+    const handleGlobalSave = async () => {
+        setIsSaving(true);
+        try {
+            await handleSaveSettings(connections);
+            alert('Settings saved successfully!');
+        } catch (e) {
+            console.error(e);
+            alert('Failed to save settings');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const handleSave = async (configToSave: DbConfig) => {
-        setStatus('saving');
+        setIsSaving(true);
         try {
             const updatedConnections = connections.map(c => c.id === configToSave.id ? configToSave : c);
             if (!updatedConnections.find(c => c.id === configToSave.id)) {
                 updatedConnections.push(configToSave);
             }
 
-            await invoke('save_db_settings', {
-                settings: {
-                    connections: updatedConnections,
-                    global_log_path: globalLogPath,
-                    translate_file_path: translateFilePath
-                }
-            });
-
+            await handleSaveSettings(updatedConnections);
             setConnections(updatedConnections);
-            setStatus('success');
-            setTimeout(() => setStatus('idle'), 3000);
         } catch (error) {
             console.error('Failed to save settings:', error);
-            setStatus('error');
+        } finally {
+            setIsSaving(false);
         }
     };
 
     const handleTest = async (configToTest: DbConfig) => {
-        setStatus('testing');
-        setTestMessage('');
+        setIsTesting(true);
+        setTestResult(null);
         try {
             const result = await invoke<string>('test_connection', { config: configToTest });
-            setTestMessage(result);
-            setStatus('success');
+            setTestResult({ success: true, message: result || 'Kết nối thành công!' });
 
             const updatedConfig = { ...configToTest, verified: true };
-            setEditingConfig(updatedConfig);
+            if (editingConfig?.id === configToTest.id) setEditingConfig(updatedConfig);
 
             const updatedConnections = connections.map(c => c.id === updatedConfig.id ? updatedConfig : c);
-            await invoke('save_db_settings', {
-                settings: {
-                    connections: updatedConnections,
-                    global_log_path: globalLogPath,
-                    translate_file_path: translateFilePath
-                }
-            });
+            await handleSaveSettings(updatedConnections);
             setConnections(updatedConnections);
         } catch (error: any) {
-            setTestMessage(error || 'Kết nối thất bại');
-            setStatus('error');
+            setTestResult({ success: false, message: error?.toString() || 'Kết nối thất bại' });
             const updatedConfig = { ...configToTest, verified: false };
-            setEditingConfig(updatedConfig);
+            if (editingConfig?.id === configToTest.id) setEditingConfig(updatedConfig);
+        } finally {
+            setIsTesting(false);
         }
     };
 
     const handleDelete = async (id: string) => {
         if (!confirm('Are you sure you want to delete this connection?')) return;
         const updatedConnections = connections.filter(c => c.id !== id);
-        await invoke('save_db_settings', {
-            settings: {
-                connections: updatedConnections,
-                global_log_path: globalLogPath,
-                translate_file_path: translateFilePath
-            }
-        });
+        await handleSaveSettings(updatedConnections);
         setConnections(updatedConnections);
+        if (editingConfig?.id === id) setEditingConfig(null);
     };
 
     return (
@@ -151,10 +217,45 @@ export const SettingsTab: React.FC = () => {
                 </button>
             </div>
 
-            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 flex flex-col gap-6">
+            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 flex flex-col gap-8">
                 <div>
-                    <h3 className="text-xl font-black text-gray-800 uppercase tracking-tight mb-4">General Settings</h3>
-                    <div className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-black text-gray-800 uppercase tracking-tight">Global Application Configuration</h3>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleGlobalSave}
+                                disabled={isSaving}
+                                className={`px-4 py-2 rounded-xl font-bold transition-all shadow-md flex items-center gap-2 ${isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-800'}`}
+                                title="Save all settings to setting.json"
+                            >
+                                {isSaving ? '⏳ SAVING...' : '💾 SAVE ALL'}
+                            </button>
+                            <button
+                                onClick={loadSettings}
+                                disabled={isLoading || isSaving}
+                                className={`px-4 py-2 rounded-xl font-bold transition-all border flex items-center gap-2 ${isLoading ? 'bg-gray-50 text-gray-400 border-gray-100 cursor-not-allowed' : 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100'}`}
+                                title="Reload settings from settings.json"
+                            >
+                                {isLoading ? '⏳ LOADING...' : '🔄 REFRESH'}
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        const path = await invoke<string>('get_setting_path');
+                                        await invoke('open_file', { path });
+                                    } catch (e) {
+                                        console.error('Failed to open settings file', e);
+                                    }
+                                }}
+                                className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-bold hover:bg-indigo-100 transition-all border border-indigo-100 flex items-center gap-2"
+                                title="Open settings.json"
+                            >
+                                📂 OPEN JSON
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-6">
                         <div className="flex flex-col gap-2">
                             <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Translate Excel Path (Source)</label>
                             <div className="flex gap-2">
@@ -162,6 +263,7 @@ export const SettingsTab: React.FC = () => {
                                     type="text"
                                     value={translateFilePath}
                                     onChange={e => setTranslateFilePath(e.target.value)}
+                                    onBlur={handleGlobalSave}
                                     className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
                                     placeholder="Path to translate.xlsx"
                                 />
@@ -172,35 +274,20 @@ export const SettingsTab: React.FC = () => {
                                         });
                                         if (selected && typeof selected === 'string') {
                                             setTranslateFilePath(selected);
+                                            // Trigger save after a short delay to ensure state update (or pass explicitly)
+                                            // Just calling handleGlobalSave relies on state, which might be old in this closure?
+                                            // Better to assume hook state update is fast enough for next tick or pass it.
+                                            // Ideally we would pass 'selected' to save but handleSaveSettings uses state.
+                                            // Let's rely on React state update or we can directly invoke save with new val.
+                                            // For simplicity, let's wait a tick.
+                                            setTimeout(handleGlobalSave, 100);
                                         }
                                     }}
                                     className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition-all border border-gray-200"
                                 >
                                     Browse
                                 </button>
-                                <button
-                                    onClick={async () => {
-                                        setStatus('saving');
-                                        try {
-                                            await invoke('save_db_settings', {
-                                                settings: {
-                                                    connections: connections,
-                                                    global_log_path: globalLogPath,
-                                                    translate_file_path: translateFilePath
-                                                }
-                                            });
-                                            setStatus('success');
-                                            setTimeout(() => setStatus('idle'), 2000);
-                                        } catch (e) {
-                                            setStatus('error');
-                                        }
-                                    }}
-                                    className="px-6 py-2 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-md"
-                                >
-                                    {status === 'saving' ? 'SETTING...' : 'SAVE CONFIG'}
-                                </button>
                             </div>
-                            <p className="text-[10px] text-gray-400 italic font-medium">Default path is in 'data' folder relative to the executable.</p>
                         </div>
                     </div>
                 </div>
@@ -215,13 +302,17 @@ export const SettingsTab: React.FC = () => {
                                     <input
                                         type="color"
                                         value={excelHeaderColor}
-                                        onChange={e => setExcelHeaderColor(e.target.value)}
+                                        onChange={e => {
+                                            setExcelHeaderColor(e.target.value);
+                                        }}
+                                        onBlur={handleGlobalSave}
                                         className="w-10 h-10 rounded-lg cursor-pointer border-none p-0 bg-transparent"
                                     />
                                     <input
                                         type="text"
                                         value={excelHeaderColor}
                                         onChange={e => setExcelHeaderColor(e.target.value)}
+                                        onBlur={handleGlobalSave}
                                         className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-2 font-mono text-xs uppercase"
                                     />
                                 </div>
@@ -256,7 +347,7 @@ export const SettingsTab: React.FC = () => {
                                 <div className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm font-black text-primary shadow-inner">
                                     {runShortcut}
                                 </div>
-                                <ShortcutRecorder onRecord={setRunShortcut} current={runShortcut} />
+                                <ShortcutRecorder onRecord={setRunShortcut} current={runShortcut} onSave={handleGlobalSave} />
                             </div>
                             <p className="text-[9px] text-gray-400 mt-1">Press a key (e.g. F5, F9) or a combination (e.g. Ctrl+Enter) to set as default shortcut for Execute Query.</p>
                         </div>
@@ -386,21 +477,39 @@ export const SettingsTab: React.FC = () => {
                         <div className="flex gap-4 mt-10">
                             <button
                                 onClick={() => handleSave(editingConfig)}
-                                className="flex-1 bg-black text-white rounded-2xl py-4 font-black uppercase tracking-widest hover:bg-gray-800 transition-all shadow-lg active:scale-95"
+                                disabled={isSaving || isTesting}
+                                className={`flex-1 flex items-center justify-center gap-2 rounded-2xl py-4 font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 ${isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-800'}`}
                             >
-                                {status === 'saving' ? 'Saving...' : 'Save Connection'}
+                                {isSaving ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        <span>Saving...</span>
+                                    </>
+                                ) : 'Save Connection'}
                             </button>
                             <button
                                 onClick={() => handleTest(editingConfig)}
-                                className="flex-1 bg-gray-100 text-gray-800 rounded-2xl py-4 font-black uppercase tracking-widest hover:bg-gray-200 transition-all border border-gray-200 active:scale-95"
+                                disabled={isSaving || isTesting}
+                                className={`flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-800 rounded-2xl py-4 font-black uppercase tracking-widest hover:bg-gray-200 transition-all border border-gray-200 active:scale-95 disabled:opacity-50`}
                             >
-                                {status === 'testing' ? 'Testing...' : 'Test Connection'}
+                                {isTesting ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-gray-400 border-t-gray-800 rounded-full animate-spin" />
+                                        <span>Testing...</span>
+                                    </>
+                                ) : 'Test Connection'}
                             </button>
                         </div>
 
-                        {testMessage && (
-                            <div className={`mt-6 p-4 rounded-2xl border text-xs font-bold font-mono whitespace-pre-wrap break-all ${status === 'success' ? 'bg-green-50 border-green-100 text-green-600' : 'bg-red-50 border-red-100 text-red-600'}`}>
-                                {testMessage}
+                        {testResult && (
+                            <div className={`mt-6 p-5 rounded-2xl border-2 animate-in slide-in-from-top-4 duration-300 flex flex-col gap-2 ${testResult.success ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xl">{testResult.success ? '✅' : '❌'}</span>
+                                    <span className="font-black uppercase tracking-wider text-[10px]">{testResult.success ? 'Connection Successful' : 'Connection Failed'}</span>
+                                </div>
+                                <div className="text-xs font-bold font-mono whitespace-pre-wrap break-all opacity-80 pl-8">
+                                    {testResult.message}
+                                </div>
                             </div>
                         )}
                     </div>

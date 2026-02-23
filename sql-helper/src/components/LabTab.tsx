@@ -404,9 +404,9 @@ export const LabTab: React.FC = () => {
     const activeConn2 = connections.find(c => c.id === stmt2.connectionId) || connections[0];
 
     return (
-        <div className="flex flex-col h-[calc(100vh-140px)] gap-6 p-6 animate-in fade-in duration-300 overflow-hidden">
+        <div className="flex flex-col h-full gap-6 p-6 animate-in fade-in duration-300 overflow-hidden">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-wrap items-center gap-6 z-40">
-                <h2 className="text-xl font-black bg-gradient-to-br from-orange-500 to-red-600 bg-clip-text text-transparent uppercase tracking-tight">Compare Lab</h2>
+                <h2 className="text-xl font-black bg-gradient-to-br from-orange-500 to-red-600 bg-clip-text text-transparent uppercase tracking-tight">Compare Data</h2>
                 <div className="flex-1 flex gap-4 min-w-[500px]">
                     <div className="relative flex-1 group">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>

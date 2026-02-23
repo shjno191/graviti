@@ -38,8 +38,8 @@ export interface TableScript {
 }
 
 export interface AppState {
-    activeTab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser';
-    setActiveTab: (tab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser') => void;
+    activeTab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser' | 'compare-suite';
+    setActiveTab: (tab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser' | 'compare-suite') => void;
 
     logFileContent: string;
     setLogFileContent: (content: string) => void;
@@ -66,8 +66,6 @@ export interface AppState {
     genPriorityColumns: string;
     setGenPriorityColumns: (cols: string) => void;
 
-    globalLogPath: string;
-    setGlobalLogPath: (path: string) => void;
 
     translateFilePath: string;
     setTranslateFilePath: (path: string) => void;
@@ -88,11 +86,53 @@ export interface AppState {
 
     connections: DbConfig[];
     setConnections: (conns: DbConfig[]) => void;
+
+    // RevertTK Sync Fields
+    columnSplitEnabled: boolean;
+    setColumnSplitEnabled: (val: boolean) => void;
+    columnSplitKeywords: string;
+    setColumnSplitKeywords: (val: string) => void;
+    revertTKColConfig: string;
+    setRevertTKColConfig: (val: string) => void;
+    columnSplitApplyToText: boolean;
+    setColumnSplitApplyToText: (val: boolean) => void;
+    columnSplitApplyToTable: boolean;
+    setColumnSplitApplyToTable: (val: boolean) => void;
+    revertTKDeleteChars: string;
+    setRevertTKDeleteChars: (val: string) => void;
+    revertTKMapping: Array<{ id: string, label: string, offsets: number[], type: 'text' | 'table' }>;
+    setRevertTKMapping: (val: Array<{ id: string, label: string, offsets: number[], type: 'text' | 'table' }>) => void;
+
+    textCompareDeleteChars: string;
+    setTextCompareDeleteChars: (val: string) => void;
+    textCompareRemoveAppend: boolean;
+    setTextCompareRemoveAppend: (val: boolean) => void;
+    textCompareTruncateDuplicate: boolean;
+    setTextCompareTruncateDuplicate: (val: boolean) => void;
+
+    translateDeleteChars: string;
+    setTranslateDeleteChars: (val: string) => void;
+    translateTruncateDuplicate: boolean;
+    setTranslateTruncateDuplicate: (val: boolean) => void;
+
+    // Shared Text Compare Inputs
+    textCompareExpectedInput: string;
+    setTextCompareExpectedInput: (val: string) => void;
+    textCompareCurrentInput: string;
+    setTextCompareCurrentInput: (val: string) => void;
+
+    translateSubTab: 'dictionary' | 'quick' | 'revertTK';
+    setTranslateSubTab: (tab: 'dictionary' | 'quick' | 'revertTK') => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
     activeTab: 'params',
     setActiveTab: (tab) => set({ activeTab: tab }),
+
+    translateSubTab: 'dictionary',
+    setTranslateSubTab: (tab) => set({ translateSubTab: tab }),
+
+    // ... (existing initializers) ...
 
     logFileContent: '',
     setLogFileContent: (content) => set({ logFileContent: content }),
@@ -141,8 +181,6 @@ export const useAppStore = create<AppState>((set) => ({
     genPriorityColumns: '',
     setGenPriorityColumns: (cols: string) => set({ genPriorityColumns: cols }),
 
-    globalLogPath: '',
-    setGlobalLogPath: (val) => set({ globalLogPath: val }),
 
     translateFilePath: '',
     setTranslateFilePath: (val) => set({ translateFilePath: val }),
@@ -163,4 +201,46 @@ export const useAppStore = create<AppState>((set) => ({
 
     connections: [],
     setConnections: (connections) => set({ connections }),
+
+    columnSplitEnabled: true,
+    setColumnSplitEnabled: (val) => set({ columnSplitEnabled: val }),
+    columnSplitKeywords: ' AS , .',
+    setColumnSplitKeywords: (val) => set({ columnSplitKeywords: val }),
+    revertTKColConfig: 'A:150, B:250',
+    setRevertTKColConfig: (val) => set({ revertTKColConfig: val }),
+    columnSplitApplyToText: true,
+    setColumnSplitApplyToText: (val) => set({ columnSplitApplyToText: val }),
+    columnSplitApplyToTable: true,
+    setColumnSplitApplyToTable: (val) => set({ columnSplitApplyToTable: val }),
+    revertTKDeleteChars: "',",
+    setRevertTKDeleteChars: (val) => set({ revertTKDeleteChars: val }),
+    revertTKMapping: [
+        { id: 'logic-name', label: '【SQL論理名】', offsets: [1, 1], type: 'text' },
+        { id: 'def-name', label: '【SQL定義名】', offsets: [1, 1], type: 'text' },
+        { id: 'target-table', label: '■ 対象テーブル', offsets: [1, 1], type: 'text' },
+        { id: 'extraction-cond', label: '■ 抽出条件', offsets: [1, 1], type: 'text' },
+        { id: 'ext-items', label: '■ 抽出項目', offsets: [1, 1], type: 'table' },
+        { id: 'ins-items', label: '■ 挿入項目', offsets: [1, 1], type: 'table' },
+        { id: 'sort-order', label: '■ 並び順', offsets: [1, 1], type: 'text' },
+        { id: 'join-cond', label: '■ 結合条件', offsets: [1, 1], type: 'text' },
+        { id: 'log-output', label: '・ログを出力する。', offsets: [1, 1], type: 'table' },
+    ],
+    setRevertTKMapping: (val) => set({ revertTKMapping: val }),
+
+    textCompareDeleteChars: ',);\t"',
+    setTextCompareDeleteChars: (val) => set({ textCompareDeleteChars: val }),
+    textCompareRemoveAppend: false,
+    setTextCompareRemoveAppend: (val) => set({ textCompareRemoveAppend: val }),
+    textCompareTruncateDuplicate: false,
+    setTextCompareTruncateDuplicate: (val) => set({ textCompareTruncateDuplicate: val }),
+
+    translateDeleteChars: '',
+    setTranslateDeleteChars: (val) => set({ translateDeleteChars: val }),
+    translateTruncateDuplicate: false,
+    setTranslateTruncateDuplicate: (val) => set({ translateTruncateDuplicate: val }),
+
+    textCompareExpectedInput: '',
+    setTextCompareExpectedInput: (val) => set({ textCompareExpectedInput: val }),
+    textCompareCurrentInput: '',
+    setTextCompareCurrentInput: (val) => set({ textCompareCurrentInput: val }),
 }));
