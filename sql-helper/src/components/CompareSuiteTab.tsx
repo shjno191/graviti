@@ -1,17 +1,18 @@
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { clsx } from 'clsx';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/useAppStore';
 import { LabTab } from './LabTab';
 import { SchemaTab } from './SchemaTab';
 import { TextCompareTab } from './TextCompareTab';
 import { GenerateTab } from './GenerateTab';
 
-export function CompareSuiteTab() {
-    const { activeTab, activeSubTab, setActiveSubTab } = useAppStore(state => ({
+export const CompareSuiteTab = React.memo(() => {
+    const { activeTab, activeSubTab, setActiveSubTab } = useAppStore(useShallow(state => ({
         activeTab: state.activeTab,
         activeSubTab: state.compareSubTab,
         setActiveSubTab: state.setCompareSubTab
-    }));
+    })));
 
     useEffect(() => {
         if (activeTab === 'lab') setActiveSubTab('data');
@@ -43,19 +44,19 @@ export function CompareSuiteTab() {
             </div>
 
             <div className="flex-1 overflow-hidden rounded-xl relative">
-                <div className={clsx(activeSubTab !== 'data' && 'hidden', "h-full w-full")}>
-                    <LabTab />
-                </div>
-                <div className={clsx(activeSubTab !== 'schema' && 'hidden', "h-full w-full overflow-auto bg-gray-50/30")}>
-                    <SchemaTab />
-                </div>
-                <div className={clsx(activeSubTab !== 'text' && 'hidden', "h-full w-full")}>
-                    <TextCompareTab />
-                </div>
-                <div className={clsx(activeSubTab !== 'generate' && 'hidden', "h-full w-full overflow-auto bg-gray-50/30")}>
-                    <GenerateTab />
-                </div>
+                {activeSubTab === 'data' && <LabTab />}
+                {activeSubTab === 'schema' && (
+                    <div className="h-full w-full overflow-auto bg-gray-50/30">
+                        <SchemaTab />
+                    </div>
+                )}
+                {activeSubTab === 'text' && <TextCompareTab />}
+                {activeSubTab === 'generate' && (
+                    <div className="h-full w-full overflow-auto bg-gray-50/30">
+                        <GenerateTab />
+                    </div>
+                )}
             </div>
         </div>
     );
-}
+});

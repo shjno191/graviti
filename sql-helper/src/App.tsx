@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './store/useAppStore';
 import { ParamsTab } from './components/ParamsTab';
 import { JavaParserTab } from './components/JavaParserTab';
@@ -38,7 +39,17 @@ function App() {
         focusSearchShortcut,
         translateSubTab, setTranslateSubTab,
         compareSubTab, setCompareSubTab
-    } = useAppStore();
+    } = useAppStore(useShallow(state => ({
+        activeTab: state.activeTab,
+        setActiveTab: state.setActiveTab,
+        globalSearchTerm: state.globalSearchTerm,
+        setGlobalSearchTerm: state.setGlobalSearchTerm,
+        focusSearchShortcut: state.focusSearchShortcut,
+        translateSubTab: state.translateSubTab,
+        setTranslateSubTab: state.setTranslateSubTab,
+        compareSubTab: state.compareSubTab,
+        setCompareSubTab: state.setCompareSubTab
+    })));
 
     const searchInputRef = useRef<HTMLInputElement>(null);
     const navHistory = useRef<{ tab: string, tSub?: string, cSub?: string }[]>([]);
@@ -303,22 +314,12 @@ function App() {
                 </div>
             </div>
 
-            <main className="flex-1 container mx-auto max-w-full px-5">
-                <div className={clsx(activeTab !== 'params' && 'hidden')}>
-                    <ParamsTab />
-                </div>
-                <div className={clsx(activeTab !== 'compare-suite' && activeTab !== 'lab' && activeTab !== 'compare' && activeTab !== 'text-compare' && activeTab !== 'generate' && 'hidden')}>
-                    <CompareSuiteTab />
-                </div>
-                <div className={clsx(activeTab !== 'translate' && activeTab !== 'revert-tk' && 'hidden')}>
-                    <TranslateTab />
-                </div>
-                <div className={clsx(activeTab !== 'java-parser' && 'hidden')}>
-                    <JavaParserTab />
-                </div>
-                <div className={clsx(activeTab !== 'settings' && 'hidden')}>
-                    <SettingsTab />
-                </div>
+            <main className="flex-1 container mx-auto max-w-full px-5 overflow-hidden flex flex-col">
+                {activeTab === 'params' && <ParamsTab />}
+                {(activeTab === 'compare-suite' || activeTab === 'lab' || activeTab === 'compare' || activeTab === 'text-compare' || activeTab === 'generate') && <CompareSuiteTab />}
+                {(activeTab === 'translate' || activeTab === 'revert-tk') && <TranslateTab />}
+                {activeTab === 'java-parser' && <JavaParserTab />}
+                {activeTab === 'settings' && <SettingsTab />}
             </main>
         </div>
     );

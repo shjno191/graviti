@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore, QueryResult, DbConfig } from '../store/useAppStore';
 import { findLogEntriesOptimized, findLastId, replaceParamsInSql } from '../utils/sqlParser';
 import { open } from '@tauri-apps/api/dialog';
@@ -6,12 +7,23 @@ import { invoke } from '@tauri-apps/api/tauri';
 import { ResultSetTable } from './ResultSetTable';
 import { checkDangerousSql } from '../utils/sqlGuard';
 
-export const ParamsTab: React.FC = () => {
+export const ParamsTab: React.FC = React.memo(() => {
     const {
         queryGroups, addQueryGroup, updateQueryGroup, removeQueryGroup,
         autoClipboard, setAutoClipboard, connections,
-        runShortcut, globalSearchTerm
-    } = useAppStore();
+        runShortcut, globalSearchTerm, updateConnectionSessionStatus
+    } = useAppStore(useShallow(state => ({
+        queryGroups: state.queryGroups,
+        addQueryGroup: state.addQueryGroup,
+        updateQueryGroup: state.updateQueryGroup,
+        removeQueryGroup: state.removeQueryGroup,
+        autoClipboard: state.autoClipboard,
+        setAutoClipboard: state.setAutoClipboard,
+        connections: state.connections,
+        runShortcut: state.runShortcut,
+        globalSearchTerm: state.globalSearchTerm,
+        updateConnectionSessionStatus: state.updateConnectionSessionStatus
+    })));
 
     const filteredGroups = React.useMemo(() => {
         if (!globalSearchTerm) return queryGroups;
@@ -156,9 +168,11 @@ export const ParamsTab: React.FC = () => {
                 query: sql
             });
             updateQueryGroup(groupId, { status: 'success', result });
+            updateConnectionSessionStatus(conn.id, 'success');
         } catch (err: any) {
             const errorMessage = typeof err === 'string' ? err : JSON.stringify(err);
             updateQueryGroup(groupId, { status: 'error', errorMessage });
+            updateConnectionSessionStatus(conn.id, 'error');
         }
     };
 
@@ -480,4 +494,4 @@ export const ParamsTab: React.FC = () => {
             )}
         </div>
     );
-};
+});

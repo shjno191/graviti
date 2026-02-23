@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/tauri';
 import { open as openDialog } from '@tauri-apps/api/dialog';
 import * as XLSX from 'xlsx';
 import { createPortal } from 'react-dom';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/useAppStore';
 import { HighlightText } from '../utils/uiHelpers';
 
@@ -445,42 +446,62 @@ const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback,
     </tr>
 ));
 
-export const TranslateTab: React.FC = () => {
-    const activeTab = useAppStore(state => state.activeTab);
-    const translateFilePath = useAppStore(state => state.translateFilePath);
-    const setTranslateFilePath = useAppStore(state => state.setTranslateFilePath);
-    const setActiveTab = useAppStore(state => state.setActiveTab);
-    const excelHeaderColor = useAppStore(state => state.excelHeaderColor);
-    const formatRemoveSpaces = useAppStore(state => state.formatRemoveSpaces);
-    const formatSqlAppend = useAppStore(state => state.formatSqlAppend);
-    const searchStrict = useAppStore(state => state.searchStrict);
-    const setSearchStrict = useAppStore(state => state.setSearchStrict);
-    const columnSplitEnabled = useAppStore(state => state.columnSplitEnabled);
-    const setColumnSplitEnabled = useAppStore(state => state.setColumnSplitEnabled);
-    const columnSplitKeywords = useAppStore(state => state.columnSplitKeywords);
-    const setColumnSplitKeywords = useAppStore(state => state.setColumnSplitKeywords);
-    const revertTKColConfig = useAppStore(state => state.revertTKColConfig);
-    const setRevertTKColConfig = useAppStore(state => state.setRevertTKColConfig);
-    const columnSplitApplyToText = useAppStore(state => state.columnSplitApplyToText);
-    const setColumnSplitApplyToText = useAppStore(state => state.setColumnSplitApplyToText);
-    const columnSplitApplyToTable = useAppStore(state => state.columnSplitApplyToTable);
-    const setColumnSplitApplyToTable = useAppStore(state => state.setColumnSplitApplyToTable);
-    const revertTKDeleteChars = useAppStore(state => state.revertTKDeleteChars);
-    const setRevertTKDeleteChars = useAppStore(state => state.setRevertTKDeleteChars);
-    const revertTKMapping = useAppStore(state => state.revertTKMapping);
-    const setRevertTKMapping = useAppStore(state => state.setRevertTKMapping);
-    const translateDeleteChars = useAppStore(state => state.translateDeleteChars);
-    const translateTruncateDuplicate = useAppStore(state => state.translateTruncateDuplicate);
-    const textCompareExpectedInput = useAppStore(state => state.textCompareExpectedInput);
-    const setTextCompareExpectedInput = useAppStore(state => state.setTextCompareExpectedInput);
-    const textCompareCurrentInput = useAppStore(state => state.textCompareCurrentInput);
-    const setTextCompareCurrentInput = useAppStore(state => state.setTextCompareCurrentInput);
-    const runShortcut = useAppStore(state => state.runShortcut);
-    const connections = useAppStore(state => state.connections);
-    const subTab = useAppStore(state => state.translateSubTab);
-    const setSubTab = useAppStore(state => state.setTranslateSubTab);
-    const globalSearchTerm = useAppStore(state => state.globalSearchTerm);
-    const lineSpacing = useAppStore(state => state.translateLineHeight);
+export const TranslateTab: React.FC = React.memo(() => {
+    const {
+        activeTab, setActiveTab,
+        translateFilePath, setTranslateFilePath,
+        excelHeaderColor, formatRemoveSpaces, formatSqlAppend,
+        searchStrict, setSearchStrict,
+        columnSplitEnabled, setColumnSplitEnabled,
+        columnSplitKeywords, setColumnSplitKeywords,
+        revertTKColConfig, setRevertTKColConfig,
+        columnSplitApplyToText, setColumnSplitApplyToText,
+        columnSplitApplyToTable, setColumnSplitApplyToTable,
+        revertTKDeleteChars, setRevertTKDeleteChars,
+        revertTKMapping, setRevertTKMapping,
+        translateDeleteChars, translateTruncateDuplicate,
+        textCompareExpectedInput, setTextCompareExpectedInput,
+        textCompareCurrentInput, setTextCompareCurrentInput,
+        runShortcut, connections,
+        subTab, setSubTab,
+        globalSearchTerm, lineSpacing
+    } = useAppStore(useShallow(state => ({
+        activeTab: state.activeTab,
+        setActiveTab: state.setActiveTab,
+        translateFilePath: state.translateFilePath,
+        setTranslateFilePath: state.setTranslateFilePath,
+        excelHeaderColor: state.excelHeaderColor,
+        formatRemoveSpaces: state.formatRemoveSpaces,
+        formatSqlAppend: state.formatSqlAppend,
+        searchStrict: state.searchStrict,
+        setSearchStrict: state.setSearchStrict,
+        columnSplitEnabled: state.columnSplitEnabled,
+        setColumnSplitEnabled: state.setColumnSplitEnabled,
+        columnSplitKeywords: state.columnSplitKeywords,
+        setColumnSplitKeywords: state.setColumnSplitKeywords,
+        revertTKColConfig: state.revertTKColConfig,
+        setRevertTKColConfig: state.setRevertTKColConfig,
+        columnSplitApplyToText: state.columnSplitApplyToText,
+        setColumnSplitApplyToText: state.setColumnSplitApplyToText,
+        columnSplitApplyToTable: state.columnSplitApplyToTable,
+        setColumnSplitApplyToTable: state.setColumnSplitApplyToTable,
+        revertTKDeleteChars: state.revertTKDeleteChars,
+        setRevertTKDeleteChars: state.setRevertTKDeleteChars,
+        revertTKMapping: state.revertTKMapping,
+        setRevertTKMapping: state.setRevertTKMapping,
+        translateDeleteChars: state.translateDeleteChars,
+        translateTruncateDuplicate: state.translateTruncateDuplicate,
+        textCompareExpectedInput: state.textCompareExpectedInput,
+        setTextCompareExpectedInput: state.setTextCompareExpectedInput,
+        textCompareCurrentInput: state.textCompareCurrentInput,
+        setTextCompareCurrentInput: state.setTextCompareCurrentInput,
+        runShortcut: state.runShortcut,
+        connections: state.connections,
+        subTab: state.translateSubTab,
+        setSubTab: state.setTranslateSubTab,
+        globalSearchTerm: state.globalSearchTerm,
+        lineSpacing: state.translateLineHeight
+    })));
 
     const [data, setData] = useState<TranslateEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -2754,6 +2775,6 @@ export const TranslateTab: React.FC = () => {
                 </div>,
                 document.body
             )}
-        </div >
+        </div>
     );
-};
+});

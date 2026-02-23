@@ -12,6 +12,7 @@ export interface DbConfig {
     trust_server_certificate?: boolean;
     encrypt?: boolean;
     verified?: boolean;
+    sessionStatus?: 'untested' | 'success' | 'error';
 }
 
 export interface QueryResult {
@@ -143,6 +144,8 @@ export interface AppState {
     setTranslateLineHeight: (val: number) => void;
     compareSubTab: 'data' | 'schema' | 'text' | 'generate';
     setCompareSubTab: (tab: 'data' | 'schema' | 'text' | 'generate') => void;
+
+    updateConnectionSessionStatus: (id: string, status: 'success' | 'error') => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -224,7 +227,16 @@ export const useAppStore = create<AppState>((set) => ({
     setSearchStrict: (val: boolean) => set({ searchStrict: val }),
 
     connections: [],
-    setConnections: (connections) => set({ connections }),
+    setConnections: (connections) => set((state) => ({
+        connections: connections.map(c => ({
+            ...c,
+            sessionStatus: (state.connections.find(ex => ex.id === c.id)?.sessionStatus) || 'untested'
+        }))
+    })),
+
+    updateConnectionSessionStatus: (id, status) => set((state) => ({
+        connections: state.connections.map(c => c.id === id ? { ...c, sessionStatus: status } : c)
+    })),
 
     columnSplitEnabled: true,
     setColumnSplitEnabled: (val) => set({ columnSplitEnabled: val }),

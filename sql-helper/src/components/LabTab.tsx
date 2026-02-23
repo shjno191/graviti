@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore, QueryResult } from '../store/useAppStore';
 import { invoke } from '@tauri-apps/api/tauri';
 import { checkDangerousSql } from '../utils/sqlGuard';
@@ -120,8 +121,14 @@ const LabTable: React.FC<LabTableProps> = React.memo(({
     );
 });
 
-export const LabTab: React.FC = () => {
-    const { connections, excelHeaderColor, runShortcut, globalSearchTerm } = useAppStore();
+export const LabTab: React.FC = React.memo(() => {
+    const { connections, excelHeaderColor, runShortcut, globalSearchTerm, updateConnectionSessionStatus } = useAppStore(useShallow(state => ({
+        connections: state.connections,
+        excelHeaderColor: state.excelHeaderColor,
+        runShortcut: state.runShortcut,
+        globalSearchTerm: state.globalSearchTerm,
+        updateConnectionSessionStatus: state.updateConnectionSessionStatus
+    })));
     const [showExecPicker, setShowExecPicker] = useState(false);
     const [stmt1, setStmt1] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
     const [stmt2, setStmt2] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
@@ -274,8 +281,10 @@ export const LabTab: React.FC = () => {
                 query: stmt.sql
             });
             setStmt(prev => ({ ...prev, loading: false, result: res }));
+            updateConnectionSessionStatus(conn.id, 'success');
         } catch (err: any) {
             setStmt(prev => ({ ...prev, loading: false, error: String(err) }));
+            updateConnectionSessionStatus(conn.id, 'error');
         }
     };
 
@@ -578,4 +587,4 @@ export const LabTab: React.FC = () => {
             )}
         </div>
     );
-};
+});

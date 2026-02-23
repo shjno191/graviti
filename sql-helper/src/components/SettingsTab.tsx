@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore, DbConfig } from '../store/useAppStore';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open as openDialog } from '@tauri-apps/api/dialog';
 
+// ... (ShortcutRecorder remains same)
 const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: string, onSave: () => void }> = ({ onRecord, onSave }) => {
     const [isRecording, setIsRecording] = useState(false);
 
@@ -40,7 +42,7 @@ const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: strin
     );
 };
 
-export const SettingsTab: React.FC = () => {
+export const SettingsTab: React.FC = React.memo(() => {
     const {
         connections, setConnections,
         translateFilePath, setTranslateFilePath,
@@ -49,8 +51,25 @@ export const SettingsTab: React.FC = () => {
         focusSearchShortcut, setFocusSearchShortcut,
         columnSplitEnabled, setColumnSplitEnabled,
         columnSplitKeywords, setColumnSplitKeywords,
-        activeTab
-    } = useAppStore();
+        activeTab, updateConnectionSessionStatus
+    } = useAppStore(useShallow(state => ({
+        connections: state.connections,
+        setConnections: state.setConnections,
+        translateFilePath: state.translateFilePath,
+        setTranslateFilePath: state.setTranslateFilePath,
+        excelHeaderColor: state.excelHeaderColor,
+        setExcelHeaderColor: state.setExcelHeaderColor,
+        runShortcut: state.runShortcut,
+        setRunShortcut: state.setRunShortcut,
+        focusSearchShortcut: state.focusSearchShortcut,
+        setFocusSearchShortcut: state.setFocusSearchShortcut,
+        columnSplitEnabled: state.columnSplitEnabled,
+        setColumnSplitEnabled: state.setColumnSplitEnabled,
+        columnSplitKeywords: state.columnSplitKeywords,
+        setColumnSplitKeywords: state.setColumnSplitKeywords,
+        activeTab: state.activeTab,
+        updateConnectionSessionStatus: state.updateConnectionSessionStatus
+    })));
 
     const [activeSection, setActiveSection] = useState<'database' | 'shortcuts' | 'appearance' | 'translate' | 'revertTK' | 'compare'>('database');
     const [editingConfig, setEditingConfig] = useState<DbConfig | null>(null);
@@ -188,6 +207,10 @@ export const SettingsTab: React.FC = () => {
         }
     };
 
+    useEffect(() => {
+        setTestResult(null);
+    }, [editingConfig?.id]);
+
     const handleTest = async (configToTest: DbConfig) => {
         setIsTesting(true);
         setTestResult(null);
@@ -199,10 +222,17 @@ export const SettingsTab: React.FC = () => {
             const updatedConnections = connections.map(c => c.id === updatedConfig.id ? updatedConfig : c);
             await handleSaveSettings(updatedConnections);
             setConnections(updatedConnections);
+            updateConnectionSessionStatus(configToTest.id, 'success');
+
+            // Auto hide success message after 3 seconds
+            setTimeout(() => {
+                setTestResult(prev => prev?.success ? null : prev);
+            }, 3000);
         } catch (error: any) {
             setTestResult({ success: false, message: error?.toString() || 'FAILED' });
             const updatedConfig = { ...configToTest, verified: false };
             if (editingConfig?.id === configToTest.id) setEditingConfig(updatedConfig);
+            updateConnectionSessionStatus(configToTest.id, 'error');
         } finally {
             setIsTesting(false);
         }
@@ -342,7 +372,10 @@ export const SettingsTab: React.FC = () => {
                                         >
                                             <div className="flex flex-col gap-0.5">
                                                 <div className="flex items-center gap-2">
-                                                    <span className={`w-1.5 h-1.5 rounded-full ${conn.verified ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                                                    <span className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${conn.sessionStatus === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' :
+                                                        conn.sessionStatus === 'error' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]' :
+                                                            'bg-gray-300'
+                                                        }`}></span>
                                                     <span className="text-[12px] font-bold text-gray-800 truncate max-w-[160px]">{conn.name}</span>
                                                 </div>
                                                 <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest ml-3.5">{conn.db_type}</span>
@@ -803,6 +836,6 @@ export const SettingsTab: React.FC = () => {
                     )}
                 </div>
             </div>
-        </div >
+        </div>
     );
-};
+});
