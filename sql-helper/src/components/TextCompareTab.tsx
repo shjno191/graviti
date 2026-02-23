@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
 import { compareOrdered, compareUnordered } from '../utils/diffLogic';
 import { useAppStore } from '../store/useAppStore';
+import { HighlightText } from '../utils/uiHelpers';
 
 const InputWithLineNumbers = ({
     value,
@@ -59,49 +60,29 @@ const InputWithLineNumbers = ({
 export function TextCompareTab() {
     // Global settings
     const textCompareDeleteChars = useAppStore(state => state.textCompareDeleteChars);
-    const setTextCompareDeleteChars = useAppStore(state => state.setTextCompareDeleteChars);
     const textCompareRemoveAppend = useAppStore(state => state.textCompareRemoveAppend);
-    const setTextCompareRemoveAppend = useAppStore(state => state.setTextCompareRemoveAppend);
     const textCompareTruncateDuplicate = useAppStore(state => state.textCompareTruncateDuplicate);
-    const setTextCompareTruncateDuplicate = useAppStore(state => state.setTextCompareTruncateDuplicate);
+
+    // Shared text compare settings
+    const isOrdered = useAppStore(state => state.textCompareOrdered);
+    const ignoreCase = useAppStore(state => state.textCompareIgnoreCase);
+    const trimWhitespace = useAppStore(state => state.textCompareTrimWhitespace);
+    const autoCompare = useAppStore(state => state.textCompareAutoCompare);
+    const textCompareSort = useAppStore(state => state.textCompareSort);
+
     const expectedInput = useAppStore(state => state.textCompareExpectedInput);
     const setExpectedInput = useAppStore(state => state.setTextCompareExpectedInput);
     const currentInput = useAppStore(state => state.textCompareCurrentInput);
     const setCurrentInput = useAppStore(state => state.setTextCompareCurrentInput);
     const setActiveTab = useAppStore(state => state.setActiveTab);
     const setTranslateSubTab = useAppStore(state => state.setTranslateSubTab);
+    const globalSearchTerm = useAppStore(state => state.globalSearchTerm);
 
     const [diffInputs, setDiffInputs] = useState({ expected: '', current: '' });
-    const [isOrdered, setIsOrdered] = useState(false);
-    const [ignoreCase, setIgnoreCase] = useState(false);
-    const [trimWhitespace, setTrimWhitespace] = useState(false);
-    const [autoCompare, setAutoCompare] = useState(false);
 
     // UI states
-    const [showConfig, setShowConfig] = useState(false);
-    const configButtonRef = useRef<HTMLButtonElement>(null);
-    const configModalRef = useRef<HTMLDivElement>(null);
 
     // Close config modal when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (
-                configModalRef.current &&
-                !configModalRef.current.contains(event.target as Node) &&
-                configButtonRef.current &&
-                !configButtonRef.current.contains(event.target as Node)
-            ) {
-                setShowConfig(false);
-            }
-        };
-
-        if (showConfig) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [showConfig]);
 
     // Processing Logic
     const preprocessText = (text: string) => {
@@ -138,6 +119,16 @@ export function TextCompareTab() {
             const lines = processed.split(/\r?\n/);
             const uniqueLines = Array.from(new Set(lines));
             processed = uniqueLines.join('\n');
+        }
+
+        // 4. Sort lines (Alphabetical) - Also trims each line
+        if (textCompareSort) {
+            const lines = processed.split(/\r?\n/);
+            const processedLines = lines
+                .map(line => line.trim())
+                .filter(line => line.length > 0) // Optional: remove empty lines when sorting? Usually yes for alignment.
+                .sort((a, b) => a.localeCompare(b));
+            processed = processedLines.join('\n');
         }
 
         return processed;
@@ -180,6 +171,12 @@ export function TextCompareTab() {
         setCurrentInput(processedCurrent);
     };
 
+    const handleSwap = () => {
+        const temp = expectedInput;
+        setExpectedInput(currentInput);
+        setCurrentInput(temp);
+    };
+
     const diffResult = useMemo(() => {
         const expectedLines = diffInputs.expected.split(/\r?\n/);
         const currentLines = diffInputs.current.split(/\r?\n/);
@@ -192,7 +189,7 @@ export function TextCompareTab() {
     }, [diffInputs, isOrdered, ignoreCase, trimWhitespace]);
 
     return (
-        <div className="flex flex-col h-[calc(100vh-140px)] gap-4 p-4">
+        <div className="flex flex-col h-[calc(100vh-80px)] gap-4 p-4">
             {/* Input Area */}
             <div className="flex gap-4 h-1/2">
                 <InputWithLineNumbers
@@ -218,104 +215,12 @@ export function TextCompareTab() {
                     <span>🚀</span> Compare
                 </button>
 
-                <div className="relative">
-                    <button
-                        ref={configButtonRef}
-                        onClick={() => setShowConfig(!showConfig)}
-                        className={clsx(
-                            "flex items-center gap-2 px-3 py-2 border rounded font-bold transition-colors select-none",
-                            showConfig ? "bg-gray-100 border-gray-400" : "bg-white border-gray-300 hover:bg-gray-50"
-                        )}
-                    >
-                        <span>⚙️</span> Config
-                    </button>
-
-                    {showConfig && (
-                        <div
-                            ref={configModalRef}
-                            className="absolute bottom-full left-0 mb-2 w-80 bg-white border border-gray-200 shadow-xl rounded-lg p-4 z-50 flex flex-col gap-3 animate-in fade-in zoom-in-95 duration-100"
-                        >
-                            <h4 className="font-bold text-gray-700 border-b border-gray-100 pb-2 mb-1 text-sm uppercase">Settings</h4>
-
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={isOrdered}
-                                    onChange={(e) => setIsOrdered(e.target.checked)}
-                                    className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
-                                />
-                                <span className="font-medium text-gray-700 text-sm">Ordered Comparison</span>
-                            </label>
-
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={ignoreCase}
-                                    onChange={(e) => setIgnoreCase(e.target.checked)}
-                                    className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
-                                />
-                                <span className="font-medium text-gray-700 text-sm">Ignore Case</span>
-                            </label>
-
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={trimWhitespace}
-                                    onChange={(e) => setTrimWhitespace(e.target.checked)}
-                                    className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
-                                />
-                                <span className="font-medium text-gray-700 text-sm">Trim Whitespace</span>
-                            </label>
-
-                            <div className="border-t border-gray-100 my-1"></div>
-
-                            <h5 className="font-bold text-gray-500 text-xs uppercase mt-1">Pre-processing</h5>
-
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={textCompareRemoveAppend}
-                                    onChange={(e) => setTextCompareRemoveAppend(e.target.checked)}
-                                    className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
-                                />
-                                <span className="font-medium text-gray-700 text-sm">Remove .append(...) wrapper</span>
-                            </label>
-
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={textCompareTruncateDuplicate}
-                                    onChange={(e) => setTextCompareTruncateDuplicate(e.target.checked)}
-                                    className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
-                                />
-                                <span className="font-medium text-gray-700 text-sm">Truncate Duplicate Lines</span>
-                            </label>
-
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Remove Characters:</label>
-                                <input
-                                    type="text"
-                                    value={textCompareDeleteChars}
-                                    onChange={(e) => setTextCompareDeleteChars(e.target.value)}
-                                    placeholder="e.g. ,;()"
-                                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm font-mono focus:ring-1 focus:ring-primary outline-none"
-                                />
-                            </div>
-
-                            <div className="border-t border-gray-100 my-1"></div>
-
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={autoCompare}
-                                    onChange={(e) => setAutoCompare(e.target.checked)}
-                                    className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
-                                />
-                                <span className="font-bold text-green-700 text-sm">Auto-Compare</span>
-                            </label>
-                        </div>
-                    )}
-                </div>
+                <button
+                    onClick={handleSwap}
+                    className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 border border-gray-300 font-bold rounded shadow hover:bg-gray-50 transition-colors"
+                >
+                    <span>🔄</span> Swap
+                </button>
 
                 <div className="h-6 w-px bg-gray-300 mx-2"></div>
 
@@ -374,7 +279,7 @@ export function TextCompareTab() {
                                             {line.originalIndex !== undefined ? line.originalIndex + 1 : ''}
                                         </span>
                                         <span className={clsx("flex-1", line.type === 'removed' && 'bg-red-100')}>
-                                            {line.type !== 'added' ? (line.text || ' ') : ''}
+                                            {line.type !== 'added' ? <HighlightText text={line.text || ''} term={globalSearchTerm} /> : ''}
                                         </span>
                                     </div>
                                 </div>
@@ -392,7 +297,7 @@ export function TextCompareTab() {
                                             {line.currentIndex !== undefined ? line.currentIndex + 1 : ''}
                                         </span>
                                         <span className={clsx("flex-1", line.type === 'added' && 'bg-green-100')}>
-                                            {line.type !== 'removed' ? ((line.currentText ?? line.text) || ' ') : ''}
+                                            {line.type !== 'removed' ? <HighlightText text={(line.currentText ?? line.text) || ''} term={globalSearchTerm} /> : ''}
                                         </span>
                                     </div>
                                 </div>

@@ -38,8 +38,8 @@ export interface TableScript {
 }
 
 export interface AppState {
-    activeTab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser' | 'compare-suite';
-    setActiveTab: (tab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser' | 'compare-suite') => void;
+    activeTab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'revert-tk' | 'text-compare' | 'java-parser' | 'compare-suite';
+    setActiveTab: (tab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'revert-tk' | 'text-compare' | 'java-parser' | 'compare-suite') => void;
 
     logFileContent: string;
     setLogFileContent: (content: string) => void;
@@ -75,6 +75,8 @@ export interface AppState {
 
     runShortcut: string;
     setRunShortcut: (shortcut: string) => void;
+    focusSearchShortcut: string;
+    setFocusSearchShortcut: (shortcut: string) => void;
 
     formatRemoveSpaces: boolean;
     setFormatRemoveSpaces: (val: boolean) => void;
@@ -109,11 +111,25 @@ export interface AppState {
     setTextCompareRemoveAppend: (val: boolean) => void;
     textCompareTruncateDuplicate: boolean;
     setTextCompareTruncateDuplicate: (val: boolean) => void;
+    textCompareOrdered: boolean;
+    setTextCompareOrdered: (val: boolean) => void;
+    textCompareIgnoreCase: boolean;
+    setTextCompareIgnoreCase: (val: boolean) => void;
+    textCompareTrimWhitespace: boolean;
+    setTextCompareTrimWhitespace: (val: boolean) => void;
+    textCompareAutoCompare: boolean;
+    setTextCompareAutoCompare: (val: boolean) => void;
+    textCompareSort: boolean;
+    setTextCompareSort: (val: boolean) => void;
 
     translateDeleteChars: string;
     setTranslateDeleteChars: (val: string) => void;
     translateTruncateDuplicate: boolean;
     setTranslateTruncateDuplicate: (val: boolean) => void;
+
+    // Global Search
+    globalSearchTerm: string;
+    setGlobalSearchTerm: (term: string) => void;
 
     // Shared Text Compare Inputs
     textCompareExpectedInput: string;
@@ -121,8 +137,12 @@ export interface AppState {
     textCompareCurrentInput: string;
     setTextCompareCurrentInput: (val: string) => void;
 
-    translateSubTab: 'dictionary' | 'quick' | 'revertTK';
-    setTranslateSubTab: (tab: 'dictionary' | 'quick' | 'revertTK') => void;
+    translateSubTab: 'dictionary' | 'quick';
+    setTranslateSubTab: (tab: 'dictionary' | 'quick') => void;
+    translateLineHeight: number;
+    setTranslateLineHeight: (val: number) => void;
+    compareSubTab: 'data' | 'schema' | 'text' | 'generate';
+    setCompareSubTab: (tab: 'data' | 'schema' | 'text' | 'generate') => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -131,8 +151,10 @@ export const useAppStore = create<AppState>((set) => ({
 
     translateSubTab: 'dictionary',
     setTranslateSubTab: (tab) => set({ translateSubTab: tab }),
-
-    // ... (existing initializers) ...
+    translateLineHeight: 1.6,
+    setTranslateLineHeight: (val) => set({ translateLineHeight: val }),
+    compareSubTab: 'data',
+    setCompareSubTab: (tab) => set({ compareSubTab: tab }),
 
     logFileContent: '',
     setLogFileContent: (content) => set({ logFileContent: content }),
@@ -190,6 +212,8 @@ export const useAppStore = create<AppState>((set) => ({
 
     runShortcut: 'F5',
     setRunShortcut: (val) => set({ runShortcut: val }),
+    focusSearchShortcut: 'CTRL+F',
+    setFocusSearchShortcut: (val) => set({ focusSearchShortcut: val }),
 
     formatRemoveSpaces: true,
     setFormatRemoveSpaces: (val) => set({ formatRemoveSpaces: val }),
@@ -204,7 +228,7 @@ export const useAppStore = create<AppState>((set) => ({
 
     columnSplitEnabled: true,
     setColumnSplitEnabled: (val) => set({ columnSplitEnabled: val }),
-    columnSplitKeywords: ' AS , .',
+    columnSplitKeywords: ' AS | .',
     setColumnSplitKeywords: (val) => set({ columnSplitKeywords: val }),
     revertTKColConfig: 'A:150, B:250',
     setRevertTKColConfig: (val) => set({ revertTKColConfig: val }),
@@ -212,7 +236,7 @@ export const useAppStore = create<AppState>((set) => ({
     setColumnSplitApplyToText: (val) => set({ columnSplitApplyToText: val }),
     columnSplitApplyToTable: true,
     setColumnSplitApplyToTable: (val) => set({ columnSplitApplyToTable: val }),
-    revertTKDeleteChars: "',",
+    revertTKDeleteChars: "' | ,",
     setRevertTKDeleteChars: (val) => set({ revertTKDeleteChars: val }),
     revertTKMapping: [
         { id: 'logic-name', label: '【SQL論理名】', offsets: [1, 1], type: 'text' },
@@ -233,11 +257,24 @@ export const useAppStore = create<AppState>((set) => ({
     setTextCompareRemoveAppend: (val) => set({ textCompareRemoveAppend: val }),
     textCompareTruncateDuplicate: false,
     setTextCompareTruncateDuplicate: (val) => set({ textCompareTruncateDuplicate: val }),
+    textCompareOrdered: false,
+    setTextCompareOrdered: (val) => set({ textCompareOrdered: val }),
+    textCompareIgnoreCase: false,
+    setTextCompareIgnoreCase: (val) => set({ textCompareIgnoreCase: val }),
+    textCompareTrimWhitespace: false,
+    setTextCompareTrimWhitespace: (val) => set({ textCompareTrimWhitespace: val }),
+    textCompareAutoCompare: false,
+    setTextCompareAutoCompare: (val) => set({ textCompareAutoCompare: val }),
+    textCompareSort: false,
+    setTextCompareSort: (val) => set({ textCompareSort: val }),
 
     translateDeleteChars: '',
     setTranslateDeleteChars: (val) => set({ translateDeleteChars: val }),
     translateTruncateDuplicate: false,
     setTranslateTruncateDuplicate: (val) => set({ translateTruncateDuplicate: val }),
+
+    globalSearchTerm: '',
+    setGlobalSearchTerm: (term) => set({ globalSearchTerm: term }),
 
     textCompareExpectedInput: '',
     setTextCompareExpectedInput: (val) => set({ textCompareExpectedInput: val }),

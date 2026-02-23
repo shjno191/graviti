@@ -10,8 +10,30 @@ export const ParamsTab: React.FC = () => {
     const {
         queryGroups, addQueryGroup, updateQueryGroup, removeQueryGroup,
         autoClipboard, setAutoClipboard, connections,
-        runShortcut
+        runShortcut, globalSearchTerm
     } = useAppStore();
+
+    const filteredGroups = React.useMemo(() => {
+        if (!globalSearchTerm) return queryGroups;
+        const term = globalSearchTerm.toLowerCase();
+        return queryGroups.filter(g => {
+            const matchInGroup =
+                (g.statementId?.toLowerCase().includes(term)) ||
+                (g.sql?.toLowerCase().includes(term)) ||
+                (g.params?.toLowerCase().includes(term));
+
+            if (matchInGroup) return true;
+
+            // Search in results if present
+            if (g.result) {
+                const matchInColumns = g.result.columns.some(col => col.toLowerCase().includes(term));
+                if (matchInColumns) return true;
+                const matchInRows = g.result.rows.some(row => row.some(cell => cell?.toString().toLowerCase().includes(term)));
+                if (matchInRows) return true;
+            }
+            return false;
+        });
+    }, [queryGroups, globalSearchTerm]);
 
     const [globalLogPath, setGlobalLogPath] = React.useState<string>('');
 
@@ -262,7 +284,7 @@ export const ParamsTab: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-6 pb-20">
-                {queryGroups.map((group, index) => (
+                {filteredGroups.map((group, index) => (
                     <div key={group.id} className="grid grid-cols-[300px_1fr] gap-6 p-6 border border-gray-100 rounded-3xl bg-white relative shadow-sm hover:shadow-md transition-all group/card">
                         <div className="col-span-full border-b border-gray-100 pb-3 flex justify-between items-center px-2">
                             <div className="flex items-center gap-4">
@@ -409,7 +431,7 @@ export const ParamsTab: React.FC = () => {
                     </div>
                 ))}
 
-                {queryGroups.length === 0 && (
+                {filteredGroups.length === 0 && (
                     <div className="flex flex-col items-center justify-center py-20 bg-white border-2 border-dashed border-gray-200 rounded-[40px] text-gray-300 gap-4">
                         <span className="text-6xl">📄</span>
                         <p className="font-bold uppercase tracking-widest">Add a fragment to start processing</p>

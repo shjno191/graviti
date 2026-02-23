@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useAppStore, QueryResult } from '../store/useAppStore';
 import { invoke } from '@tauri-apps/api/tauri';
 import { checkDangerousSql } from '../utils/sqlGuard';
+import { HighlightText } from '../utils/uiHelpers';
 
 interface LabStatement {
     sql: string;
@@ -106,7 +107,7 @@ const LabTable: React.FC<LabTableProps> = React.memo(({
                                             style={{ width: 160 }}
                                             title={String(val)}
                                         >
-                                            {val}
+                                            <HighlightText text={String(val)} term={debouncedSearch} />
                                         </td>
                                     );
                                 })}
@@ -120,11 +121,10 @@ const LabTable: React.FC<LabTableProps> = React.memo(({
 });
 
 export const LabTab: React.FC = () => {
-    const { connections, excelHeaderColor, runShortcut } = useAppStore();
+    const { connections, excelHeaderColor, runShortcut, globalSearchTerm } = useAppStore();
     const [showExecPicker, setShowExecPicker] = useState(false);
     const [stmt1, setStmt1] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
     const [stmt2, setStmt2] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
-    const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [colSearch, setColSearch] = useState('');
     const [priorityCols, setPriorityCols] = useState('');
@@ -239,9 +239,9 @@ export const LabTab: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+        const timer = setTimeout(() => setDebouncedSearch(globalSearchTerm), 300);
         return () => clearTimeout(timer);
-    }, [searchTerm]);
+    }, [globalSearchTerm]);
 
     useEffect(() => {
         if (connections.length > 0) {
@@ -408,15 +408,8 @@ export const LabTab: React.FC = () => {
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-wrap items-center gap-6 z-40">
                 <h2 className="text-xl font-black bg-gradient-to-br from-orange-500 to-red-600 bg-clip-text text-transparent uppercase tracking-tight">Compare Data</h2>
                 <div className="flex-1 flex gap-4 min-w-[500px]">
-                    <div className="relative flex-1 group">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
-                        <input
-                            type="text"
-                            placeholder="Data Search..."
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-500 shadow-inner"
-                        />
+                    <div className="flex items-center gap-2 px-4 py-2 bg-orange-50 rounded-xl border border-orange-100">
+                        <span className="text-orange-400 text-[10px] font-black uppercase tracking-widest">Global Search Filtering Data</span>
                     </div>
                     <div className="relative flex-1 group">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400">📋</span>

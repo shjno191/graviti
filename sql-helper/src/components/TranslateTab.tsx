@@ -5,6 +5,7 @@ import { open as openDialog } from '@tauri-apps/api/dialog';
 import * as XLSX from 'xlsx';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/useAppStore';
+import { HighlightText } from '../utils/uiHelpers';
 
 interface TranslateEntry {
     japanese: string;
@@ -368,14 +369,15 @@ const RevertTKGrid = React.memo((props: {
 });
 
 
-const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback, onCopy, onEdit, onDelete }: {
+const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback, onCopy, onEdit, onDelete, searchTerm }: {
     item: TranslateEntry,
     displayIdx: number,
     originalIdx: number,
     copyFeedback: any,
     onCopy: any,
     onEdit: (item: TranslateEntry, idx: number) => void,
-    onDelete: (idx: number) => void
+    onDelete: (idx: number) => void,
+    searchTerm: string
 }) => (
     <tr className="border-b border-gray-200 hover:bg-indigo-50/60 transition-colors group/row">
         <td className="w-12 px-2 py-2.5 text-center border-r border-gray-100 text-[10px] text-gray-400 font-bold select-none bg-gray-50/30 group-hover/row:bg-indigo-50/0 transition-colors">
@@ -390,7 +392,7 @@ const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback,
         >
             <div className="flex justify-between items-center group/cell">
                 <span className="text-[12px] font-bold text-gray-700 leading-tight whitespace-pre-wrap break-words group-hover/row:text-gray-900">
-                    {item.japanese}
+                    <HighlightText text={item.japanese} term={searchTerm} />
                 </span>
                 {copyFeedback?.row === originalIdx && copyFeedback.col === 'jp' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
             </div>
@@ -403,8 +405,8 @@ const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback,
             onClick={() => onCopy(item.english, originalIdx, 'en')}
         >
             <div className="flex justify-between items-center">
-                <span className="text-[12px] font-mono font-black text-indigo-600 leading-tight break-all uppercase group-hover/row:text-indigo-700">
-                    {item.english}
+                <span className="text-[12px] font-mono font-black text-indigo-600 leading-tight break-all uppercase group-hover/row:text-indigo-700 text-left w-full">
+                    <HighlightText text={item.english} term={searchTerm} />
                 </span>
                 {copyFeedback?.row === originalIdx && copyFeedback.col === 'en' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
             </div>
@@ -418,7 +420,7 @@ const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback,
         >
             <div className="flex justify-between items-center">
                 <span className="text-[12px] font-bold text-teal-600 leading-tight break-words font-sans group-hover/row:text-teal-700">
-                    {item.vietnamese}
+                    <HighlightText text={item.vietnamese} term={searchTerm} />
                 </span>
                 {copyFeedback?.row === originalIdx && copyFeedback.col === 'vi' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
 
@@ -450,9 +452,7 @@ export const TranslateTab: React.FC = () => {
     const setActiveTab = useAppStore(state => state.setActiveTab);
     const excelHeaderColor = useAppStore(state => state.excelHeaderColor);
     const formatRemoveSpaces = useAppStore(state => state.formatRemoveSpaces);
-    const setFormatRemoveSpaces = useAppStore(state => state.setFormatRemoveSpaces);
     const formatSqlAppend = useAppStore(state => state.formatSqlAppend);
-    const setFormatSqlAppend = useAppStore(state => state.setFormatSqlAppend);
     const searchStrict = useAppStore(state => state.searchStrict);
     const setSearchStrict = useAppStore(state => state.setSearchStrict);
     const columnSplitEnabled = useAppStore(state => state.columnSplitEnabled);
@@ -470,9 +470,7 @@ export const TranslateTab: React.FC = () => {
     const revertTKMapping = useAppStore(state => state.revertTKMapping);
     const setRevertTKMapping = useAppStore(state => state.setRevertTKMapping);
     const translateDeleteChars = useAppStore(state => state.translateDeleteChars);
-    const setTranslateDeleteChars = useAppStore(state => state.setTranslateDeleteChars);
     const translateTruncateDuplicate = useAppStore(state => state.translateTruncateDuplicate);
-    const setTranslateTruncateDuplicate = useAppStore(state => state.setTranslateTruncateDuplicate);
     const textCompareExpectedInput = useAppStore(state => state.textCompareExpectedInput);
     const setTextCompareExpectedInput = useAppStore(state => state.setTextCompareExpectedInput);
     const textCompareCurrentInput = useAppStore(state => state.textCompareCurrentInput);
@@ -481,9 +479,10 @@ export const TranslateTab: React.FC = () => {
     const connections = useAppStore(state => state.connections);
     const subTab = useAppStore(state => state.translateSubTab);
     const setSubTab = useAppStore(state => state.setTranslateSubTab);
+    const globalSearchTerm = useAppStore(state => state.globalSearchTerm);
+    const lineSpacing = useAppStore(state => state.translateLineHeight);
 
     const [data, setData] = useState<TranslateEntry[]>([]);
-    const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [copyFeedback, setCopyFeedback] = useState<{ row: number, col: 'jp' | 'en' | 'vi' } | null>(null);
@@ -496,7 +495,6 @@ export const TranslateTab: React.FC = () => {
     const [selections, setSelections] = useState<Record<string, string>>({});
     const [translatedLines, setTranslatedLines] = useState<TranslatedLine[]>([]);
     const [hoveredKey, setHoveredKey] = useState<string | null>(null);
-    const [lineSpacing, setLineSpacing] = useState(1.6);
     const [segmentCopyFeedback, setSegmentCopyFeedback] = useState<string | null>(null);
     const [resultCopyFeedback, setResultCopyFeedback] = useState(false);
     const [tooltip, setTooltip] = useState<{ seg: TranslatedSegment, rect: DOMRect } | null>(null);
@@ -513,8 +511,7 @@ export const TranslateTab: React.FC = () => {
 
     const deferredBulkInput = useDeferredValue(bulkInput);
     const deferredRevertTKInput = useDeferredValue(revertTKInput);
-    const deferredSearchTerm = useDeferredValue(searchTerm);
-    const [showFormatSettings, setShowFormatSettings] = useState(false);
+    const deferredSearchTerm = useDeferredValue(globalSearchTerm);
     const [newSectionLabel, setNewSectionLabel] = useState('');
     const [revertTKMode, setRevertTKMode] = useState<'TKtoCode' | 'CodetoTK'>('CodetoTK');
     const [revertTKResultFormat, setRevertTKResultFormat] = useState<'text' | 'table'>('table');
@@ -543,23 +540,6 @@ export const TranslateTab: React.FC = () => {
     }, [revertTKColConfig]);
 
     const [showRevertConfig, setShowRevertConfig] = useState(false);
-    const settingsPanelRef = useRef<HTMLDivElement>(null);
-
-    // Close settings when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (settingsPanelRef.current && !settingsPanelRef.current.contains(event.target as Node)) {
-                setShowFormatSettings(false);
-            }
-        };
-
-        if (showFormatSettings) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [showFormatSettings]);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -682,9 +662,14 @@ export const TranslateTab: React.FC = () => {
         // Custom delete chars (Independent)
         if (translateDeleteChars) {
             const escapeIdx = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const charsPattern = '[' + escapeIdx(translateDeleteChars) + ']';
-            const regex = new RegExp(charsPattern, 'g');
-            processedText = processedText.replace(regex, '');
+            // Split by | to get individual chars or strings to delete
+            const targets = translateDeleteChars.split('|').map(c => c.trim()).filter(Boolean);
+            if (targets.length > 0) {
+                const charsPattern = targets.map(t => escapeIdx(t)).join('|');
+                // Use a regex that matches any of the targets
+                const regex = new RegExp(charsPattern, 'g');
+                processedText = processedText.replace(regex, '');
+            }
         }
 
         // Logic 1 & 3: Remove space, tab, and commas
@@ -768,8 +753,8 @@ export const TranslateTab: React.FC = () => {
 
             result = smartFormatSqlDesign(revertTKInput, {
                 splitEnabled: shouldSplit,
-                keywords: columnSplitKeywords.split(',').map(k => k.trim()).filter(Boolean),
-                deleteChars: revertTKDeleteChars.split(',').map(k => k.trim()).filter(Boolean)
+                keywords: columnSplitKeywords.split('|').map(k => k.trim()).filter(Boolean),
+                deleteChars: revertTKDeleteChars.split('|').map(k => k.trim()).filter(Boolean)
             });
         }
         setRevertTKResult(result);
@@ -1680,7 +1665,7 @@ export const TranslateTab: React.FC = () => {
 
 
     return (
-        <div className="flex flex-col h-[calc(100vh-140px)] gap-4 p-4 animate-in fade-in duration-300 overflow-hidden font-sans relative">
+        <div className="flex flex-col h-[calc(100vh-80px)] gap-4 p-4 animate-in fade-in duration-300 overflow-hidden font-sans relative">
             {/* Edit Modal */}
             {showEditModal && (
                 <div className="absolute inset-0 z-[2000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowEditModal(false)}>
@@ -1791,359 +1776,100 @@ export const TranslateTab: React.FC = () => {
                 </>
             )}
 
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-wrap items-center gap-4">
-                <div className="flex items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shadow-sm overflow-x-auto max-w-full">
-                    <button
-                        onClick={() => setSubTab('dictionary')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap ${subTab === 'dictionary'
-                            ? 'bg-white text-indigo-600 shadow-md scale-105'
-                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-                            }`}
-                    >
-                        <span>📖 DICTIONARY</span>
-                    </button>
-                    <button
-                        onClick={() => setSubTab('quick')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap ${subTab === 'quick'
-                            ? 'bg-white text-indigo-600 shadow-md scale-105'
-                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-                            }`}
-                    >
-                        <span>⚡ QUICK TRANSLATE</span>
-                    </button>
-                    <button
-                        onClick={() => setSubTab('revertTK')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap ${subTab === 'revertTK'
-                            ? 'bg-white text-amber-600 shadow-md scale-105'
-                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-                            }`}
-                    >
-                        <span>🔄 RevertTK</span>
-                    </button>
-                </div>
+            {activeTab === 'translate' && (
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-wrap items-center gap-4">
+                    <div className="flex items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 shadow-sm overflow-x-auto max-w-full">
+                        <button
+                            onClick={() => setSubTab('dictionary')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap ${subTab === 'dictionary'
+                                ? 'bg-white text-indigo-600 shadow-md scale-105'
+                                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                                }`}
+                        >
+                            <span>📖 DICTIONARY</span>
+                        </button>
+                        <button
+                            onClick={() => setSubTab('quick')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap ${subTab === 'quick'
+                                ? 'bg-white text-indigo-600 shadow-md scale-105'
+                                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                                }`}
+                        >
+                            <span>⚡ QUICK TRANSLATE</span>
+                        </button>
+                    </div>
 
-                <div className="flex-1 flex flex-wrap items-center gap-4 min-w-[200px]">
-                    {subTab === 'dictionary' ? (
-                        <div className="flex-1 flex items-center gap-4">
-                            <div className="flex-1 relative group">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm opacity-50">🔍</span>
-                                <input
-                                    type="text"
-                                    placeholder="Search Japanese, English or Vietnamese..."
-                                    value={searchTerm}
-                                    onChange={(e) => {
-                                        setSearchTerm(e.target.value);
-                                        setDictionaryLimit(200); // Reset limit on search
-                                    }}
-                                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-10 pr-4 py-2.5 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all shadow-inner"
-                                    autoFocus
-                                />
-                            </div>
-                            <label className="flex items-center gap-2 cursor-pointer group shrink-0">
-                                <div className="relative flex items-center">
-                                    <input
-                                        type="checkbox"
-                                        checked={searchStrict}
-                                        onChange={(e) => setSearchStrict(e.target.checked)}
-                                        className="peer h-4 w-4 cursor-pointer appearance-none rounded border border-gray-300 transition-all checked:border-indigo-600 checked:bg-indigo-600"
-                                    />
-                                    <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[8px]">✓</span>
+                    <div className="flex-1 flex flex-wrap items-center gap-4 min-w-[200px]">
+                        {subTab === 'dictionary' ? (
+                            <div className="flex-1 flex items-center gap-4">
+                                <div className="flex-1 flex items-center gap-2 px-4 py-2 bg-indigo-50/50 rounded-2xl border border-indigo-100">
+                                    <span className="text-indigo-400 text-[10px] font-black uppercase tracking-widest">Global Filter Active</span>
+                                    <div className="h-1 w-1 bg-indigo-400 rounded-full animate-pulse"></div>
                                 </div>
-                                <span className="text-[10px] font-black text-gray-400 group-hover:text-indigo-600 transition-colors uppercase tracking-widest">Strict</span>
-                            </label>
-                        </div>
-                    ) : subTab === 'quick' ? (
-                        <div className="flex-1 flex items-center justify-end gap-3">
-                            <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100 shadow-inner">
-                                <span className="text-[10px] font-black text-indigo-400 uppercase tracking-tighter">Line Height</span>
-                                <div className="flex items-center bg-white rounded-lg border border-indigo-200 overflow-hidden shadow-sm">
-                                    <button
-                                        onClick={() => setLineSpacing(prev => Math.max(1, prev - 0.2))}
-                                        className="px-2 py-1 hover:bg-gray-50 text-indigo-600 font-bold border-r border-indigo-100 transition-colors"
-                                    >
-                                        −
-                                    </button>
-                                    <span className="px-3 py-1 text-[11px] font-black text-indigo-900 min-w-[3rem] text-center">
-                                        {lineSpacing.toFixed(1)}
-                                    </span>
-                                    <button
-                                        onClick={() => setLineSpacing(prev => Math.min(4, prev + 0.2))}
-                                        className="px-2 py-1 hover:bg-gray-50 text-indigo-600 font-bold border-l border-indigo-100 transition-colors"
-                                    >
-                                        +
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="relative flex items-center gap-1">
-                                <button
-                                    onClick={handleFormatInput}
-                                    className="px-6 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 shrink-0"
-                                    title="Standard normalization"
-                                >
-                                    ✨ FORMAT
-                                </button>
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setShowFormatSettings(!showFormatSettings);
-                                    }}
-                                    className={`p-2 rounded-xl border transition-all ${showFormatSettings ? 'bg-indigo-100 border-indigo-300 text-indigo-600' : 'bg-white border-gray-200 text-gray-400 hover:bg-gray-50'}`}
-                                    title="Format Settings"
-                                >
-                                    ⚙️
-                                </button>
-
-                                {showFormatSettings && (
-                                    <div
-                                        ref={settingsPanelRef}
-                                        className="absolute top-full right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 z-[1000] animate-in slide-in-from-top-2 duration-200"
-                                    >
-                                        <div className="flex flex-col gap-3">
-                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Format Logic</div>
-
-                                            <label className="flex items-center gap-3 cursor-pointer group">
-                                                <div className="relative flex items-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={formatRemoveSpaces}
-                                                        onChange={(e) => setFormatRemoveSpaces(e.target.checked)}
-                                                        className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border border-gray-300 transition-all checked:border-indigo-600 checked:bg-indigo-600"
-                                                    />
-                                                    <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[10px]">✓</span>
-                                                </div>
-                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Xóa Space, Tab & Dấu phẩy (,)</span>
-                                            </label>
-
-                                            <label className="flex items-center gap-3 cursor-pointer group">
-                                                <div className="relative flex items-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={formatSqlAppend}
-                                                        onChange={(e) => setFormatSqlAppend(e.target.checked)}
-                                                        className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border border-gray-300 transition-all checked:border-indigo-600 checked:bg-indigo-600"
-                                                    />
-                                                    <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[10px]">✓</span>
-                                                </div>
-                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Clean .append("...")</span>
-                                            </label>
-
-                                            <label className="flex items-center gap-3 cursor-pointer group">
-                                                <div className="relative flex items-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={translateTruncateDuplicate}
-                                                        onChange={(e) => setTranslateTruncateDuplicate(e.target.checked)}
-                                                        className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border border-gray-300 transition-all checked:border-indigo-600 checked:bg-indigo-600"
-                                                    />
-                                                    <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[10px]">✓</span>
-                                                </div>
-                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Truncate Duplicate</span>
-                                            </label>
-
-                                            <div className="border-t border-gray-200 my-1"></div>
-
-                                            <div className="flex flex-col gap-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Remove Characters</label>
-                                                <input
-                                                    type="text"
-                                                    value={translateDeleteChars}
-                                                    onChange={(e) => setTranslateDeleteChars(e.target.value)}
-                                                    placeholder="e.g. ,;()"
-                                                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                />
-                                            </div>
-
-                                            <label className="flex items-center gap-3 cursor-pointer group">
-                                                <div className="relative flex items-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={searchStrict}
-                                                        onChange={(e) => setSearchStrict(e.target.checked)}
-                                                        className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border border-gray-300 transition-all checked:border-indigo-600 checked:bg-indigo-600"
-                                                    />
-                                                    <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[10px]">✓</span>
-                                                </div>
-                                                <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-600 transition-colors">Strict Search (Tìm chính xác từ)</span>
-                                            </label>
-
-                                            <div className="mt-2 pt-2 border-t border-gray-100">
-                                                <p className="text-[9px] text-gray-400 italic">
-                                                    Strict: Dùng cho cả tìm kiếm dictionary (khớp 100%) và Quick Translate (không thay thế từ con).
-                                                </p>
-                                            </div>
-                                        </div>
+                                <label className="flex items-center gap-2 cursor-pointer group shrink-0">
+                                    <div className="relative flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={searchStrict}
+                                            onChange={(e) => setSearchStrict(e.target.checked)}
+                                            className="peer h-4 w-4 cursor-pointer appearance-none rounded border border-gray-300 transition-all checked:border-indigo-600 checked:bg-indigo-600"
+                                        />
+                                        <span className="absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-[8px]">✓</span>
                                     </div>
-                                )}
+                                    <span className="text-[10px] font-black text-gray-400 group-hover:text-indigo-600 transition-colors uppercase tracking-widest">Strict</span>
+                                </label>
                             </div>
-                        </div>
-                    ) : ""}
-                </div>
+                        ) : subTab === 'quick' ? (
+                            <div className="flex-1 flex items-center justify-end gap-3">
+                                <div className="relative flex items-center gap-1">
+                                    <button
+                                        onClick={handleFormatInput}
+                                        className="px-6 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 shrink-0"
+                                        title="Standard normalization"
+                                    >
+                                        ✨ FORMAT
+                                    </button>
+                                </div>
+                            </div>
+                        ) : ""}
+                    </div>
 
-                <div className="flex flex-wrap gap-2 justify-end">
-                    {subTab !== 'revertTK' && (
-                        <>
-                            <button
-                                onClick={async () => {
-                                    const excelPath = translateFilePath.toLowerCase().endsWith('.xlsx')
-                                        ? translateFilePath
-                                        : translateFilePath.replace(/\.json$/i, '.xlsx');
-                                    await invoke('open_file', { path: excelPath });
-                                }}
-                                className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-600 rounded-xl text-[10px] font-black hover:bg-green-100 border border-green-200 transition-all active:scale-95 shadow-sm"
-                                title="Mở Excel để nhập liệu"
-                            >
-                                📂 OPEN EXCEL
-                            </button>
+                    <div className="flex flex-wrap gap-2 justify-end">
+                        <button
+                            onClick={async () => {
+                                const excelPath = translateFilePath.toLowerCase().endsWith('.xlsx')
+                                    ? translateFilePath
+                                    : translateFilePath.replace(/\.json$/i, '.xlsx');
+                                await invoke('open_file', { path: excelPath });
+                            }}
+                            className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-600 rounded-xl text-[10px] font-black hover:bg-green-100 border border-green-200 transition-all active:scale-95 shadow-sm"
+                            title="Mở Excel để nhập liệu"
+                        >
+                            📂 OPEN EXCEL
+                        </button>
 
-                            <button
-                                onClick={handleSync}
-                                disabled={syncing}
-                                className={`flex items-center gap-3 px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black hover:bg-indigo-700 transition-all active:scale-95 shadow-lg shadow-indigo-200 relative overflow-hidden`}
-                                title="Đồng bộ & Làm sạch dữ liệu từ Excel"
-                            >
-                                {syncing && (
-                                    <div
-                                        className="absolute left-0 top-0 h-full bg-white/20 transition-all duration-300 pointer-events-none"
-                                        style={{ width: `${syncProgress}%` }}
-                                    />
-                                )}
-                                <span className="relative z-10">
-                                    {syncing ? `SYNCING ${syncProgress}%` : '⚡ SYNC & CLEAN'}
-                                </span>
-                            </button>
-                        </>
-                    )}
+                        <button
+                            onClick={handleSync}
+                            disabled={syncing}
+                            className={`flex items-center gap-3 px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black hover:bg-indigo-700 transition-all active:scale-95 shadow-lg shadow-indigo-200 relative overflow-hidden`}
+                            title="Đồng bộ & Làm sạch dữ liệu từ Excel"
+                        >
+                            {syncing && (
+                                <div
+                                    className="absolute left-0 top-0 h-full bg-white/20 transition-all duration-300 pointer-events-none"
+                                    style={{ width: `${syncProgress}%` }}
+                                />
+                            )}
+                            <span className="relative z-10">
+                                {syncing ? `SYNCING ${syncProgress}%` : '⚡ SYNC & CLEAN'}
+                            </span>
+                        </button>
+                    </div>
                 </div>
-            </div>
+            )}
 
             <div className="flex-1 overflow-hidden bg-white rounded-2xl border border-gray-300 shadow-sm flex flex-col">
-                {subTab === 'dictionary' ? (
-                    <>
-                        <div className="grid grid-cols-[3rem_1fr_1fr_1fr] border-b border-gray-300 sticky top-0 z-10" style={{ backgroundColor: excelHeaderColor }}>
-                            <div className="w-12 py-3 border-r border-white/20 flex items-center justify-center text-[10px] font-medium text-white opacity-60 uppercase tracking-widest">
-                                #
-                            </div>
-                            <div className="px-4 py-3 text-[10px] font-medium text-white uppercase tracking-widest border-r border-white/20 flex items-center gap-2">
-                                🇯🇵 Japanese
-                            </div>
-                            <div className="px-4 py-3 text-[10px] font-medium text-white uppercase tracking-widest border-r border-white/20 flex items-center gap-2">
-                                🔡 English / Code
-                            </div>
-                            <div className="px-4 py-3 text-[10px] font-medium text-white uppercase tracking-widest flex items-center gap-2">
-                                🇻🇳 Vietnamese
-                            </div>
-                        </div>
-
-                        <div className="flex-1 overflow-auto custom-scrollbar">
-                            {loading ? (
-                                <div className="flex flex-col items-center justify-center h-full p-4">
-                                    <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-2"></div>
-                                    <p className="text-xs text-gray-500 font-bold">Loading Data...</p>
-                                </div>
-                            ) : error ? (
-                                <div className="flex flex-col items-center justify-center h-full p-10 text-center bg-gray-50/50">
-                                    <div className="text-4xl mb-4">📂</div>
-                                    <p className="text-gray-800 font-bold text-sm mb-2 max-w-sm">{error}</p>
-                                    <div className="flex gap-3 mt-6">
-                                        <button
-                                            onClick={async () => {
-                                                const selected = await openDialog({
-                                                    filters: [{ name: 'Data', extensions: ['json', 'xlsx'] }]
-                                                });
-                                                if (selected && typeof selected === 'string') {
-                                                    const newPath = selected;
-                                                    setTranslateFilePath(newPath);
-
-                                                    // Auto-save to persist setting
-                                                    try {
-                                                        await invoke('save_db_settings', {
-                                                            settings: {
-                                                                connections,
-                                                                translate_file_path: newPath,
-                                                                column_split_enabled: columnSplitEnabled,
-                                                                column_split_keywords: columnSplitKeywords,
-                                                                revert_tk_col_config: revertTKColConfig,
-                                                                column_split_apply_to_text: columnSplitApplyToText,
-                                                                column_split_apply_to_table: columnSplitApplyToTable,
-                                                                revert_tk_delete_chars: revertTKDeleteChars,
-                                                                revert_tk_mapping: revertTKMapping,
-                                                                excel_header_color: excelHeaderColor,
-                                                                run_shortcut: runShortcut
-                                                            }
-                                                        });
-                                                    } catch (e) {
-                                                        console.error("Failed to persist translate file path", e);
-                                                    }
-                                                }
-                                            }}
-                                            className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-indigo-700 transition-all active:scale-95"
-                                        >
-                                            CHỌN FILE NGAY
-                                        </button>
-                                        <button
-                                            onClick={() => setActiveTab('settings')}
-                                            className="px-5 py-2 bg-white text-gray-600 border border-gray-200 rounded-xl text-xs font-black shadow-sm hover:bg-gray-50 transition-all active:scale-95"
-                                        >
-                                            VÀO CÀI ĐẶT
-                                        </button>
-                                        <button
-                                            onClick={handleSync}
-                                            className="px-5 py-2 bg-gray-100 text-gray-400 rounded-xl text-xs font-black hover:bg-gray-200 transition-all active:scale-95"
-                                        >
-                                            THỬ LẠI
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="divide-y divide-gray-100">
-                                    <table className="w-full border-collapse table-fixed">
-                                        <tbody>
-                                            {filteredData.slice(0, dictionaryLimit).map(({ item, originalIndex }, idx) => (
-                                                <DictionaryRow
-                                                    key={`${item.japanese}-${item.english}-${originalIndex}`}
-                                                    item={item}
-                                                    displayIdx={idx}
-                                                    originalIdx={originalIndex}
-                                                    copyFeedback={copyFeedback}
-                                                    onCopy={handleCopy}
-                                                    onEdit={setEditingEntryAndIndex}
-                                                    onDelete={handleDeleteEntry}
-                                                />
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                    {filteredData.length > dictionaryLimit && (
-                                        <div className="p-6 flex flex-col items-center justify-center bg-gray-50/50">
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">
-                                                Showing {dictionaryLimit} of {filteredData.length} entries
-                                            </p>
-                                            <button
-                                                onClick={() => setDictionaryLimit(prev => prev + 500)}
-                                                className="px-8 py-3 bg-white border border-indigo-200 text-indigo-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 hover:shadow-md transition-all active:scale-95 shadow-sm"
-                                            >
-                                                📂 LOAD MORE ENTRIES (+500)
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {/* Floating Add Button */}
-                                    <button
-                                        onClick={() => {
-                                            setEditingEntry({ japanese: '', english: '', vietnamese: '' });
-                                            setEditingIndex(null);
-                                            setShowEditModal(true);
-                                        }}
-                                        className="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-indigo-700 hover:scale-105 active:scale-95 transition-all z-50 group"
-                                        title="Add New Entry"
-                                    >
-                                        <span className="text-3xl font-light leading-none pb-1">+</span>
-                                        <span className="absolute right-full mr-2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none font-bold">Add Entry</span>
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    </>
-                ) : subTab === 'revertTK' ? (
+                {activeTab === 'revert-tk' ? (
                     <div className="flex-1 flex flex-row overflow-hidden bg-white divide-x divide-gray-200">
                         {/* Left: Input Section */}
                         <div className="flex-[4] flex flex-col min-h-0">
@@ -2346,6 +2072,133 @@ export const TranslateTab: React.FC = () => {
                             </div>
                         </div>
                     </div>
+                ) : subTab === 'dictionary' ? (
+                    <>
+                        <div className="grid grid-cols-[3rem_1fr_1fr_1fr] border-b border-gray-300 sticky top-0 z-10" style={{ backgroundColor: excelHeaderColor }}>
+                            <div className="w-12 py-3 border-r border-white/20 flex items-center justify-center text-[10px] font-medium text-white opacity-60 uppercase tracking-widest">
+                                #
+                            </div>
+                            <div className="px-4 py-3 text-[10px] font-medium text-white uppercase tracking-widest border-r border-white/20 flex items-center gap-2">
+                                🇯🇵 Japanese
+                            </div>
+                            <div className="px-4 py-3 text-[10px] font-medium text-white uppercase tracking-widest border-r border-white/20 flex items-center gap-2">
+                                🔡 English / Code
+                            </div>
+                            <div className="px-4 py-3 text-[10px] font-medium text-white uppercase tracking-widest flex items-center gap-2">
+                                🇻🇳 Vietnamese
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-auto custom-scrollbar">
+                            {loading ? (
+                                <div className="flex flex-col items-center justify-center h-full p-4">
+                                    <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+                                    <p className="text-xs text-gray-500 font-bold">Loading Data...</p>
+                                </div>
+                            ) : error ? (
+                                <div className="flex flex-col items-center justify-center h-full p-10 text-center bg-gray-50/50">
+                                    <div className="text-4xl mb-4">📂</div>
+                                    <p className="text-gray-800 font-bold text-sm mb-2 max-w-sm">{error}</p>
+                                    <div className="flex gap-3 mt-6">
+                                        <button
+                                            onClick={async () => {
+                                                const selected = await openDialog({
+                                                    filters: [{ name: 'Data', extensions: ['json', 'xlsx'] }]
+                                                });
+                                                if (selected && typeof selected === 'string') {
+                                                    const newPath = selected;
+                                                    setTranslateFilePath(newPath);
+
+                                                    // Auto-save to persist setting
+                                                    try {
+                                                        await invoke('save_db_settings', {
+                                                            settings: {
+                                                                connections,
+                                                                translate_file_path: newPath,
+                                                                column_split_enabled: columnSplitEnabled,
+                                                                column_split_keywords: columnSplitKeywords,
+                                                                revert_tk_col_config: revertTKColConfig,
+                                                                column_split_apply_to_text: columnSplitApplyToText,
+                                                                column_split_apply_to_table: columnSplitApplyToTable,
+                                                                revert_tk_delete_chars: revertTKDeleteChars,
+                                                                revert_tk_mapping: revertTKMapping,
+                                                                excel_header_color: excelHeaderColor,
+                                                                run_shortcut: runShortcut
+                                                            }
+                                                        });
+                                                    } catch (e) {
+                                                        console.error("Failed to persist translate file path", e);
+                                                    }
+                                                }
+                                            }}
+                                            className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-indigo-700 transition-all active:scale-95"
+                                        >
+                                            CHỌN FILE NGAY
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('settings')}
+                                            className="px-5 py-2 bg-white text-gray-600 border border-gray-200 rounded-xl text-xs font-black shadow-sm hover:bg-gray-50 transition-all active:scale-95"
+                                        >
+                                            VÀO CÀI ĐẶT
+                                        </button>
+                                        <button
+                                            onClick={handleSync}
+                                            className="px-5 py-2 bg-gray-100 text-gray-400 rounded-xl text-xs font-black hover:bg-gray-200 transition-all active:scale-95"
+                                        >
+                                            THỬ LẠI
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-gray-100">
+                                    <table className="w-full border-collapse table-fixed">
+                                        <tbody>
+                                            {filteredData.slice(0, dictionaryLimit).map(({ item, originalIndex }, idx) => (
+                                                <DictionaryRow
+                                                    key={`${item.japanese}-${item.english}-${originalIndex}`}
+                                                    item={item}
+                                                    displayIdx={idx}
+                                                    originalIdx={originalIndex}
+                                                    copyFeedback={copyFeedback}
+                                                    onCopy={handleCopy}
+                                                    onEdit={setEditingEntryAndIndex}
+                                                    onDelete={handleDeleteEntry}
+                                                    searchTerm={globalSearchTerm}
+                                                />
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    {filteredData.length > dictionaryLimit && (
+                                        <div className="p-6 flex flex-col items-center justify-center bg-gray-50/50">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">
+                                                Showing {dictionaryLimit} of {filteredData.length} entries
+                                            </p>
+                                            <button
+                                                onClick={() => setDictionaryLimit(prev => prev + 500)}
+                                                className="px-8 py-3 bg-white border border-indigo-200 text-indigo-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 hover:shadow-md transition-all active:scale-95 shadow-sm"
+                                            >
+                                                📂 LOAD MORE ENTRIES (+500)
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Floating Add Button */}
+                                    <button
+                                        onClick={() => {
+                                            setEditingEntry({ japanese: '', english: '', vietnamese: '' });
+                                            setEditingIndex(null);
+                                            setShowEditModal(true);
+                                        }}
+                                        className="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-indigo-700 hover:scale-105 active:scale-95 transition-all z-50 group"
+                                        title="Add New Entry"
+                                    >
+                                        <span className="text-3xl font-light leading-none pb-1">+</span>
+                                        <span className="absolute right-full mr-2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none font-bold">Add Entry</span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </>
                 ) : (
                     <div className="flex-1 flex flex-col overflow-hidden bg-white">
                         <div className="grid grid-cols-2 flex-1 overflow-hidden">
