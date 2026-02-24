@@ -19,6 +19,7 @@ interface TranslatedSegment {
     text: string;
     original: string;
     key: string;
+    uid: string;
     isMultiple: boolean;
     options: string[];
 }
@@ -27,44 +28,46 @@ interface TranslatedLine {
     segments: TranslatedSegment[];
 }
 
-const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, copiedKey, lIdx, onShowTooltip }: {
+const MemoizedSegment = React.memo(({ seg, hoveredUid, hoveredKey, onHover, onClick, copiedKey, lIdx, onShowTooltip, globalTerm }: {
     seg: TranslatedSegment,
+    hoveredUid: string | null,
     hoveredKey: string | null,
-    onHover: (key: string | null) => void,
+    onHover: (uid: string | null, key: string | null) => void,
     onClick: (seg: TranslatedSegment) => void,
     copiedKey: string | null,
     lIdx: number,
-    onShowTooltip: (seg: TranslatedSegment, rect: DOMRect) => void
+    onShowTooltip: (seg: TranslatedSegment, rect: DOMRect) => void,
+    globalTerm?: string
 }) => {
-    if (seg.type === 'text') return <>{seg.text}</>;
+    if (seg.type === 'text') return <HighlightText text={seg.text} globalTerm={globalTerm} />;
 
     const isCopied = copiedKey === seg.key;
     const elementRef = useRef<HTMLSpanElement>(null);
 
     useEffect(() => {
-        if (seg.isMultiple && hoveredKey === seg.key && elementRef.current) {
+        if (seg.isMultiple && hoveredUid === seg.uid && elementRef.current) {
             onShowTooltip(seg, elementRef.current.getBoundingClientRect());
         }
-    }, [hoveredKey, seg, onShowTooltip]);
+    }, [hoveredUid, seg, onShowTooltip]);
 
     return (
         <span
             ref={elementRef}
-            key={seg.key}
+            key={seg.uid}
             className={`inline-flex items-center group/opt relative cursor-pointer mx-0.5 transition-all duration-300 font-bold
                 ${seg.isMultiple ? 'text-amber-600 border-b-2 border-amber-400/50 hover:border-amber-400' : 'text-indigo-600 border-b border-indigo-200 hover:border-indigo-400'}
-                ${hoveredKey === seg.key ? '!text-indigo-900 !border-indigo-600 !border-b-2 scale-[1.02]' : ''}
+                ${hoveredKey === seg.key ? (hoveredUid === seg.uid ? '!text-indigo-900 !border-indigo-600 !border-b-2 scale-[1.05] z-10' : '!text-indigo-600/80 !border-indigo-400/50 !border-b-2') : ''}
                 ${isCopied ? '!text-green-600 !border-green-600 !border-b-2' : ''}
             `}
             onMouseEnter={() => {
-                onHover(seg.key);
+                onHover(seg.uid, seg.key);
             }}
             onMouseLeave={() => {
-                onHover(null);
+                onHover(null, null);
             }}
             onClick={() => onClick(seg)}
         >
-            <span className="relative z-10">{seg.text}</span>
+            <span className="relative z-10"><HighlightText text={seg.text} globalTerm={globalTerm} /></span>
 
             {seg.isMultiple && (
                 <span className="ml-1 text-[8px] opacity-60 bg-indigo-50 px-1 rounded-full border border-indigo-200 select-none">
@@ -92,31 +95,37 @@ const MemoizedSegment = React.memo(({ seg, hoveredKey, onHover, onClick, copiedK
 
 const HighlighterOverlay = React.memo(({
     translatedLines,
+    hoveredUid,
     hoveredKey,
-    lineSpacing
+    lineSpacing,
+    globalTerm
 }: {
     translatedLines: TranslatedLine[],
+    hoveredUid: string | null,
     hoveredKey: string | null,
-    lineSpacing: number
+    lineSpacing: number,
+    globalTerm?: string
 }) => {
     return (
         <div style={{ tabSize: 4, MozTabSize: 4 }}>
             {translatedLines.map((line, lIdx) => (
                 <div
                     key={lIdx}
-                    className={`transition-colors duration-200 whitespace-pre ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/10' : ''}`}
+                    className="transition-colors duration-200 whitespace-pre"
                     style={{ minHeight: `${lineSpacing}em`, lineHeight: lineSpacing }}
                 >
                     {line.segments.length > 0 ? line.segments.map(seg => (
                         <span
-                            key={seg.key}
-                            className={`transition-colors duration-300 ${seg.type === 'phrase'
+                            key={seg.uid}
+                            className={`transition-all duration-300 ${seg.type === 'phrase'
                                 ? (hoveredKey === seg.key
-                                    ? 'text-indigo-600 underline decoration-2 underline-offset-4 bg-indigo-50'
-                                    : 'text-indigo-600 underline decoration-1 underline-offset-4 bg-indigo-50/30')
+                                    ? (hoveredUid === seg.uid
+                                        ? 'text-indigo-900 underline decoration-2 underline-offset-4 bg-indigo-200/50'
+                                        : 'text-indigo-500 underline decoration-1 underline-offset-4 bg-indigo-100/30')
+                                    : 'text-indigo-600/40 underline decoration-px underline-offset-4 bg-indigo-50/10')
                                 : 'text-gray-800'}`}
                         >
-                            {seg.original}
+                            <HighlightText text={seg.original} globalTerm={globalTerm} />
                         </span>
                     )) : '\u200B'}
                 </div>
@@ -146,8 +155,9 @@ const RevertTKGrid = React.memo((props: {
     translationDict: any[],
     selections: Record<string, string>,
     onSelectionChange: (key: string, value: string) => void,
+    hoveredUid: string | null,
     hoveredKey: string | null,
-    onHover: (key: string | null) => void,
+    onHover: (uid: string | null, key: string | null) => void,
     copiedKey: string | null,
     onCopySegment: (key: string) => void
 }) => {
@@ -172,7 +182,7 @@ const RevertTKGrid = React.memo((props: {
                 const text = cellText || '';
                 if (!text) return null;
 
-                const matches: { start: number, end: number, replacements: string[], phrase: string }[] = [];
+                const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string }[] = [];
                 const normLine = normalizeText(text);
 
                 for (const item of props.translationDict) {
@@ -189,7 +199,8 @@ const RevertTKGrid = React.memo((props: {
                                 start,
                                 end,
                                 replacements: item.replacements,
-                                phrase: text.substring(start, end)
+                                phrase: text.substring(start, end),
+                                dictKey: item.phrase
                             });
                         }
                         if (item.phrase.length === 0) break;
@@ -205,17 +216,20 @@ const RevertTKGrid = React.memo((props: {
                 matches.forEach((m) => {
                     if (m.start > lastIndex) {
                         const txt = text.substring(lastIndex, m.start);
-                        segments.push({ type: 'text', text: txt, original: txt, key: `rg-t-${rIdx}-${cIdx}-${lastIndex}`, isMultiple: false, options: [] });
+                        const posKey = `rg-t-${rIdx}-${cIdx}-${lastIndex}`;
+                        segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
                     }
 
-                    const selectionKey = `rg-s-${rIdx}-${cIdx}-${m.start}`;
+                    const selectionKey = `vkey-${encodeURIComponent(m.dictKey || m.phrase)}`;
                     const currentSelection = props.selections[selectionKey] || m.replacements[0];
+                    const posKey = `rg-p-${rIdx}-${cIdx}-${m.start}`;
 
                     segments.push({
                         type: 'phrase',
                         text: currentSelection,
                         original: m.phrase,
                         key: selectionKey,
+                        uid: posKey,
                         isMultiple: m.replacements.length > 1,
                         options: m.replacements
                     });
@@ -224,7 +238,8 @@ const RevertTKGrid = React.memo((props: {
 
                 if (lastIndex < text.length) {
                     const txt = text.substring(lastIndex);
-                    segments.push({ type: 'text', text: txt, original: txt, key: `rg-t-${rIdx}-${cIdx}-${lastIndex}`, isMultiple: false, options: [] });
+                    const posKey = `rg-t-${rIdx}-${cIdx}-${lastIndex}`;
+                    segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
                 }
                 return segments;
             })
@@ -297,9 +312,10 @@ const RevertTKGrid = React.memo((props: {
                                                 segmentedRows[rIdx]?.[cIdx] ? (
                                                     segmentedRows[rIdx][cIdx].map(seg => (
                                                         <MemoizedSegment
-                                                            key={seg.key}
+                                                            key={seg.uid}
                                                             seg={seg}
                                                             lIdx={rIdx}
+                                                            hoveredUid={props.hoveredUid}
                                                             hoveredKey={props.hoveredKey}
                                                             onHover={props.onHover}
                                                             copiedKey={props.copiedKey}
@@ -370,7 +386,7 @@ const RevertTKGrid = React.memo((props: {
 });
 
 
-const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback, onCopy, onEdit, onDelete, searchTerm }: {
+const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback, onCopy, onEdit, onDelete, searchTerm, globalSearchTerm }: {
     item: TranslateEntry,
     displayIdx: number,
     originalIdx: number,
@@ -378,7 +394,8 @@ const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback,
     onCopy: any,
     onEdit: (item: TranslateEntry, idx: number) => void,
     onDelete: (idx: number) => void,
-    searchTerm: string
+    searchTerm: string,
+    globalSearchTerm: string
 }) => (
     <tr className="border-b border-gray-200 hover:bg-indigo-50/60 transition-colors group/row">
         <td className="w-12 px-2 py-2.5 text-center border-r border-gray-100 text-[10px] text-gray-400 font-bold select-none bg-gray-50/30 group-hover/row:bg-indigo-50/0 transition-colors">
@@ -392,9 +409,9 @@ const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback,
             onClick={() => onCopy(item.japanese, originalIdx, 'jp')}
         >
             <div className="flex justify-between items-center group/cell">
-                <span className="text-[12px] font-bold text-gray-700 leading-tight whitespace-pre-wrap break-words group-hover/row:text-gray-900">
-                    <HighlightText text={item.japanese} term={searchTerm} />
-                </span>
+                <div className="text-[12px] font-bold text-gray-800 leading-relaxed mb-0.5 break-words">
+                    <HighlightText text={item.japanese} term={searchTerm} globalTerm={globalSearchTerm} />
+                </div>
                 {copyFeedback?.row === originalIdx && copyFeedback.col === 'jp' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
             </div>
         </td>
@@ -406,9 +423,9 @@ const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback,
             onClick={() => onCopy(item.english, originalIdx, 'en')}
         >
             <div className="flex justify-between items-center">
-                <span className="text-[12px] font-mono font-black text-indigo-600 leading-tight break-all uppercase group-hover/row:text-indigo-700 text-left w-full">
-                    <HighlightText text={item.english} term={searchTerm} />
-                </span>
+                <div className="text-[12px] font-mono font-black text-indigo-600 leading-tight break-all uppercase group-hover/row:text-indigo-700 text-left w-full">
+                    <HighlightText text={item.english} term={searchTerm} globalTerm={globalSearchTerm} />
+                </div>
                 {copyFeedback?.row === originalIdx && copyFeedback.col === 'en' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
             </div>
         </td>
@@ -420,9 +437,9 @@ const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback,
             onClick={() => onCopy(item.vietnamese, originalIdx, 'vi')}
         >
             <div className="flex justify-between items-center">
-                <span className="text-[12px] font-bold text-teal-600 leading-tight break-words font-sans group-hover/row:text-teal-700">
-                    <HighlightText text={item.vietnamese} term={searchTerm} />
-                </span>
+                <div className="text-[12px] font-bold text-teal-600 leading-tight break-words font-sans group-hover/row:text-teal-700">
+                    <HighlightText text={item.vietnamese} term={searchTerm} globalTerm={globalSearchTerm} />
+                </div>
                 {copyFeedback?.row === originalIdx && copyFeedback.col === 'vi' && <span className="text-[9px] text-green-600 font-black animate-pulse select-none pointer-events-none">COPY!</span>}
 
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity bg-white/90 backdrop-blur-sm p-1 rounded-lg shadow-sm border border-gray-100 ring-1 ring-black/5" onClick={(e) => e.stopPropagation()}>
@@ -464,7 +481,8 @@ export const TranslateTab: React.FC = React.memo(() => {
         textCompareCurrentInput, setTextCompareCurrentInput,
         runShortcut, connections,
         subTab, setSubTab,
-        globalSearchTerm, lineSpacing
+        lineSpacing,
+        globalSearchTerm
     } = useAppStore(useShallow(state => ({
         activeTab: state.activeTab,
         setActiveTab: state.setActiveTab,
@@ -499,9 +517,12 @@ export const TranslateTab: React.FC = React.memo(() => {
         connections: state.connections,
         subTab: state.translateSubTab,
         setSubTab: state.setTranslateSubTab,
-        globalSearchTerm: state.globalSearchTerm,
-        lineSpacing: state.translateLineHeight
+        lineSpacing: state.translateLineHeight,
+        globalSearchTerm: state.globalSearchTerm
     })));
+
+    const [searchTerm, setSearchTerm] = useState('');
+    const deferredGlobalSearchTerm = React.useDeferredValue(globalSearchTerm);
 
     const [data, setData] = useState<TranslateEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -515,6 +536,7 @@ export const TranslateTab: React.FC = React.memo(() => {
     const [syncProgress, setSyncProgress] = useState(0);
     const [selections, setSelections] = useState<Record<string, string>>({});
     const [translatedLines, setTranslatedLines] = useState<TranslatedLine[]>([]);
+    const [hoveredUid, setHoveredUid] = useState<string | null>(null);
     const [hoveredKey, setHoveredKey] = useState<string | null>(null);
     const [segmentCopyFeedback, setSegmentCopyFeedback] = useState<string | null>(null);
     const [resultCopyFeedback, setResultCopyFeedback] = useState(false);
@@ -532,7 +554,7 @@ export const TranslateTab: React.FC = React.memo(() => {
 
     const deferredBulkInput = useDeferredValue(bulkInput);
     const deferredRevertTKInput = useDeferredValue(revertTKInput);
-    const deferredSearchTerm = useDeferredValue(globalSearchTerm);
+    const deferredSearchTerm = useDeferredValue(searchTerm);
     const [newSectionLabel, setNewSectionLabel] = useState('');
     const [revertTKMode, setRevertTKMode] = useState<'TKtoCode' | 'CodetoTK'>('CodetoTK');
     const [revertTKResultFormat, setRevertTKResultFormat] = useState<'text' | 'table'>('table');
@@ -941,13 +963,13 @@ export const TranslateTab: React.FC = React.memo(() => {
     };
 
     useEffect(() => {
-        if (!hoveredKey && !isMouseInTooltip && tooltip) {
+        if (!hoveredUid && !isMouseInTooltip && tooltip) {
             const timer = setTimeout(() => {
                 setTooltip(null);
             }, 50);
             return () => clearTimeout(timer);
         }
-    }, [hoveredKey, isMouseInTooltip, tooltip]);
+    }, [hoveredUid, isMouseInTooltip, tooltip]);
 
     const handleSync = () => loadData(true);
 
@@ -1478,7 +1500,7 @@ export const TranslateTab: React.FC = React.memo(() => {
             const lines = deferredBulkInput.split('\n');
 
             const newTranslatedLines: TranslatedLine[] = lines.map((line, lIdx) => {
-                const matches: { start: number, end: number, replacements: string[], phrase: string }[] = [];
+                const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string }[] = [];
                 const normLine = normalizeText(line);
 
                 for (const item of translationDict) {
@@ -1495,7 +1517,8 @@ export const TranslateTab: React.FC = React.memo(() => {
                                 start,
                                 end,
                                 replacements: item.replacements,
-                                phrase: line.substring(start, end)
+                                phrase: line.substring(start, end),
+                                dictKey: item.phrase
                             });
                         }
                         if (item.phrase.length === 0) break;
@@ -1509,16 +1532,19 @@ export const TranslateTab: React.FC = React.memo(() => {
                 matches.forEach((match) => {
                     if (match.start > lastIndex) {
                         const txt = line.substring(lastIndex, match.start);
-                        segments.push({ type: 'text', text: txt, original: txt, key: `t-${lIdx}-${lastIndex}`, isMultiple: false, options: [] });
+                        const posKey = `t-${lIdx}-${lastIndex}`;
+                        segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
                     }
-                    const key = `p-${lIdx}-${match.start}`;
-                    segments.push({ type: 'phrase', text: selections[key] || match.replacements[0], original: match.phrase, key, isMultiple: match.replacements.length > 1, options: match.replacements });
+                    const selectionKey = `vkey-${encodeURIComponent(match.dictKey || match.phrase)}`;
+                    const posKey = `p-${lIdx}-${match.start}`;
+                    segments.push({ type: 'phrase', text: selections[selectionKey] || match.replacements[0], original: match.phrase, key: selectionKey, uid: posKey, isMultiple: match.replacements.length > 1, options: match.replacements });
                     lastIndex = match.end;
                 });
 
                 if (lastIndex < line.length) {
                     const txt = line.substring(lastIndex);
-                    segments.push({ type: 'text', text: txt, original: txt, key: `t-${lIdx}-${lastIndex}`, isMultiple: false, options: [] });
+                    const posKey = `t-${lIdx}-${lastIndex}`;
+                    segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
                 }
                 return { segments };
             });
@@ -1538,7 +1564,7 @@ export const TranslateTab: React.FC = React.memo(() => {
             const lines = deferredRevertTKInput.split('\n');
 
             const newTranslatedLines: TranslatedLine[] = lines.map((line, lIdx) => {
-                const matches: { start: number, end: number, replacements: string[], phrase: string }[] = [];
+                const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string }[] = [];
                 const normLine = normalizeText(line);
 
                 for (const item of translationDict) {
@@ -1555,7 +1581,8 @@ export const TranslateTab: React.FC = React.memo(() => {
                                 start,
                                 end,
                                 replacements: item.replacements,
-                                phrase: line.substring(start, end)
+                                phrase: line.substring(start, end),
+                                dictKey: item.phrase
                             });
                         }
                         if (item.phrase.length === 0) break;
@@ -1570,17 +1597,20 @@ export const TranslateTab: React.FC = React.memo(() => {
                 matches.forEach((m) => {
                     if (m.start > lastIndex) {
                         const txt = line.substring(lastIndex, m.start);
-                        segments.push({ type: 'text', text: txt, original: txt, key: `rt-${lIdx}-${lastIndex}`, isMultiple: false, options: [] });
+                        const posKey = `rt-${lIdx}-${lastIndex}`;
+                        segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
                     }
 
-                    const selectionKey = `rs-${lIdx}-${m.start}`;
+                    const selectionKey = `vkey-${encodeURIComponent(m.dictKey || m.phrase)}`;
                     const currentSelection = selections[selectionKey] || m.replacements[0];
+                    const posKey = `rs-${lIdx}-${m.start}`;
 
                     segments.push({
                         type: 'phrase',
                         text: currentSelection,
                         original: m.phrase,
                         key: selectionKey,
+                        uid: posKey,
                         isMultiple: m.replacements.length > 1,
                         options: m.replacements
                     });
@@ -1589,7 +1619,8 @@ export const TranslateTab: React.FC = React.memo(() => {
 
                 if (lastIndex < line.length) {
                     const txt = line.substring(lastIndex);
-                    segments.push({ type: 'text', text: txt, original: txt, key: `rt-${lIdx}-${lastIndex}`, isMultiple: false, options: [] });
+                    const posKey = `rt-${lIdx}-${lastIndex}`;
+                    segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
                 }
                 return { segments };
             });
@@ -1689,8 +1720,8 @@ export const TranslateTab: React.FC = React.memo(() => {
         <div className="flex flex-col h-[calc(100vh-80px)] gap-4 p-4 animate-in fade-in duration-300 overflow-hidden font-sans relative">
             {/* Edit Modal */}
             {showEditModal && (
-                <div className="absolute inset-0 z-[2000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowEditModal(false)}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                <div className="absolute inset-0 z-[2000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="bg-indigo-600 px-6 py-4 flex justify-between items-center">
                             <h3 className="font-bold text-white text-lg">
                                 {editingIndex !== null ? '✏️ Edit Entry' : '✨ New Entry'}
@@ -1823,9 +1854,16 @@ export const TranslateTab: React.FC = React.memo(() => {
                     <div className="flex-1 flex flex-wrap items-center gap-4 min-w-[200px]">
                         {subTab === 'dictionary' ? (
                             <div className="flex-1 flex items-center gap-4">
-                                <div className="flex-1 flex items-center gap-2 px-4 py-2 bg-indigo-50/50 rounded-2xl border border-indigo-100">
-                                    <span className="text-indigo-400 text-[10px] font-black uppercase tracking-widest">Global Filter Active</span>
-                                    <div className="h-1 w-1 bg-indigo-400 rounded-full animate-pulse"></div>
+                                <div className="flex-1 flex items-center relative group">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400">🔍</span>
+                                    <input
+                                        type="text"
+                                        placeholder="Search Dictionary..."
+                                        value={searchTerm}
+                                        onChange={e => setSearchTerm(e.target.value)}
+                                        onFocus={(e) => e.target.select()}
+                                        className="app-local-search w-full bg-indigo-50 border border-indigo-100 rounded-xl pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 shadow-inner font-bold text-indigo-900 transition-all focus:bg-white"
+                                    />
                                 </div>
                                 <label className="flex items-center gap-2 cursor-pointer group shrink-0">
                                     <div className="relative flex items-center">
@@ -1956,8 +1994,10 @@ export const TranslateTab: React.FC = React.memo(() => {
                                     >
                                         <HighlighterOverlay
                                             translatedLines={revertTKTranslatedLines}
+                                            hoveredUid={hoveredUid}
                                             hoveredKey={hoveredKey}
                                             lineSpacing={lineSpacing}
+                                            globalTerm={deferredGlobalSearchTerm}
                                         />
                                     </div>
                                     <textarea
@@ -2051,8 +2091,9 @@ export const TranslateTab: React.FC = React.memo(() => {
                                             translationDict={translationDict}
                                             selections={selections}
                                             onSelectionChange={(key, val) => setSelections(prev => ({ ...prev, [key]: val }))}
+                                            hoveredUid={hoveredUid}
                                             hoveredKey={hoveredKey}
-                                            onHover={setHoveredKey}
+                                            onHover={(uid, key) => { setHoveredUid(uid); setHoveredKey(key); }}
                                             copiedKey={segmentCopyFeedback}
                                             onCopySegment={(key) => {
                                                 setSegmentCopyFeedback(key);
@@ -2184,7 +2225,8 @@ export const TranslateTab: React.FC = React.memo(() => {
                                                     onCopy={handleCopy}
                                                     onEdit={setEditingEntryAndIndex}
                                                     onDelete={handleDeleteEntry}
-                                                    searchTerm={globalSearchTerm}
+                                                    searchTerm={deferredSearchTerm}
+                                                    globalSearchTerm={deferredGlobalSearchTerm}
                                                 />
                                             ))}
                                         </tbody>
@@ -2258,8 +2300,10 @@ export const TranslateTab: React.FC = React.memo(() => {
                                         >
                                             <HighlighterOverlay
                                                 translatedLines={translatedLines}
+                                                hoveredUid={hoveredUid}
                                                 hoveredKey={hoveredKey}
                                                 lineSpacing={lineSpacing}
+                                                globalTerm={deferredGlobalSearchTerm}
                                             />
                                         </div>
                                         <textarea
@@ -2373,7 +2417,7 @@ export const TranslateTab: React.FC = React.memo(() => {
                                                 return (
                                                     <div
                                                         key={lIdx}
-                                                        className={`transition-all duration-150 relative group/line hover:!z-[100] whitespace-nowrap w-full hover:bg-indigo-100/60 hover:border-l-4 hover:border-l-indigo-500 hover:pl-1 ${hoveredKey?.startsWith(`p-${lIdx}-`) ? 'bg-indigo-500/10 border-l-4 border-l-indigo-600 pl-1' : ''}`}
+                                                        className="transition-all duration-150 relative group/line hover:!z-[100] whitespace-nowrap w-full hover:bg-indigo-100/60 hover:border-l-4 hover:border-l-indigo-500 hover:pl-1"
                                                         style={{
                                                             height: `${lineSpacing}em`,
                                                             zIndex: translatedLines.length - lIdx
@@ -2382,14 +2426,16 @@ export const TranslateTab: React.FC = React.memo(() => {
                                                         <div className="flex-1 whitespace-nowrap">
                                                             {line.segments.length > 0 ? line.segments.map(seg => (
                                                                 <MemoizedSegment
-                                                                    key={seg.key}
+                                                                    key={seg.uid}
                                                                     seg={seg}
                                                                     lIdx={lIdx}
+                                                                    hoveredUid={hoveredUid}
                                                                     hoveredKey={hoveredKey}
-                                                                    onHover={setHoveredKey}
+                                                                    onHover={(uid, key) => { setHoveredUid(uid); setHoveredKey(key); }}
                                                                     copiedKey={segmentCopyFeedback}
                                                                     onClick={handleSegmentClick}
                                                                     onShowTooltip={handleShowTooltip}
+                                                                    globalTerm={deferredGlobalSearchTerm}
                                                                 />
                                                             )) : '\u200B'}
                                                         </div>

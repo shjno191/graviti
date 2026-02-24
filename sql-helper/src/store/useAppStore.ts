@@ -112,6 +112,8 @@ export interface AppState {
     setTextCompareRemoveAppend: (val: boolean) => void;
     textCompareTruncateDuplicate: boolean;
     setTextCompareTruncateDuplicate: (val: boolean) => void;
+    textCompareRemoveEmptyLines: boolean;
+    setTextCompareRemoveEmptyLines: (val: boolean) => void;
     textCompareOrdered: boolean;
     setTextCompareOrdered: (val: boolean) => void;
     textCompareIgnoreCase: boolean;
@@ -138,6 +140,9 @@ export interface AppState {
     textCompareCurrentInput: string;
     setTextCompareCurrentInput: (val: string) => void;
 
+    uiHighlightCopied: boolean;
+    setUiHighlightCopied: (val: boolean) => void;
+
     translateSubTab: 'dictionary' | 'quick';
     setTranslateSubTab: (tab: 'dictionary' | 'quick') => void;
     translateLineHeight: number;
@@ -146,6 +151,9 @@ export interface AppState {
     setCompareSubTab: (tab: 'data' | 'schema' | 'text' | 'generate') => void;
 
     updateConnectionSessionStatus: (id: string, status: 'success' | 'error') => void;
+
+    settingsSection: 'database' | 'shortcuts' | 'appearance' | 'translate' | 'revertTK' | 'compare';
+    setSettingsSection: (section: 'database' | 'shortcuts' | 'appearance' | 'translate' | 'revertTK' | 'compare') => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -269,6 +277,8 @@ export const useAppStore = create<AppState>((set) => ({
     setTextCompareRemoveAppend: (val) => set({ textCompareRemoveAppend: val }),
     textCompareTruncateDuplicate: false,
     setTextCompareTruncateDuplicate: (val) => set({ textCompareTruncateDuplicate: val }),
+    textCompareRemoveEmptyLines: false,
+    setTextCompareRemoveEmptyLines: (val) => set({ textCompareRemoveEmptyLines: val }),
     textCompareOrdered: false,
     setTextCompareOrdered: (val) => set({ textCompareOrdered: val }),
     textCompareIgnoreCase: false,
@@ -292,4 +302,10 @@ export const useAppStore = create<AppState>((set) => ({
     setTextCompareExpectedInput: (val) => set({ textCompareExpectedInput: val }),
     textCompareCurrentInput: '',
     setTextCompareCurrentInput: (val) => set({ textCompareCurrentInput: val }),
+
+    uiHighlightCopied: true,
+    setUiHighlightCopied: (val) => set({ uiHighlightCopied: val }),
+
+    settingsSection: 'database',
+    setSettingsSection: (section) => set({ settingsSection: section }),
 }));

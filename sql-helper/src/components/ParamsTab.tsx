@@ -11,7 +11,7 @@ export const ParamsTab: React.FC = React.memo(() => {
     const {
         queryGroups, addQueryGroup, updateQueryGroup, removeQueryGroup,
         autoClipboard, setAutoClipboard, connections,
-        runShortcut, globalSearchTerm, updateConnectionSessionStatus
+        runShortcut, updateConnectionSessionStatus
     } = useAppStore(useShallow(state => ({
         queryGroups: state.queryGroups,
         addQueryGroup: state.addQueryGroup,
@@ -21,13 +21,14 @@ export const ParamsTab: React.FC = React.memo(() => {
         setAutoClipboard: state.setAutoClipboard,
         connections: state.connections,
         runShortcut: state.runShortcut,
-        globalSearchTerm: state.globalSearchTerm,
         updateConnectionSessionStatus: state.updateConnectionSessionStatus
     })));
 
+    const [searchTerm, setSearchTerm] = React.useState('');
+
     const filteredGroups = React.useMemo(() => {
-        if (!globalSearchTerm) return queryGroups;
-        const term = globalSearchTerm.toLowerCase();
+        if (!searchTerm) return queryGroups;
+        const term = searchTerm.toLowerCase();
         return queryGroups.filter(g => {
             const matchInGroup =
                 (g.statementId?.toLowerCase().includes(term)) ||
@@ -45,7 +46,7 @@ export const ParamsTab: React.FC = React.memo(() => {
             }
             return false;
         });
-    }, [queryGroups, globalSearchTerm]);
+    }, [queryGroups, searchTerm]);
 
     const [globalLogPath, setGlobalLogPath] = React.useState<string>('');
 
@@ -288,6 +289,19 @@ export const ParamsTab: React.FC = React.memo(() => {
                         />
                         <span className="text-sm font-bold text-gray-600 group-hover:text-primary transition-colors">Auto Copy</span>
                     </label>
+
+                    <div className="relative group mx-2">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                        <input
+                            type="text"
+                            placeholder="Search fragments..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            onFocus={(e) => e.target.select()}
+                            className="app-local-search w-40 focus:w-60 transition-all bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-primary shadow-inner font-bold"
+                        />
+                    </div>
+
                     <button
                         onClick={addQueryGroup}
                         className="px-6 py-3 bg-primary text-white rounded-2xl font-black shadow-lg hover:shadow-primary/30 transition-all flex items-center gap-2"

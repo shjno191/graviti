@@ -43,7 +43,7 @@ export const CompareSuiteTab = React.memo(() => {
                 ))}
             </div>
 
-            <div className="flex-1 overflow-hidden rounded-xl relative">
+            <div className="flex-1 overflow-hidden rounded-xl relative min-h-0">
                 {activeSubTab === 'data' && <LabTab />}
                 {activeSubTab === 'schema' && (
                     <div className="h-full w-full overflow-auto bg-gray-50/30">

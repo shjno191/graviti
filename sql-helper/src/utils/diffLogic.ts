@@ -19,12 +19,14 @@ export interface DiffResult {
 export function compareOrdered(expectedParts: string[], currentParts: string[], ignoreCase: boolean = false, trim: boolean = false): DiffResult {
     const n = expectedParts.length;
     const m = currentParts.length;
-    
+
     // Helper to get comparison key
     const getKey = (s: string) => {
         let key = s;
         if (trim) key = key.trim();
         if (ignoreCase) key = key.toLowerCase();
+        // Normalize Japanese full-width (Zenkaku) characters to half-width (Hankaku) for smarter matching
+        key = key.replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
         return key;
     };
 
@@ -50,12 +52,12 @@ export function compareOrdered(expectedParts: string[], currentParts: string[], 
 
     while (i > 0 || j > 0) {
         if (i > 0 && j > 0 && getKey(expectedParts[i - 1]) === getKey(currentParts[j - 1])) {
-            lines.unshift({ 
-                text: expectedParts[i - 1], 
+            lines.unshift({
+                text: expectedParts[i - 1],
                 currentText: currentParts[j - 1],
-                type: 'same', 
-                originalIndex: i - 1, 
-                currentIndex: j - 1 
+                type: 'same',
+                originalIndex: i - 1,
+                currentIndex: j - 1
             });
             i--;
             j--;
@@ -77,7 +79,7 @@ export function compareOrdered(expectedParts: string[], currentParts: string[], 
     // But LCS naturally separates them into Added/Removed blocks.
     // For a cleaner "Text Compare" that resembles Git diff, keeping them as Added/Removed is correct.
     // Modified is usually inferred when a Remove is immediately followed by an Add.
-    
+
     // Let's post-process to mark "Modified" if we have Remove immediately followed by Add?
     // The requirements say "Highlight added, removed, and modified lines".
     // Git diff usually shows Removed then Added.
@@ -97,12 +99,14 @@ export function compareUnordered(expectedParts: string[], currentParts: string[]
         let key = s;
         if (trim) key = key.trim();
         if (ignoreCase) key = key.toLowerCase();
+        // Normalize Japanese full-width (Zenkaku) characters to half-width (Hankaku) for smarter matching
+        key = key.replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
         return key;
     };
 
     const currentCounts = new Map<string, number>();
     const currentIndices = new Map<string, number[]>();
-    
+
     currentParts.forEach((line, index) => {
         const key = getKey(line);
         currentCounts.set(key, (currentCounts.get(key) || 0) + 1);
@@ -125,13 +129,13 @@ export function compareUnordered(expectedParts: string[], currentParts: string[]
             // We take the first available index for this line from Current to be specific
             const indices = currentIndices.get(key)!;
             const currentIndex = indices.shift(); // take first
-            
-            lines.push({ 
-                text: line, 
+
+            lines.push({
+                text: line,
                 currentText: currentParts[currentIndex!], // Use original text from Current
-                type: 'same', 
-                originalIndex: index, 
-                currentIndex: currentIndex 
+                type: 'same',
+                originalIndex: index,
+                currentIndex: currentIndex
             });
             currentCounts.set(key, count - 1);
         } else {
@@ -147,59 +151,59 @@ export function compareUnordered(expectedParts: string[], currentParts: string[]
     // To preserve "original order of extras" usually we'd iterate Current again, 
     // but here we just want to list them. 
     // Let's iterate the original Current array to pick up the leftovers in their relative order.
-    
+
     // We need to track which *instances* of lines in Current were used. 
     // A simple way is to re-build a frequency map of what we USED, and then iterate Current.
-    
+
     // Easier way:
     // We already decremented `currentCounts`. If it's > 0, those are extras.
     // We can iterate `currentParts` and check if we still need to "consume" them as extras.
-    
+
     // Wait, `currentCounts` decrements when we match. So remaining count is exactly what's extra.
     // But we need to know *which instance* correspond to the extras if we care about their position.
     // Actually, for "Unordered", the visual output usually appends extras at the end.
-    
+
     // We can just iterate `currentCounts`? No, that loses order.
     // Let's iterate `currentParts`. We need a fresh map for this or reset something.
-    
+
     // Let's reconstruct based on `currentParts` iteration:
     // We need to know for each line in `currentParts`, was it used?
     // We can use a usage tracker.
-    
 
-    
+
+
     // We iterate `currentParts` to find these extras in order
     // But wait, `currentCounts` just has counts. It doesn't tell us *which* specific index was skipped if there are duplicates.
     // Actually it doesn't matter much for unordered, but preserving relative order of extras is nice.
-    
+
     // Let's try to match them:
-    const remainingToFind = new Map(currentCounts); 
-    
+    const remainingToFind = new Map(currentCounts);
+
     currentParts.forEach((line) => {
         const key = getKey(line);
         if (remainingToFind.has(key) && remainingToFind.get(key)! > 0) {
-             // This is an extra line
-             // But wait, how do we know this specific instance wasn't the one used for a match?
-             // Since it is "Unordered", we can technically say "Any instance is fine".
-             // But valid indices are needed? Not strictly for display if we just append.
-             
-             // Simplification:
-             // We can just iterate the map and dump them.
-             // OR better: we want to show them effectively.
-             // Let's just create the extra lines now.
-             
-             // Actually, the previous logic:
-             // We used `currentIndices.shift()` to grab indices for Matches.
-             // Typically we want the *remaining* indices for Extras.
-             // Let's use `currentIndices` which now contains only the remaining indices!
-             
-             return; // just a forEach placeholder
+            // This is an extra line
+            // But wait, how do we know this specific instance wasn't the one used for a match?
+            // Since it is "Unordered", we can technically say "Any instance is fine".
+            // But valid indices are needed? Not strictly for display if we just append.
+
+            // Simplification:
+            // We can just iterate the map and dump them.
+            // OR better: we want to show them effectively.
+            // Let's just create the extra lines now.
+
+            // Actually, the previous logic:
+            // We used `currentIndices.shift()` to grab indices for Matches.
+            // Typically we want the *remaining* indices for Extras.
+            // Let's use `currentIndices` which now contains only the remaining indices!
+
+            return; // just a forEach placeholder
         }
     });
 
     // `currentIndices` now has only the indices that were NOT used (because we shifted them out).
     // Let's collect them.
-    const allExtras: {text: string, index: number}[] = [];
+    const allExtras: { text: string, index: number }[] = [];
     currentIndices.forEach((indices, _key) => {
         indices.forEach(idx => {
             allExtras.push({ text: currentParts[idx], index: idx });

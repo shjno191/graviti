@@ -48,8 +48,24 @@ pub struct AppSettings {
     pub column_split_apply_to_table: Option<bool>,
     pub revert_tk_delete_chars: Option<String>,
     pub revert_tk_mapping: Option<Vec<RevertTKMapping>>,
+    pub text_compare_delete_chars: Option<String>,
+    pub text_compare_remove_append: Option<bool>,
+    pub text_compare_truncate_duplicate: Option<bool>,
+    pub text_compare_remove_empty_lines: Option<bool>,
+    pub text_compare_sort: Option<bool>,
+    pub text_compare_ordered: Option<bool>,
+    pub text_compare_ignore_case: Option<bool>,
+    pub text_compare_trim_whitespace: Option<bool>,
+    pub text_compare_auto_compare: Option<bool>,
+    pub translate_delete_chars: Option<String>,
+    pub translate_truncate_duplicate: Option<bool>,
     pub excel_header_color: Option<String>,
     pub run_shortcut: Option<String>,
+    pub focus_search_shortcut: Option<String>,
+    pub format_remove_spaces: Option<bool>,
+    pub format_sql_append: Option<bool>,
+    pub search_strict: Option<bool>,
+    pub ui_highlight_copied: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -321,49 +337,94 @@ fn load_db_settings() -> Result<AppSettings, String> {
         .map(|p| p.parent().unwrap_or(&p).join("data").join("translate.xlsx").to_string_lossy().to_string())
         .unwrap_or_else(|_| "".to_string());
 
+    let default_settings = AppSettings {
+        connections: vec![DbConfig {
+            id: Some("default".to_string()),
+            name: "Default Connection".to_string(),
+            db_type: "mssql".to_string(),
+            host: "localhost".to_string(),
+            port: 1433,
+            user: "sa".to_string(),
+            password: "".to_string(),
+            database: "".to_string(),
+            trust_server_certificate: Some(true),
+            encrypt: Some(false),
+            verified: Some(false),
+        }],
+        translate_file_path: Some(default_translate_path.clone()),
+        column_split_enabled: Some(true),
+        column_split_keywords: None,
+        revert_tk_col_config: None,
+        column_split_apply_to_text: None,
+        column_split_apply_to_table: None,
+        revert_tk_delete_chars: None,
+        revert_tk_mapping: None,
+        text_compare_delete_chars: None,
+        text_compare_remove_append: None,
+        text_compare_truncate_duplicate: None,
+        text_compare_remove_empty_lines: None,
+        text_compare_sort: None,
+        text_compare_ordered: None,
+        text_compare_ignore_case: None,
+        text_compare_trim_whitespace: None,
+        text_compare_auto_compare: None,
+        translate_delete_chars: None,
+        translate_truncate_duplicate: None,
+        excel_header_color: None,
+        run_shortcut: None,
+        focus_search_shortcut: None,
+        format_remove_spaces: None,
+        format_sql_append: None,
+        search_strict: None,
+        ui_highlight_copied: None,
+    };
+
     if !config_path.exists() {
-        let default_id = "default".to_string();
-        return Ok(AppSettings {
-            connections: vec![DbConfig {
-                id: Some(default_id.clone()),
-                name: "Default Connection".to_string(),
-                db_type: "mssql".to_string(),
-                host: "localhost".to_string(),
-                port: 1433,
-                user: "sa".to_string(),
-                password: "".to_string(),
-                database: "".to_string(),
-                trust_server_certificate: Some(true),
-                encrypt: Some(false),
-                verified: Some(false),
-            }],
-            translate_file_path: Some(default_translate_path),
-            column_split_enabled: Some(true),
-            column_split_keywords: None,
-            revert_tk_col_config: None,
-            column_split_apply_to_text: None,
-            column_split_apply_to_table: None,
-            revert_tk_delete_chars: None,
-            revert_tk_mapping: None,
-            excel_header_color: None,
-            run_shortcut: None,
-        });
+        // Nếu không tồn tại file có nghĩa là cài mới -> tạo setting.json mới
+        save_db_settings(default_settings.clone())?;
+        return Ok(default_settings);
     }
     
+    // Nếu tồn tại file, load và check key mới
     let mut file = File::open(config_path).map_err(|e: std::io::Error| e.to_string())?;
     let mut content = String::new();
     file.read_to_string(&mut content).map_err(|e: std::io::Error| e.to_string())?;
-    let mut settings: AppSettings = serde_json::from_str(&content).map_err(|e: serde_json::Error| e.to_string())?;
     
-    // Fill in missing IDs
+    // Parse as Value to check for missing keys
+    let mut settings_json: serde_json::Value = serde_json::from_str(&content).map_err(|e: serde_json::Error| e.to_string())?;
+    let default_json = serde_json::to_value(&default_settings).map_err(|e| e.to_string())?;
+    
+    let mut changed = false;
+    if let (Some(settings_obj), Some(default_obj)) = (settings_json.as_object_mut(), default_json.as_object()) {
+        for (key, default_val) in default_obj {
+            // Check nếu key thiếu hoặc null thì add vào
+            if !settings_obj.contains_key(key) || settings_obj.get(key).unwrap().is_null() {
+                settings_obj.insert(key.clone(), default_val.clone());
+                changed = true;
+            }
+        }
+    }
+
+    // Convert ngược lại AppSettings struct
+    let mut settings: AppSettings = serde_json::from_value(settings_json).map_err(|e: serde_json::Error| e.to_string())?;
+    
+    // Fill in missing IDs cho connections (giữ nguyên logic cũ)
     for conn in &mut settings.connections {
         if conn.id.is_none() {
-            conn.id = Some(chrono::Utc::now().timestamp_nanos().to_string());
+            conn.id = Some(chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0).to_string());
+            changed = true;
         }
     }
     
-    if settings.translate_file_path.is_none() || settings.translate_file_path.as_ref().unwrap().is_empty() {
+    // Đảm bảo translate_file_path không trống
+    if settings.translate_file_path.as_ref().map_or(true, |s| s.is_empty()) {
         settings.translate_file_path = Some(default_translate_path);
+        changed = true;
+    }
+    
+    // Nếu có sự thay đổi (add key mới) thì lưu lại file
+    if changed {
+        save_db_settings(settings.clone())?;
     }
     
     Ok(settings)

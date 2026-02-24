@@ -5,7 +5,6 @@ import { invoke } from '@tauri-apps/api/tauri';
 import { Mermaid } from './Mermaid';
 import { SourceCodeViewer } from './SourceCodeViewer';
 import { useEffect } from 'react';
-import { useAppStore } from '../store/useAppStore';
 
 interface MethodNode {
     name: string;
@@ -62,7 +61,7 @@ const CallGraphNode = ({
 };
 
 export function JavaParserTab() {
-    const globalSearchTerm = useAppStore(state => state.globalSearchTerm);
+    const [searchTerm, setSearchTerm] = useState('');
     const [mode, setMode] = useState<'properties' | 'graph'>('properties');
     const [sourceCode, setSourceCode] = useState('');
     const [notification, setNotification] = useState<string | null>(null);
@@ -76,14 +75,14 @@ export function JavaParserTab() {
     }, [sourceCode, mode]);
 
     const filteredFields = useMemo(() => {
-        if (!globalSearchTerm) return parsedFields;
-        const term = globalSearchTerm.toLowerCase();
+        if (!searchTerm) return parsedFields;
+        const term = searchTerm.toLowerCase();
         return parsedFields.filter(f =>
             (f.name || '').toLowerCase().includes(term) ||
             (f.type || '').toLowerCase().includes(term) ||
             (f.description || '').toLowerCase().includes(term)
         );
-    }, [parsedFields, globalSearchTerm]);
+    }, [parsedFields, searchTerm]);
 
     // New Graph logic
     const [graphData, setGraphData] = useState<CallGraph | null>(null);
@@ -99,15 +98,15 @@ export function JavaParserTab() {
         const methods = Object.values(graphData.nodes)
             .filter(node => node.modifiers.includes('public') || node.modifiers.includes('protected'));
 
-        if (!globalSearchTerm) return methods.sort((a, b) => a.name.localeCompare(b.name));
+        if (!searchTerm) return methods.sort((a, b) => a.name.localeCompare(b.name));
 
-        const term = globalSearchTerm.toLowerCase();
+        const term = searchTerm.toLowerCase();
         return methods.filter(node =>
             node.name.toLowerCase().includes(term) ||
             node.returnType.toLowerCase().includes(term) ||
             node.modifiers.some(m => m.toLowerCase().includes(term))
         ).sort((a, b) => a.name.localeCompare(b.name));
-    }, [graphData, globalSearchTerm]);
+    }, [graphData, searchTerm]);
     const [showModal, setShowModal] = useState(false);
     const [highlightOffset, setHighlightOffset] = useState<number | null>(null);
 
@@ -199,22 +198,34 @@ export function JavaParserTab() {
                 </div>
             )}
 
-            {/* Mode Toggle */}
-            <div className="flex gap-2 bg-gray-100 p-1 rounded-lg w-fit">
-                <button
-                    onClick={() => setMode('properties')}
-                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'properties' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                >
-                    Property Extractor
-                </button>
-                <button
-                    onClick={() => setMode('graph')}
-                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'graph' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                >
-                    Call Graph Analyzer
-                </button>
+            <div className="flex justify-between items-center bg-gray-100 p-1 rounded-lg w-full">
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setMode('properties')}
+                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'properties' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                    >
+                        Property Extractor
+                    </button>
+                    <button
+                        onClick={() => setMode('graph')}
+                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'graph' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                    >
+                        Call Graph Analyzer
+                    </button>
+                </div>
+                <div className="relative group mr-2">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                    <input
+                        type="text"
+                        placeholder="Search Java..."
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        onFocus={(e) => e.target.select()}
+                        className="app-local-search w-48 focus:w-64 transition-all bg-white border border-gray-200 rounded-lg pl-8 pr-4 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary shadow-sm"
+                    />
+                </div>
             </div>
 
             <div className="flex-1 flex gap-4 min-h-0">

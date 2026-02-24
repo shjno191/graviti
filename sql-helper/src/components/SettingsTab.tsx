@@ -48,10 +48,29 @@ export const SettingsTab: React.FC = React.memo(() => {
         translateFilePath, setTranslateFilePath,
         excelHeaderColor, setExcelHeaderColor,
         runShortcut, setRunShortcut,
-        focusSearchShortcut, setFocusSearchShortcut,
         columnSplitEnabled, setColumnSplitEnabled,
         columnSplitKeywords, setColumnSplitKeywords,
-        activeTab, updateConnectionSessionStatus
+        activeTab, updateConnectionSessionStatus,
+        activeSection, setActiveSection,
+        textCompareDeleteChars, setTextCompareDeleteChars,
+        textCompareRemoveAppend, setTextCompareRemoveAppend,
+        textCompareTruncateDuplicate, setTextCompareTruncateDuplicate,
+        textCompareRemoveEmptyLines, setTextCompareRemoveEmptyLines,
+        textCompareSort, setTextCompareSort,
+        textCompareOrdered, setTextCompareOrdered,
+        textCompareIgnoreCase, setTextCompareIgnoreCase,
+        textCompareTrimWhitespace, setTextCompareTrimWhitespace,
+        textCompareAutoCompare, setTextCompareAutoCompare,
+        formatRemoveSpaces, setFormatRemoveSpaces,
+        formatSqlAppend, setFormatSqlAppend,
+        searchStrict, setSearchStrict,
+        translateDeleteChars, setTranslateDeleteChars,
+        translateTruncateDuplicate, setTranslateTruncateDuplicate,
+        translateLineHeight, setTranslateLineHeight,
+        revertTKDeleteChars, setRevertTKDeleteChars,
+        columnSplitApplyToText, setColumnSplitApplyToText,
+        columnSplitApplyToTable, setColumnSplitApplyToTable,
+        uiHighlightCopied, setUiHighlightCopied
     } = useAppStore(useShallow(state => ({
         connections: state.connections,
         setConnections: state.setConnections,
@@ -61,17 +80,55 @@ export const SettingsTab: React.FC = React.memo(() => {
         setExcelHeaderColor: state.setExcelHeaderColor,
         runShortcut: state.runShortcut,
         setRunShortcut: state.setRunShortcut,
-        focusSearchShortcut: state.focusSearchShortcut,
-        setFocusSearchShortcut: state.setFocusSearchShortcut,
         columnSplitEnabled: state.columnSplitEnabled,
         setColumnSplitEnabled: state.setColumnSplitEnabled,
         columnSplitKeywords: state.columnSplitKeywords,
         setColumnSplitKeywords: state.setColumnSplitKeywords,
         activeTab: state.activeTab,
-        updateConnectionSessionStatus: state.updateConnectionSessionStatus
+        updateConnectionSessionStatus: state.updateConnectionSessionStatus,
+        activeSection: state.settingsSection,
+        setActiveSection: state.setSettingsSection,
+        textCompareDeleteChars: state.textCompareDeleteChars,
+        setTextCompareDeleteChars: state.setTextCompareDeleteChars,
+        textCompareRemoveAppend: state.textCompareRemoveAppend,
+        setTextCompareRemoveAppend: state.setTextCompareRemoveAppend,
+        textCompareTruncateDuplicate: state.textCompareTruncateDuplicate,
+        setTextCompareTruncateDuplicate: state.setTextCompareTruncateDuplicate,
+        textCompareRemoveEmptyLines: state.textCompareRemoveEmptyLines,
+        setTextCompareRemoveEmptyLines: state.setTextCompareRemoveEmptyLines,
+        textCompareSort: state.textCompareSort,
+        setTextCompareSort: state.setTextCompareSort,
+        textCompareOrdered: state.textCompareOrdered,
+        setTextCompareOrdered: state.setTextCompareOrdered,
+        textCompareIgnoreCase: state.textCompareIgnoreCase,
+        setTextCompareIgnoreCase: state.setTextCompareIgnoreCase,
+        textCompareTrimWhitespace: state.textCompareTrimWhitespace,
+        setTextCompareTrimWhitespace: state.setTextCompareTrimWhitespace,
+        textCompareAutoCompare: state.textCompareAutoCompare,
+        setTextCompareAutoCompare: state.setTextCompareAutoCompare,
+        formatRemoveSpaces: state.formatRemoveSpaces,
+        setFormatRemoveSpaces: state.setFormatRemoveSpaces,
+        formatSqlAppend: state.formatSqlAppend,
+        setFormatSqlAppend: state.setFormatSqlAppend,
+        searchStrict: state.searchStrict,
+        setSearchStrict: state.setSearchStrict,
+        translateDeleteChars: state.translateDeleteChars,
+        setTranslateDeleteChars: state.setTranslateDeleteChars,
+        translateTruncateDuplicate: state.translateTruncateDuplicate,
+        setTranslateTruncateDuplicate: state.setTranslateTruncateDuplicate,
+        translateLineHeight: state.translateLineHeight,
+        setTranslateLineHeight: state.setTranslateLineHeight,
+        revertTKDeleteChars: state.revertTKDeleteChars,
+        setRevertTKDeleteChars: state.setRevertTKDeleteChars,
+        columnSplitApplyToText: state.columnSplitApplyToText,
+        setColumnSplitApplyToText: state.setColumnSplitApplyToText,
+        columnSplitApplyToTable: state.columnSplitApplyToTable,
+        setColumnSplitApplyToTable: state.setColumnSplitApplyToTable,
+        uiHighlightCopied: state.uiHighlightCopied,
+        setUiHighlightCopied: state.setUiHighlightCopied
     })));
 
-    const [activeSection, setActiveSection] = useState<'database' | 'shortcuts' | 'appearance' | 'translate' | 'revertTK' | 'compare'>('database');
+
     const [editingConfig, setEditingConfig] = useState<DbConfig | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -96,6 +153,7 @@ export const SettingsTab: React.FC = React.memo(() => {
                 if (settings.text_compare_delete_chars) store.setTextCompareDeleteChars(settings.text_compare_delete_chars);
                 if (settings.text_compare_remove_append !== undefined) store.setTextCompareRemoveAppend(settings.text_compare_remove_append);
                 if (settings.text_compare_truncate_duplicate !== undefined) store.setTextCompareTruncateDuplicate(settings.text_compare_truncate_duplicate);
+                if (settings.text_compare_remove_empty_lines !== undefined) store.setTextCompareRemoveEmptyLines(settings.text_compare_remove_empty_lines);
                 if (settings.text_compare_sort !== undefined) store.setTextCompareSort(settings.text_compare_sort);
                 if (settings.text_compare_ordered !== undefined) store.setTextCompareOrdered(settings.text_compare_ordered);
                 if (settings.text_compare_ignore_case !== undefined) store.setTextCompareIgnoreCase(settings.text_compare_ignore_case);
@@ -113,6 +171,7 @@ export const SettingsTab: React.FC = React.memo(() => {
                 if (settings.format_remove_spaces !== undefined) store.setFormatRemoveSpaces(settings.format_remove_spaces);
                 if (settings.format_sql_append !== undefined) store.setFormatSqlAppend(settings.format_sql_append);
                 if (settings.search_strict !== undefined) store.setSearchStrict(settings.search_strict);
+                if (settings.ui_highlight_copied !== undefined) store.setUiHighlightCopied(settings.ui_highlight_copied);
             }
         } catch (err) {
             console.error('Failed to load DB settings:', err);
@@ -162,6 +221,7 @@ export const SettingsTab: React.FC = React.memo(() => {
                 text_compare_delete_chars: state.textCompareDeleteChars,
                 text_compare_remove_append: state.textCompareRemoveAppend,
                 text_compare_truncate_duplicate: state.textCompareTruncateDuplicate,
+                text_compare_remove_empty_lines: state.textCompareRemoveEmptyLines,
                 text_compare_sort: state.textCompareSort,
                 text_compare_ordered: state.textCompareOrdered,
                 text_compare_ignore_case: state.textCompareIgnoreCase,
@@ -171,10 +231,11 @@ export const SettingsTab: React.FC = React.memo(() => {
                 translate_truncate_duplicate: state.translateTruncateDuplicate,
                 excel_header_color: excelHeaderColor,
                 run_shortcut: runShortcut,
-                focus_search_shortcut: focusSearchShortcut,
+                focus_search_shortcut: state.focusSearchShortcut,
                 format_remove_spaces: state.formatRemoveSpaces,
                 format_sql_append: state.formatSqlAppend,
-                search_strict: state.searchStrict
+                search_strict: state.searchStrict,
+                ui_highlight_copied: state.uiHighlightCopied
             }
         });
     };
@@ -276,8 +337,11 @@ export const SettingsTab: React.FC = React.memo(() => {
         </div>
     );
 
-    const SettingToggle: React.FC<{ label: string, desc: string, checked: boolean, onChange: (val: boolean) => void }> = ({ label, desc, checked, onChange }) => (
-        <label className="flex items-center gap-4 cursor-pointer group p-4 bg-white rounded-2xl border border-gray-100 hover:border-primary transition-all shadow-sm">
+    const SettingToggle: React.FC<{ label: string, desc: string, tooltip?: string, checked: boolean, onChange: (val: boolean) => void }> = ({ label, desc, tooltip, checked, onChange }) => (
+        <label
+            data-tooltip={tooltip}
+            className="flex items-center gap-4 cursor-pointer group p-4 bg-white rounded-2xl border border-gray-100 hover:border-primary transition-all shadow-sm"
+        >
             <div className="relative inline-flex items-center cursor-pointer">
                 <input
                     type="checkbox"
@@ -490,20 +554,80 @@ export const SettingsTab: React.FC = React.memo(() => {
                                         </div>
                                     </div>
 
-                                    {/* Action 2 */}
+                                    {/* Action 2: Tab Search Focus */}
                                     <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
                                         <div className="flex items-center justify-between pr-8">
                                             <div className="flex flex-col">
-                                                <span className="text-[11px] font-black text-gray-800 uppercase leading-none">Search Focus</span>
-                                                <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Tiêu điểm tìm kiếm</span>
+                                                <span className="text-[11px] font-black text-gray-800 uppercase leading-none">Tab Search Focus</span>
+                                                <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Tìm kiếm nội bộ</span>
+                                            </div>
+                                            <div className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-[10px] font-black text-gray-400 shadow-inner">CTRL+F</div>
+                                        </div>
+                                        <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
+                                            Ưu tiên nhảy vào thanh tìm kiếm của Tab hiện tại (nếu có).
+                                        </div>
+                                    </div>
+
+                                    {/* Action 3: Global Search Focus */}
+                                    <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
+                                        <div className="flex items-center justify-between pr-8">
+                                            <div className="flex flex-col">
+                                                <span className="text-[11px] font-black text-gray-800 uppercase leading-none">Global Search Focus</span>
+                                                <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Tìm kiếm tổng thể</span>
+                                            </div>
+                                            <div className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-[10px] font-black text-gray-400 shadow-inner">CTRL+F+F</div>
+                                        </div>
+                                        <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
+                                            Nhấn F hai lần liên tiếp nhảy thẳng lên thanh Global Search.
+                                        </div>
+                                    </div>
+
+                                    {/* Action 3: Quick Settings */}
+                                    <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
+                                        <div className="flex items-center justify-between pr-8">
+                                            <div className="flex flex-col">
+                                                <span className="text-[11px] font-black text-gray-800 uppercase leading-none">Quick Settings</span>
+                                                <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Cài đặt nhanh</span>
                                             </div>
                                             <div className="flex items-center gap-3">
-                                                <div className="min-w-[80px] bg-white border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-sm font-black text-primary shadow-inner text-center">{focusSearchShortcut}</div>
-                                                <ShortcutRecorder onRecord={setFocusSearchShortcut} current={focusSearchShortcut} onSave={handleGlobalSave} />
+                                                <div className="min-w-[80px] bg-gray-100 border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-sm font-black text-gray-500 shadow-inner text-center">CTRL+SHIFT+S</div>
                                             </div>
                                         </div>
                                         <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
-                                            Nhảy nhanh tới ô tìm kiếm dữ liệu.
+                                            Nhảy tới mục cài đặt tương ứng với Tab hiện tại.
+                                        </div>
+                                    </div>
+
+                                    {/* Action 4: Tab Navigation */}
+                                    <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
+                                        <div className="flex items-center justify-between pr-8">
+                                            <div className="flex flex-col">
+                                                <span className="text-[11px] font-black text-gray-800 uppercase leading-none">Tab Navigation</span>
+                                                <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Chuyển Tab nhanh</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="bg-gray-100 border border-gray-200 rounded-lg px-2 py-1.5 font-mono text-[10px] font-black text-gray-400 shadow-inner">CTRL+←</div>
+                                                <div className="bg-gray-100 border border-gray-200 rounded-lg px-2 py-1.5 font-mono text-[10px] font-black text-gray-400 shadow-inner">CTRL+→</div>
+                                            </div>
+                                        </div>
+                                        <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
+                                            Di chuyển qua lại giữa các Tab chính.
+                                        </div>
+                                    </div>
+
+                                    {/* Action 5: Mouse Navigation */}
+                                    <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
+                                        <div className="flex items-center justify-between pr-8">
+                                            <div className="flex flex-col">
+                                                <span className="text-[11px] font-black text-gray-800 uppercase leading-none">History Nav (Mouse)</span>
+                                                <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Lịch sử điều hướng</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-[10px] font-black text-gray-400 opacity-60">MOUSE BTN 3/4</div>
+                                            </div>
+                                        </div>
+                                        <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
+                                            Dùng nút Back/Forward trên chuột để quay lại Tab trước đó.
                                         </div>
                                     </div>
                                 </div>
@@ -516,7 +640,7 @@ export const SettingsTab: React.FC = React.memo(() => {
                         <div className="flex flex-col animate-in fade-in slide-in-from-bottom-2">
                             <SectionHeader title="Aesthetics & UI" subtitle="Global Visual Theme" icon="🎨" />
                             <div className="grid grid-cols-[1fr_320px] gap-8">
-                                <div className="bg-gray-50/50 p-8 rounded-3xl border border-gray-100 h-fit">
+                                <div className="bg-gray-50/50 p-8 rounded-3xl border border-gray-100 h-fit flex flex-col gap-6">
                                     <div className="flex flex-col gap-4">
                                         <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Excel Header Theme</label>
                                         <div className="flex gap-4 items-center bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
@@ -525,6 +649,17 @@ export const SettingsTab: React.FC = React.memo(() => {
                                                 <input type="text" value={excelHeaderColor} onChange={e => setExcelHeaderColor(e.target.value)} onBlur={handleGlobalSave} className="w-full bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 font-mono text-base font-black uppercase tracking-widest outline-none focus:ring-1 focus:ring-primary" />
                                             </div>
                                         </div>
+                                    </div>
+
+                                    <div className="border-t border-gray-100 pt-6">
+                                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-4 block">Interactive Behavior</label>
+                                        <SettingToggle
+                                            label="Highlight On Copy"
+                                            desc="Nháy sáng nội dung vừa copy"
+                                            tooltip="Khi bạn click copy một dòng, phần text đó sẽ tự động nháy sáng trong 5s để bạn dễ nhận biết vị trí."
+                                            checked={uiHighlightCopied}
+                                            onChange={(val) => { setUiHighlightCopied(val); handleGlobalSave(); }}
+                                        />
                                     </div>
                                 </div>
                                 <div className="p-8 bg-gray-900 rounded-[2.5rem] flex items-center justify-center">
@@ -588,8 +723,9 @@ export const SettingsTab: React.FC = React.memo(() => {
                                                 <SettingToggle
                                                     label="Remove Spaces"
                                                     desc="Normalize whitespace"
-                                                    checked={useAppStore.getState().formatRemoveSpaces}
-                                                    onChange={useAppStore.getState().setFormatRemoveSpaces}
+                                                    tooltip="Xóa bỏ toàn bộ khoảng trắng thừa và các dòng trống trong nội dung đầu vào."
+                                                    checked={formatRemoveSpaces}
+                                                    onChange={setFormatRemoveSpaces}
                                                 />
                                                 <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
                                                     Xóa khoảng trắng thừa và dòng trống.
@@ -601,8 +737,9 @@ export const SettingsTab: React.FC = React.memo(() => {
                                                 <SettingToggle
                                                     label="SQL.append format"
                                                     desc="Java/C# Code Extraction"
-                                                    checked={useAppStore.getState().formatSqlAppend}
-                                                    onChange={useAppStore.getState().setFormatSqlAppend}
+                                                    tooltip="Tự động bóc tách nội dung bên trong các hàm sql.append(...) của Java hoặc C#."
+                                                    checked={formatSqlAppend}
+                                                    onChange={setFormatSqlAppend}
                                                 />
                                                 <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
                                                     Loại bỏ `sql.append("...")` để lấy ruột SQL.
@@ -614,8 +751,9 @@ export const SettingsTab: React.FC = React.memo(() => {
                                                 <SettingToggle
                                                     label="Strict Search"
                                                     desc="Exact phrase matching"
-                                                    checked={useAppStore.getState().searchStrict}
-                                                    onChange={useAppStore.getState().setSearchStrict}
+                                                    tooltip="Khi bật, hệ thống chỉ trả về các kết quả khớp hoàn toàn 100% với từ khóa tìm kiếm."
+                                                    checked={searchStrict}
+                                                    onChange={setSearchStrict}
                                                 />
                                                 <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
                                                     Tìm chính xác 100% (không tìm mờ).
@@ -627,8 +765,9 @@ export const SettingsTab: React.FC = React.memo(() => {
                                                 <SettingToggle
                                                     label="De-duplicate"
                                                     desc="Remove identical rows"
-                                                    checked={useAppStore.getState().translateTruncateDuplicate}
-                                                    onChange={useAppStore.getState().setTranslateTruncateDuplicate}
+                                                    tooltip="Tự động loại bỏ các dòng kết quả giống hệt nhau để danh sách gọn gàng hơn."
+                                                    checked={translateTruncateDuplicate}
+                                                    onChange={setTranslateTruncateDuplicate}
                                                 />
                                                 <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
                                                     Xóa các dòng kết quả bị trùng lặp.
@@ -642,16 +781,16 @@ export const SettingsTab: React.FC = React.memo(() => {
                                                     <span className="text-[8px] text-gray-400 font-bold uppercase mt-1 leading-tight">Khoảng cách dòng (Quick Translate)</span>
                                                     <div className="flex items-center mt-2 bg-gray-50 rounded-lg border border-gray-200 overflow-hidden w-fit">
                                                         <button
-                                                            onClick={() => { const val = Math.max(1, useAppStore.getState().translateLineHeight - 0.2); useAppStore.getState().setTranslateLineHeight(val); handleGlobalSave(); }}
+                                                            onClick={() => { const val = Math.max(1, translateLineHeight - 0.2); setTranslateLineHeight(val); handleGlobalSave(); }}
                                                             className="px-3 py-1 hover:bg-white text-primary font-bold border-r border-gray-200 transition-colors"
                                                         >
                                                             −
                                                         </button>
                                                         <span className="px-4 py-1 text-[11px] font-black text-gray-900 min-w-[3.5rem] text-center bg-white">
-                                                            {useAppStore.getState().translateLineHeight.toFixed(1)}
+                                                            {translateLineHeight.toFixed(1)}
                                                         </span>
                                                         <button
-                                                            onClick={() => { const val = Math.min(4, useAppStore.getState().translateLineHeight + 0.2); useAppStore.getState().setTranslateLineHeight(val); handleGlobalSave(); }}
+                                                            onClick={() => { const val = Math.min(4, translateLineHeight + 0.2); setTranslateLineHeight(val); handleGlobalSave(); }}
                                                             className="px-3 py-1 hover:bg-white text-primary font-bold border-l border-gray-200 transition-colors"
                                                         >
                                                             +
@@ -677,8 +816,8 @@ export const SettingsTab: React.FC = React.memo(() => {
                                         <div className="grid grid-cols-[1fr_1fr] gap-8">
                                             <input
                                                 type="text"
-                                                value={useAppStore.getState().translateDeleteChars}
-                                                onChange={e => useAppStore.getState().setTranslateDeleteChars(e.target.value)}
+                                                value={translateDeleteChars}
+                                                onChange={e => setTranslateDeleteChars(e.target.value)}
                                                 onBlur={handleGlobalSave}
                                                 className="w-full bg-white border border-amber-200 rounded-2xl px-5 py-3 text-xs font-mono shadow-sm outline-none focus:ring-2 focus:ring-amber-500"
                                                 placeholder="vd: ' | , | ; ..."
@@ -712,13 +851,13 @@ export const SettingsTab: React.FC = React.memo(() => {
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
-                                            <SettingToggle label="Apply to Text" desc="Text output split" checked={useAppStore.getState().columnSplitApplyToText} onChange={useAppStore.getState().setColumnSplitApplyToText} />
+                                            <SettingToggle label="Apply to Text" desc="Text output split" checked={columnSplitApplyToText} onChange={setColumnSplitApplyToText} />
                                             <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
                                                 Tự động tách cột khi xem kết quả dạng Text.
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
-                                            <SettingToggle label="Apply to Table" desc="Table output split" checked={useAppStore.getState().columnSplitApplyToTable} onChange={useAppStore.getState().setColumnSplitApplyToTable} />
+                                            <SettingToggle label="Apply to Table" desc="Table output split" checked={columnSplitApplyToTable} onChange={setColumnSplitApplyToTable} />
                                             <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
                                                 Tự động tách cột khi xem kết quả dạng Table.
                                             </div>
@@ -733,7 +872,7 @@ export const SettingsTab: React.FC = React.memo(() => {
                                             <h4 className="text-xs font-black text-amber-900 uppercase tracking-wider">Loại bỏ ký tự thừa</h4>
                                         </div>
                                         <div className="flex flex-col gap-4">
-                                            <input type="text" value={useAppStore.getState().revertTKDeleteChars} onChange={e => useAppStore.getState().setRevertTKDeleteChars(e.target.value)} onBlur={handleGlobalSave} className="w-full bg-white border border-amber-200 rounded-2xl px-5 py-3 text-xs font-mono shadow-sm outline-none" placeholder="vd: ' | , | ; ..." />
+                                            <input type="text" value={revertTKDeleteChars} onChange={e => setRevertTKDeleteChars(e.target.value)} onBlur={handleGlobalSave} className="w-full bg-white border border-amber-200 rounded-2xl px-5 py-3 text-xs font-mono shadow-sm outline-none" placeholder="vd: ' | , | ; ..." />
                                             <div className="text-[10px] font-bold text-amber-700/60 leading-relaxed italic">
                                                 Xóa ký tự thừa khi xử lý dữ liệu Revert TK (Dùng dấu | để ngăn cách).
                                             </div>
@@ -776,8 +915,8 @@ export const SettingsTab: React.FC = React.memo(() => {
                                                 <div className="flex flex-col gap-2">
                                                     <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Màu tiêu đề bảng</label>
                                                     <div className="flex gap-3 items-center">
-                                                        <input type="color" value={useAppStore.getState().excelHeaderColor} onChange={e => useAppStore.getState().setExcelHeaderColor(e.target.value)} onBlur={handleGlobalSave} className="w-8 h-8 rounded-lg cursor-pointer border-none p-0.5 bg-gray-100" />
-                                                        <input type="text" value={useAppStore.getState().excelHeaderColor} onChange={e => useAppStore.getState().setExcelHeaderColor(e.target.value)} onBlur={handleGlobalSave} className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-mono outline-none" />
+                                                        <input type="color" value={excelHeaderColor} onChange={e => setExcelHeaderColor(e.target.value)} onBlur={handleGlobalSave} className="w-8 h-8 rounded-lg cursor-pointer border-none p-0.5 bg-gray-100" />
+                                                        <input type="text" value={excelHeaderColor} onChange={e => setExcelHeaderColor(e.target.value)} onBlur={handleGlobalSave} className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-mono outline-none" />
                                                     </div>
                                                 </div>
                                                 <div className="pl-8 text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center italic">
@@ -804,24 +943,25 @@ export const SettingsTab: React.FC = React.memo(() => {
                                         <div className="grid grid-cols-2 divide-x divide-gray-100">
                                             {/* Main Settings */}
                                             <div className="p-4 flex flex-col gap-2">
-                                                <SettingToggle label="Ordered Comparison" desc="So sánh theo thứ tự dòng" checked={useAppStore.getState().textCompareOrdered} onChange={useAppStore.getState().setTextCompareOrdered} />
-                                                <SettingToggle label="Ignore Case" desc="Không phân biệt hoa thường" checked={useAppStore.getState().textCompareIgnoreCase} onChange={useAppStore.getState().setTextCompareIgnoreCase} />
-                                                <SettingToggle label="Trim Whitespace" desc="Xóa khoảng trắng đầu cuối" checked={useAppStore.getState().textCompareTrimWhitespace} onChange={useAppStore.getState().setTextCompareTrimWhitespace} />
-                                                <SettingToggle label="Auto-Compare" desc="Tự động so sánh khi nhập" checked={useAppStore.getState().textCompareAutoCompare} onChange={useAppStore.getState().setTextCompareAutoCompare} />
-                                                <SettingToggle label="Sort Text" desc="Ưu tiên sắp xếp dòng giống nhau" checked={useAppStore.getState().textCompareSort} onChange={useAppStore.getState().setTextCompareSort} />
+                                                <SettingToggle label="Ordered Comparison" desc="So sánh theo thứ tự dòng" tooltip="So sánh từng dòng tương ứng giữa hai bên A và B theo số thứ tự." checked={textCompareOrdered} onChange={setTextCompareOrdered} />
+                                                <SettingToggle label="Ignore Case" desc="Không phân biệt hoa thường" tooltip="Bỏ qua sự khác biệt giữa chữ hoa và chữ thường khi so sánh." checked={textCompareIgnoreCase} onChange={setTextCompareIgnoreCase} />
+                                                <SettingToggle label="Trim Whitespace" desc="Xóa khoảng trắng đầu cuối" tooltip="Tự động cắt bỏ các ký tự khoảng trắng ở đầu và cuối mỗi dòng trước khi so sánh." checked={textCompareTrimWhitespace} onChange={setTextCompareTrimWhitespace} />
+                                                <SettingToggle label="Auto-Compare" desc="Tự động so sánh khi nhập" tooltip="Tự động thực hiện so sánh ngay khi bạn đang nhập hoặc dán văn bản vào." checked={textCompareAutoCompare} onChange={setTextCompareAutoCompare} />
+                                                <SettingToggle label="Sort Text" desc="Ưu tiên sắp xếp dòng giống nhau" tooltip="Sắp xếp lại văn bản ở cả hai bên để các dòng giống nhau nằm cạnh nhau, giúp dễ so sánh hơn." checked={textCompareSort} onChange={setTextCompareSort} />
                                             </div>
 
                                             {/* Pre-processing Settings */}
                                             <div className="p-4 flex flex-col gap-4 bg-gray-50/30">
-                                                <SettingToggle label="SQL.append format" desc="Loại bỏ sql.append" checked={useAppStore.getState().textCompareRemoveAppend} onChange={useAppStore.getState().setTextCompareRemoveAppend} />
-                                                <SettingToggle label="Consolidation" desc="Gộp dòng trùng lặp" checked={useAppStore.getState().textCompareTruncateDuplicate} onChange={useAppStore.getState().setTextCompareTruncateDuplicate} />
+                                                <SettingToggle label="SQL.append format" desc="Loại bỏ sql.append" tooltip="Tương tự Translate tab, bóc tách SQL từ code Java/C#." checked={textCompareRemoveAppend} onChange={setTextCompareRemoveAppend} />
+                                                <SettingToggle label="Consolidation" desc="Gộp dòng trùng lặp" tooltip="Loại bỏ các dòng bị lặp lại trong cùng một bên dữ liệu." checked={textCompareTruncateDuplicate} onChange={setTextCompareTruncateDuplicate} />
+                                                <SettingToggle label="Remove Empty Lines" desc="Xóa các dòng trống" tooltip="Tự động xóa bỏ các dòng không có nội dung hoặc chỉ chứa bộ khoảng trắng." checked={textCompareRemoveEmptyLines} onChange={setTextCompareRemoveEmptyLines} />
 
                                                 <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
                                                     <label className="text-[9px] font-black text-rose-900 uppercase tracking-widest">Xóa ký tự nhiễu (Regex)</label>
                                                     <input
                                                         type="text"
-                                                        value={useAppStore.getState().textCompareDeleteChars}
-                                                        onChange={e => useAppStore.getState().setTextCompareDeleteChars(e.target.value)}
+                                                        value={textCompareDeleteChars}
+                                                        onChange={e => setTextCompareDeleteChars(e.target.value)}
                                                         onBlur={handleGlobalSave}
                                                         className="w-full bg-white border border-rose-200 rounded-xl px-4 py-2 text-xs font-mono shadow-sm outline-none focus:ring-1 focus:ring-rose-500"
                                                         placeholder="vd: , ; ) ..."

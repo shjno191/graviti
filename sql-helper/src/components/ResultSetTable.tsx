@@ -8,18 +8,15 @@ interface ResultSetTableProps {
 
 export const ResultSetTable: React.FC<ResultSetTableProps> = React.memo(({ result }) => {
     const { excelHeaderColor, globalSearchTerm } = useAppStore();
+    const deferredGlobalTerm = React.useDeferredValue(globalSearchTerm);
     if (!result || !result.columns.length) return null;
 
     const [copyStatus, setCopyStatus] = React.useState(false);
     const [menuPos, setMenuPos] = React.useState<{ x: number, y: number, rowIndex: number } | null>(null);
 
     const filteredRows = React.useMemo(() => {
-        if (!globalSearchTerm) return result.rows;
-        const term = globalSearchTerm.toLowerCase();
-        return result.rows.filter(row =>
-            row.some(cell => cell?.toString().toLowerCase().includes(term))
-        );
-    }, [result.rows, globalSearchTerm]);
+        return result.rows; // Global search now only highlights, does not hide data
+    }, [result.rows]);
 
     React.useEffect(() => {
         const handleClick = () => setMenuPos(null);
@@ -154,7 +151,7 @@ export const ResultSetTable: React.FC<ResultSetTableProps> = React.memo(({ resul
                                         {cell === null ? (
                                             <span className="text-gray-300 italic font-mono text-[10px]">NULL</span>
                                         ) : (
-                                            <HighlightText text={cell.toString()} term={globalSearchTerm} />
+                                            <HighlightText text={cell.toString()} globalTerm={deferredGlobalTerm} />
                                         )}
                                     </td>
                                 ))}
