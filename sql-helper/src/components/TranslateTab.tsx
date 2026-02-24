@@ -169,6 +169,52 @@ const RevertTKGrid = React.memo((props: {
     const [copiedCell, setCopiedCell] = useState<{ r: number, c: number } | null>(null);
     const [tooltipState, setTooltipState] = useState<{ seg: TranslatedSegment, rect: DOMRect } | null>(null);
 
+    const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+    const [lastSelectedRow, setLastSelectedRow] = useState<number | null>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (selectedRows.size === 0) return;
+            const target = e.target as HTMLElement;
+            if (target.closest('td[data-row-selector="true"]')) {
+                return; // Let the row selection handler deal with it
+            }
+            setSelectedRows(new Set());
+            setLastSelectedRow(null);
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [selectedRows]);
+
+    const handleRowSelection = (e: React.MouseEvent, rIdx: number) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const newSet = new Set(selectedRows);
+        if (e.shiftKey && lastSelectedRow !== null) {
+            const start = Math.min(lastSelectedRow, rIdx);
+            const end = Math.max(lastSelectedRow, rIdx);
+            if (!e.ctrlKey && !e.metaKey) {
+                newSet.clear();
+            }
+            for (let i = start; i <= end; i++) {
+                newSet.add(i);
+            }
+        } else if (e.ctrlKey || e.metaKey) {
+            if (newSet.has(rIdx)) {
+                newSet.delete(rIdx);
+            } else {
+                newSet.add(rIdx);
+            }
+            setLastSelectedRow(rIdx);
+        } else {
+            newSet.clear();
+            newSet.add(rIdx);
+            setLastSelectedRow(rIdx);
+        }
+        setSelectedRows(newSet);
+    };
+
     useEffect(() => {
         if (!props.hoveredKey) {
             setTooltipState(null);
@@ -246,6 +292,34 @@ const RevertTKGrid = React.memo((props: {
         );
     }, [dataRows, props.translationDict, props.selections]);
 
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && selectedRows.size > 0) {
+                if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+
+                const sortedSelected = Array.from(selectedRows).sort((a, b) => a - b);
+                const textToCopy = sortedSelected.map(rIdx => {
+                    const row = dataRows[rIdx];
+                    return row.map((cellText, cIdx) => {
+                        const segs = segmentedRows[rIdx]?.[cIdx];
+                        if (segs) {
+                            return segs.map(s => s.text).join('');
+                        }
+                        return cellText || '';
+                    }).join('\t');
+                }).join('\n');
+
+                navigator.clipboard.writeText(textToCopy);
+
+                // Visual feedback globally
+                setCopiedCell({ r: -1, c: -1 });
+                setTimeout(() => setCopiedCell(null), 500);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedRows, dataRows, segmentedRows]);
+
     const handleCellClick = (text: string | undefined, r: number, c: number) => {
         if (!text) return;
         navigator.clipboard.writeText(text);
@@ -258,7 +332,9 @@ const RevertTKGrid = React.memo((props: {
     };
 
     return (
-        <div className="flex-1 overflow-auto custom-scrollbar bg-white border border-gray-200 shadow-inner select-none">
+        <div
+            className="flex-1 overflow-auto custom-scrollbar bg-white border border-gray-200 shadow-inner select-none"
+        >
             <table className="border-collapse table-fixed min-w-full">
                 <thead>
                     <tr className="bg-gray-100/90 sticky top-0 z-10 shadow-sm shadow-gray-200/50">
@@ -276,8 +352,11 @@ const RevertTKGrid = React.memo((props: {
                 </thead>
                 <tbody>
                     {dataRows.map((row, rIdx) => (
-                        <tr key={rIdx} className="hover:bg-amber-50/60 transition-colors group">
-                            <td className="bg-gray-50 px-2 py-1.5 text-[10px] font-bold text-gray-400 border-r border-b border-gray-200 text-center group-hover:bg-amber-100/50 transition-colors">
+                        <tr key={rIdx} className={`hover:bg-amber-50/60 transition-colors group ${selectedRows.has(rIdx) ? '!bg-amber-100/90 shadow-inner' : ''}`}>
+                            <td
+                                onClick={(e) => handleRowSelection(e, rIdx)}
+                                data-row-selector="true"
+                                className={`bg-gray-50 px-2 py-1.5 text-[10px] font-bold text-gray-400 border-r border-b border-gray-200 text-center cursor-pointer hover:bg-amber-200/80 hover:text-amber-800 transition-colors ${selectedRows.has(rIdx) ? '!bg-amber-500 !text-white' : ''}`}>
                                 {rIdx + 1}
                             </td>
                             {Array.from({ length: maxCols }).map((_, cIdx) => {
@@ -469,20 +548,39 @@ export const TranslateTab: React.FC = React.memo(() => {
         translateFilePath, setTranslateFilePath,
         excelHeaderColor, formatRemoveSpaces, formatSqlAppend,
         searchStrict, setSearchStrict,
-        columnSplitEnabled, setColumnSplitEnabled,
-        columnSplitKeywords, setColumnSplitKeywords,
-        revertTKColConfig, setRevertTKColConfig,
-        columnSplitApplyToText, setColumnSplitApplyToText,
-        columnSplitApplyToTable, setColumnSplitApplyToTable,
-        revertTKDeleteChars, setRevertTKDeleteChars,
-        revertTKMapping, setRevertTKMapping,
+        columnSplitEnabled,
+        columnSplitKeywords,
+        revertTKColConfig,
+        columnSplitApplyToText,
+        columnSplitApplyToTable,
+        revertTKDeleteChars,
+        revertTKMapping,
         translateDeleteChars, translateTruncateDuplicate,
         textCompareExpectedInput, setTextCompareExpectedInput,
         textCompareCurrentInput, setTextCompareCurrentInput,
         runShortcut, connections,
         subTab, setSubTab,
         lineSpacing,
-        globalSearchTerm
+        globalSearchTerm,
+        revertTKInput, setRevertTKInput,
+        revertTKResult, setRevertTKResult,
+        revertTKMode, setRevertTKMode,
+        revertTKResultFormat, setRevertTKResultFormat,
+        setSettingsSection,
+        revertTKHeaderSelect,
+        revertTKHeaderFrom,
+        revertTKHeaderWhere,
+        revertTKHeaderOrderby,
+        revertTKHeaderGroupby,
+        revertTKHeaderHaving,
+        revertTKHeaderAnd,
+        revertTKLineBreakSelect,
+        revertTKLineBreakFrom,
+        revertTKLineBreakWhere,
+        revertTKLineBreakOrderby,
+        revertTKLineBreakGroupby,
+        revertTKLineBreakHaving,
+        revertTKLineBreakAnd,
     } = useAppStore(useShallow(state => ({
         activeTab: state.activeTab,
         setActiveTab: state.setActiveTab,
@@ -494,19 +592,12 @@ export const TranslateTab: React.FC = React.memo(() => {
         searchStrict: state.searchStrict,
         setSearchStrict: state.setSearchStrict,
         columnSplitEnabled: state.columnSplitEnabled,
-        setColumnSplitEnabled: state.setColumnSplitEnabled,
         columnSplitKeywords: state.columnSplitKeywords,
-        setColumnSplitKeywords: state.setColumnSplitKeywords,
         revertTKColConfig: state.revertTKColConfig,
-        setRevertTKColConfig: state.setRevertTKColConfig,
         columnSplitApplyToText: state.columnSplitApplyToText,
-        setColumnSplitApplyToText: state.setColumnSplitApplyToText,
         columnSplitApplyToTable: state.columnSplitApplyToTable,
-        setColumnSplitApplyToTable: state.setColumnSplitApplyToTable,
         revertTKDeleteChars: state.revertTKDeleteChars,
-        setRevertTKDeleteChars: state.setRevertTKDeleteChars,
         revertTKMapping: state.revertTKMapping,
-        setRevertTKMapping: state.setRevertTKMapping,
         translateDeleteChars: state.translateDeleteChars,
         translateTruncateDuplicate: state.translateTruncateDuplicate,
         textCompareExpectedInput: state.textCompareExpectedInput,
@@ -518,7 +609,30 @@ export const TranslateTab: React.FC = React.memo(() => {
         subTab: state.translateSubTab,
         setSubTab: state.setTranslateSubTab,
         lineSpacing: state.translateLineHeight,
-        globalSearchTerm: state.globalSearchTerm
+        globalSearchTerm: state.globalSearchTerm,
+        revertTKInput: state.revertTKInputStore,
+        setRevertTKInput: state.setRevertTKInputStore,
+        revertTKResult: state.revertTKResultStore,
+        setRevertTKResult: state.setRevertTKResultStore,
+        revertTKMode: state.revertTKModeStore,
+        setRevertTKMode: state.setRevertTKModeStore,
+        revertTKResultFormat: state.revertTKResultFormatStore,
+        setRevertTKResultFormat: state.setRevertTKResultFormatStore,
+        setSettingsSection: state.setSettingsSection,
+        revertTKHeaderSelect: state.revertTKHeaderSelect,
+        revertTKHeaderFrom: state.revertTKHeaderFrom,
+        revertTKHeaderWhere: state.revertTKHeaderWhere,
+        revertTKHeaderOrderby: state.revertTKHeaderOrderby,
+        revertTKHeaderGroupby: state.revertTKHeaderGroupby,
+        revertTKHeaderHaving: state.revertTKHeaderHaving,
+        revertTKHeaderAnd: state.revertTKHeaderAnd,
+        revertTKLineBreakSelect: state.revertTKLineBreakSelect,
+        revertTKLineBreakFrom: state.revertTKLineBreakFrom,
+        revertTKLineBreakWhere: state.revertTKLineBreakWhere,
+        revertTKLineBreakOrderby: state.revertTKLineBreakOrderby,
+        revertTKLineBreakGroupby: state.revertTKLineBreakGroupby,
+        revertTKLineBreakHaving: state.revertTKLineBreakHaving,
+        revertTKLineBreakAnd: state.revertTKLineBreakAnd,
     })));
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -528,8 +642,6 @@ export const TranslateTab: React.FC = React.memo(() => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [copyFeedback, setCopyFeedback] = useState<{ row: number, col: 'jp' | 'en' | 'vi' } | null>(null);
-    const [revertTKInput, setRevertTKInput] = useState('');
-    const [revertTKResult, setRevertTKResult] = useState('');
     const [bulkInput, setBulkInput] = useState('');
     const [targetLang, setTargetLang] = useState<'jp' | 'en' | 'vi'>('en');
     const [syncing, setSyncing] = useState(false);
@@ -555,11 +667,6 @@ export const TranslateTab: React.FC = React.memo(() => {
     const deferredBulkInput = useDeferredValue(bulkInput);
     const deferredRevertTKInput = useDeferredValue(revertTKInput);
     const deferredSearchTerm = useDeferredValue(searchTerm);
-    const [newSectionLabel, setNewSectionLabel] = useState('');
-    const [revertTKMode, setRevertTKMode] = useState<'TKtoCode' | 'CodetoTK'>('CodetoTK');
-    const [revertTKResultFormat, setRevertTKResultFormat] = useState<'text' | 'table'>('table');
-
-    const [revertConfigTab, setRevertConfigTab] = useState<'general' | 'codeToTk' | 'tkToCode'>('general');
     const defaultColWidth = 100;
     const parsedCustomWidths = useMemo<Record<number, number>>(() => {
         const widths: Record<number, number> = {};
@@ -582,12 +689,9 @@ export const TranslateTab: React.FC = React.memo(() => {
         return widths;
     }, [revertTKColConfig]);
 
-    const [showRevertConfig, setShowRevertConfig] = useState(false);
-
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const outputRef = useRef<HTMLDivElement>(null);
     const highlighterRef = useRef<HTMLDivElement>(null);
-
     const revertTKInputRef = useRef<HTMLTextAreaElement>(null);
     const [revertTKTranslatedLines, setRevertTKTranslatedLines] = useState<TranslatedLine[]>([]);
 
@@ -782,25 +886,264 @@ export const TranslateTab: React.FC = React.memo(() => {
         return codeLines.join('\n');
     };
 
-    const handleRevertTK = () => {
-        if (!revertTKInput.trim()) return;
-        let result = '';
-        if (revertTKMode === 'TKtoCode') {
-            result = convertTKToCode(revertTKInput);
-        } else {
-            // Check if column split should be applied based on current preview format
-            const shouldSplit = columnSplitEnabled && (
-                (revertTKResultFormat === 'text' && columnSplitApplyToText) ||
-                (revertTKResultFormat === 'table' && columnSplitApplyToTable)
-            );
+    /**
+     * Java SQL Parser – Phase 1/2/3 engine based on rever.md rules.
+     * Used when input text contains sb.append / sql.append style Java SQL.
+     */
+    const parseJavaSql = (input: string, config?: { splitEnabled: boolean, keywords: string[], deleteChars?: string[] }): string => {
+        let text = input;
 
-            result = smartFormatSqlDesign(revertTKInput, {
-                splitEnabled: shouldSplit,
-                keywords: columnSplitKeywords.split('|').map(k => k.trim()).filter(Boolean),
-                deleteChars: revertTKDeleteChars.split('|').map(k => k.trim()).filter(Boolean)
+        // Custom delete chars
+        if (config?.deleteChars && config.deleteChars.length > 0) {
+            const escapedChars = config.deleteChars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+            const deleteRegex = new RegExp(`(${escapedChars.join('|')})`, 'g');
+            text = text.replace(deleteRegex, '');
+        }
+
+        // ── Phase 1: Line-by-line preprocessing ──────────────────────────────
+        const rawLines = text.split('\n');
+        const preprocessed: { sql: string; condition: string | null }[] = [];
+        let braceDepth = 0;
+        let conditionStack: string[] = [];
+
+        for (const raw of rawLines) {
+            const trimmed = raw.trim();
+            if (!trimmed) continue;
+
+            // Capture if(...) conditions (start of conditional block)
+            const ifMatch = trimmed.match(/^if\s*\((.+?)\)\s*\{?$/);
+            if (ifMatch) {
+                conditionStack.push(ifMatch[1].trim());
+                braceDepth++;
+                continue;
+            }
+            // Track else { / } 
+            if (/^else\s*\{?$/.test(trimmed) || trimmed === '}') {
+                if (trimmed === '}' && braceDepth > 0) {
+                    braceDepth--;
+                    if (braceDepth < conditionStack.length) conditionStack.pop();
+                }
+                continue;
+            }
+            if (trimmed === '{') { braceDepth++; continue; }
+
+            // Extract java variables: " + bean.getXxx() + "  →  【入力．getXxx()】
+            let sqlLine = trimmed;
+
+            // Strip sql.append( ... );
+            const appendMatch = sqlLine.match(/^[\w$]+\.append\s*\(\s*"?(.*?)"?\s*\)\s*;?$/);
+            if (appendMatch) {
+                sqlLine = appendMatch[1].trim();
+            }
+
+            // Replace dynamic java vars embedded in string: " + inBean.x() + "
+            sqlLine = sqlLine.replace(/"\s*\+\s*([\w.$()]+)\s*\+\s*"/g, '【入力．$1】');
+
+            // Strip leftover quotes, + signs, semicolons
+            sqlLine = sqlLine.replace(/"/g, '').replace(/\+/g, '').replace(/;/g, '').trim();
+
+            if (!sqlLine) continue;
+
+            preprocessed.push({
+                sql: sqlLine,
+                condition: conditionStack.length > 0 ? conditionStack[conditionStack.length - 1] : null
             });
         }
-        setRevertTKResult(result);
+
+        // ── Phase 2: SQL section state machine ───────────────────────────────
+        type Section = 'none' | 'select' | 'from' | 'where' | 'orderby' | 'groupby' | 'having' | 'join';
+        let section: Section = 'none';
+        const aliasMap = new Map<string, string>(); // alias → table name
+
+        const SECTION_HEADERS: Record<string, string> = {
+            select: revertTKHeaderSelect,
+            from: revertTKHeaderFrom,
+            where: revertTKHeaderWhere,
+            orderby: revertTKHeaderOrderby,
+            groupby: revertTKHeaderGroupby,
+            having: revertTKHeaderHaving,
+        };
+
+        const LINE_BREAKS: Record<string, boolean> = {
+            select: revertTKLineBreakSelect,
+            from: revertTKLineBreakFrom,
+            where: revertTKLineBreakWhere,
+            orderby: revertTKLineBreakOrderby,
+            groupby: revertTKLineBreakGroupby,
+            having: revertTKLineBreakHaving,
+        };
+
+        const outputSections: Record<string, string[]> = {
+            select: [], from: [], where: [], orderby: [], groupby: [], having: []
+        };
+
+        // Helper: parse a WHERE / HAVING / ON condition line into tab cols
+        const parseConditionLine = (line: string, condition: string | null): string => {
+            const t = line.trim();
+            // BETWEEN
+            const bw = t.match(/^(.+?)\s+BETWEEN\s+(.+?)\s+AND\s+(.+)$/i);
+            if (bw) {
+                const note = condition ? `\t【条件: ${condition}】` : '';
+                return `\t${bw[1].trim()}\tBETWEEN\t${bw[2].trim()}\t～ ${bw[3].trim()}${note}`;
+            }
+            // Comparison operators
+            const cmp = t.match(/^(.+?)\s*(>=|<=|<>|!=|=|>|<)\s*(.+)$/);
+            if (cmp) {
+                const note = condition ? `\t【条件: ${condition}】` : '';
+                return `\t${cmp[1].trim()}\t${cmp[2]}\t${cmp[3].trim()}${note}`;
+            }
+            // Custom Tokens / Keywords
+            if (config?.splitEnabled && config.keywords && config.keywords.length > 0) {
+                const parts = splitSqlColumn(t, config.keywords);
+                if (parts.length > 1) {
+                    const note = condition ? `\t【条件: ${condition}】` : '';
+                    return `\t${parts.join('\t')}${note}`;
+                }
+            }
+            // Fallback
+            const note = condition ? `\t【条件: ${condition}】` : '';
+            return `\t${t}${note}`;
+        };
+
+        // Helper: split comma-separated items (guards against commas inside parens)
+        const splitByComma = (s: string): string[] => {
+            const parts: string[] = [];
+            let depth = 0, cur = '';
+            for (const ch of s) {
+                if (ch === '(') depth++;
+                if (ch === ')') depth--;
+                if (ch === ',' && depth === 0) { parts.push(cur.trim()); cur = ''; }
+                else cur += ch;
+            }
+            if (cur.trim()) parts.push(cur.trim());
+            return parts;
+        };
+
+        // Walk each preprocessed SQL line
+        let pendingRest = '';
+        for (const { sql, condition } of preprocessed) {
+            const upper = sql.toUpperCase().trim();
+
+            // Detect section-changing anchor keywords
+            if (/^SELECT\b/.test(upper)) { section = 'select'; pendingRest = sql.replace(/^SELECT\s*/i, '').trim(); continue; }
+            if (/^FROM\b/.test(upper)) { section = 'from'; pendingRest = sql.replace(/^FROM\s*/i, '').trim(); continue; }
+            if (/^WHERE\b/.test(upper)) { section = 'where'; pendingRest = sql.replace(/^WHERE\s*/i, '').trim(); continue; }
+            if (/^ORDER\s+BY\b/.test(upper)) { section = 'orderby'; pendingRest = sql.replace(/^ORDER\s+BY\s*/i, '').trim(); continue; }
+            if (/^GROUP\s+BY\b/.test(upper)) { section = 'groupby'; pendingRest = sql.replace(/^GROUP\s+BY\s*/i, '').trim(); continue; }
+            if (/^HAVING\b/.test(upper)) { section = 'having'; pendingRest = sql.replace(/^HAVING\s*/i, '').trim(); continue; }
+            if (/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN\b/.test(upper)) {
+                section = 'from';
+                const joinType = upper.match(/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN/)?.[0] ?? 'JOIN';
+                pendingRest = sql.replace(/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN\s*/i, '').trim();
+                const parts = pendingRest.split(/\s+/);
+                const tbl = parts[0] || pendingRest;
+                const alias = parts[1];
+                if (alias) aliasMap.set(alias, tbl);
+                outputSections.from.push(`\t${tbl}${alias ? ` (${alias})` : ''} （${joinType}）`);
+                pendingRest = '';
+                continue;
+            }
+
+            const workLine = (pendingRest ? pendingRest + ' ' + sql : sql).trim();
+            pendingRest = '';
+
+            if (!workLine) continue;
+
+            if (section === 'select' || section === 'groupby') {
+                const items = splitByComma(workLine).filter(Boolean);
+                const target = section === 'select' ? outputSections.select : outputSections.groupby;
+                items.forEach(item => target.push(`\t${item}`));
+            } else if (section === 'from') {
+                // FROM may list multiple tables: TABLE1 A, TABLE2 B
+                const tables = splitByComma(workLine);
+                tables.forEach(entry => {
+                    const p = entry.trim().split(/\s+/);
+                    const tbl = p[0];
+                    const alias = p[1];
+                    if (alias) aliasMap.set(alias, tbl);
+                    outputSections.from.push(`\t${tbl}${alias ? ` (${alias})` : ''}`);
+                });
+            } else if (section === 'where' || section === 'having') {
+                const target = section === 'where' ? outputSections.where : outputSections.having;
+                // Split on leading AND / OR
+                const condParts = workLine
+                    .replace(/\s+(AND|OR)\s+(?!.*AND.*(?:AND|OR))/gi, '\n$1 ')
+                    .split('\n');
+                condParts.forEach(part => {
+                    const isAnd = /^AND\b/i.test(part.trim());
+                    const isOr = /^OR\b/i.test(part.trim());
+                    const stripped = part.replace(/^(AND|OR)\s+/i, '').trim();
+                    if (stripped) {
+                        if (isAnd && revertTKLineBreakAnd && target.length > 0) {
+                            target.push("");
+                        }
+                        const prefix = isAnd ? revertTKHeaderAnd : (isOr ? 'OR' : '');
+                        const lineOutput = parseConditionLine(stripped, condition);
+                        // If we have a prefix, we replace the first \t in parseConditionLine result
+                        target.push(prefix ? (prefix + lineOutput) : lineOutput);
+                    }
+                });
+            } else if (section === 'orderby') {
+                const items = splitByComma(workLine);
+                items.forEach(item => {
+                    const t = item.trim();
+                    if (/\bDESC\b/i.test(t)) {
+                        outputSections.orderby.push(`\t${t.replace(/\s*DESC\s*$/i, '').trim()}\t降順`);
+                    } else {
+                        outputSections.orderby.push(`\t${t.replace(/\s*ASC\s*$/i, '').trim()}\t昇順`);
+                    }
+                });
+            }
+        }
+
+        // ── Phase 3: Assemble output ──────────────────────────────────────────
+        const lines: string[] = [];
+        const sectionOrder: (keyof typeof outputSections)[] = ['select', 'from', 'where', 'orderby', 'groupby', 'having'];
+        for (const key of sectionOrder) {
+            const rows = outputSections[key];
+            if (rows.length > 0) {
+                if (LINE_BREAKS[key] && lines.length > 0) {
+                    lines.push('');
+                }
+                lines.push(SECTION_HEADERS[key]);
+                lines.push(...rows);
+                lines.push('');
+            }
+        }
+
+        return lines.join('\n').trimEnd();
+    };
+
+    const handleRevertTK = () => {
+        if (!revertTKInput.trim()) return;
+        try {
+            let result = '';
+            if (revertTKMode === 'TKtoCode') {
+                result = convertTKToCode(revertTKInput);
+            } else {
+                const shouldSplit = columnSplitEnabled && (
+                    (revertTKResultFormat === 'text' && columnSplitApplyToText) ||
+                    (revertTKResultFormat === 'table' && columnSplitApplyToTable)
+                );
+                const options = {
+                    splitEnabled: shouldSplit,
+                    keywords: columnSplitKeywords.split('|').map(k => k.trim()).filter(Boolean),
+                    deleteChars: revertTKDeleteChars.split('|').map(k => k.trim()).filter(Boolean)
+                };
+
+                // Auto-detect Java append code vs raw design-doc text
+                const isJava = /[\w$]+\.append\s*\(/i.test(revertTKInput);
+                if (isJava) {
+                    result = parseJavaSql(revertTKInput, options);
+                } else {
+                    result = smartFormatSqlDesign(revertTKInput, options);
+                }
+            }
+            setRevertTKResult(result);
+        } catch (error) {
+            console.error('Lỗi khi convert:', error);
+            setRevertTKResult(`[SYSTEM ERROR - Báo lỗi này cho Dev nhé]\n${(error as Error).message}\n${(error as Error).stack}`);
+        }
     };
 
     // Reset selections when input changes or target language changes
@@ -1056,7 +1399,7 @@ export const TranslateTab: React.FC = React.memo(() => {
         // STEP 0: Clean up specified characters (e.g. quotes, commas if configured)
         if (config?.deleteChars && config.deleteChars.length > 0) {
             const escapedChars = config.deleteChars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-            const deleteRegex = new RegExp(`[${escapedChars.join('')}]`, 'g');
+            const deleteRegex = new RegExp(`(${escapedChars.join('|')})`, 'g');
             text = text.replace(deleteRegex, '');
         }
 
@@ -1078,6 +1421,40 @@ export const TranslateTab: React.FC = React.memo(() => {
         let lines = text.split('\n').map(line =>
             line.replace(/\t/g, ' ').replace(/\s+$/g, '')
         );
+
+        const SQL_KEYWORDS = ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'GROUP BY', 'HAVING'];
+        const KEYWORD_MAP: Record<string, string> = {
+            'SELECT': revertTKHeaderSelect,
+            'FROM': revertTKHeaderFrom,
+            'WHERE': revertTKHeaderWhere,
+            'ORDER BY': revertTKHeaderOrderby,
+            'GROUP BY': revertTKHeaderGroupby,
+            'HAVING': revertTKHeaderHaving
+        };
+        const LINE_BREAK_MAP: Record<string, boolean> = {
+            'SELECT': revertTKLineBreakSelect,
+            'FROM': revertTKLineBreakFrom,
+            'WHERE': revertTKLineBreakWhere,
+            'ORDER BY': revertTKLineBreakOrderby,
+            'GROUP BY': revertTKLineBreakGroupby,
+            'HAVING': revertTKLineBreakHaving,
+            'AND': revertTKLineBreakAnd
+        };
+
+        // Pre-process: convert raw keywords to configured headers and handle line breaks
+        const preprocessedLines: string[] = [];
+        lines.forEach(line => {
+            const trimmed = line.trim().toUpperCase();
+            if (SQL_KEYWORDS.includes(trimmed)) {
+                if (LINE_BREAK_MAP[trimmed] && preprocessedLines.length > 0) {
+                    preprocessedLines.push('');
+                }
+                preprocessedLines.push(KEYWORD_MAP[trimmed]);
+            } else {
+                preprocessedLines.push(line);
+            }
+        });
+        lines = preprocessedLines;
 
         // Helper: format SQL info blocks based on config
         const formatConfiguredBlocks = (src: string[]): string[] => {
@@ -1356,16 +1733,19 @@ export const TranslateTab: React.FC = React.memo(() => {
                             const left = between[1].trim();
                             const start = between[2].trim();
                             const end = between[3].trim();
-                            result[lineIdx] = `${INDENT_JOIN}${op}\t${left}\tBETWEEN\t${start}\t～ ${end}`;
+                            const displayOp = op.toUpperCase() === 'AND' ? revertTKHeaderAnd : op;
+                            result[lineIdx] = `${INDENT_JOIN}${displayOp}\t${left}\tBETWEEN\t${start}\t～ ${end}`;
                         } else {
                             const compare = trimmedRest.match(COMPARE_REGEX);
                             if (compare) {
                                 // 3 columns for proper content: Left, Op, Right
                                 // Result: | (Empty) | Op | Left | OpSymbol | Right |
-                                result[lineIdx] = `${INDENT_JOIN}${op}\t${compare[1].trim()}\t${compare[2]}\t${compare[3].trim()}`;
+                                const displayOp = op.toUpperCase() === 'AND' ? revertTKHeaderAnd : op;
+                                result[lineIdx] = `${INDENT_JOIN}${displayOp}\t${compare[1].trim()}\t${compare[2]}\t${compare[3].trim()}`;
                             } else {
                                 // Fallback
-                                result[lineIdx] = `${INDENT_JOIN}${op}\t${trimmedRest}`;
+                                const displayOp = op.toUpperCase() === 'AND' ? revertTKHeaderAnd : op;
+                                result[lineIdx] = `${INDENT_JOIN}${displayOp}\t${trimmedRest}`;
                             }
                         }
                     });
@@ -1631,7 +2011,7 @@ export const TranslateTab: React.FC = React.memo(() => {
     }, [deferredRevertTKInput, translationDict, selections]);
 
     useEffect(() => {
-        if (activeTab === 'translate' && data.length === 0) {
+        if ((activeTab === 'translate' || activeTab === 'revert-tk') && data.length === 0) {
             loadData();
         }
     }, [activeTab]);
@@ -2066,7 +2446,10 @@ export const TranslateTab: React.FC = React.memo(() => {
                                 </div>
                                 <div className="flex items-center gap-2 mr-2">
                                     <button
-                                        onClick={() => setShowRevertConfig(true)}
+                                        onClick={() => {
+                                            setSettingsSection('revertTK');
+                                            setActiveTab('settings');
+                                        }}
                                         className="px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-black rounded-lg hover:bg-indigo-700 transition-all shadow active:scale-95"
                                     >
                                         ⚙️ CONFIG
@@ -2455,334 +2838,6 @@ export const TranslateTab: React.FC = React.memo(() => {
                     </div>
                 )}
             </div>
-
-            {
-                showRevertConfig && (
-                    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                        <div className="bg-white rounded-3xl shadow-2xl border border-gray-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in duration-300">
-                            {/* Header */}
-                            <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center shrink-0">
-                                <div>
-                                    <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">SQL Specification Layout Configuration</h3>
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Customize conversion behavior and layout</p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={async () => {
-                                            try {
-                                                const path = await invoke<string>('get_setting_path');
-                                                await invoke('open_file', { path });
-                                            } catch (e) {
-                                                console.error('Failed to open settings file', e);
-                                            }
-                                        }}
-                                        className="px-3 py-1.5 bg-gray-100 text-gray-500 text-[10px] font-black rounded-lg hover:bg-indigo-50 hover:text-indigo-600 transition-all flex items-center gap-1.5"
-                                        title="Open setting.json"
-                                    >
-                                        📂 OPEN JSON
-                                    </button>
-                                    <button
-                                        onClick={() => setShowRevertConfig(false)}
-                                        className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                                    >
-                                        ✕
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Tabs Navigation */}
-                            <div className="px-6 bg-white border-b border-gray-100 flex gap-1 shrink-0">
-                                {[
-                                    { id: 'general', label: 'GENERAL' },
-                                    { id: 'codeToTk', label: 'CODE → TK' },
-                                    { id: 'tkToCode', label: 'TK → CODE' }
-                                ].map(tab => (
-                                    <button
-                                        key={tab.id}
-                                        onClick={() => setRevertConfigTab(tab.id as any)}
-                                        className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest transition-all relative
-                                        ${revertConfigTab === tab.id
-                                                ? 'text-indigo-600'
-                                                : 'text-gray-400 hover:text-gray-600'}
-                                    `}
-                                    >
-                                        {tab.label}
-                                        {revertConfigTab === tab.id && (
-                                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 rounded-t-full" />
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* Modal Body */}
-                            <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50/30">
-                                {revertConfigTab === 'general' && (
-                                    <div className="p-8 flex flex-col gap-6 animate-in slide-in-from-bottom-2 duration-300">
-                                        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col gap-3">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">📐</div>
-                                                <label className="text-xs font-black text-gray-700 uppercase tracking-widest">Column Width Configuration (Excel Style)</label>
-                                            </div>
-                                            <input
-                                                type="text"
-                                                placeholder="e.g. A:150, B:250, C:100"
-                                                value={revertTKColConfig}
-                                                onChange={(e) => setRevertTKColConfig(e.target.value)}
-                                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:text-gray-300"
-                                            />
-                                            <div className="p-3 bg-indigo-50/50 rounded-xl">
-                                                <p className="text-[10px] text-indigo-600/80 font-medium italic leading-relaxed">
-                                                    Use format <b>[Column]:[Width]</b>, separated by commas. Example: <b>A:200, B:300</b>.<br />
-                                                    This applies to the Preview grid to match your Excel template.
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        {/* Delete Characters Config */}
-                                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col gap-3">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-600 shrink-0">🗑️</div>
-                                                <label className="text-[10px] font-black text-gray-700 uppercase tracking-widest">Delete Characters (Input cleaner)</label>
-                                            </div>
-                                            <input
-                                                type="text"
-                                                placeholder="e.g. ', ., /"
-                                                value={revertTKDeleteChars}
-                                                onChange={(e) => setRevertTKDeleteChars(e.target.value)}
-                                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-red-500 transition-all font-mono"
-                                            />
-                                            <p className="text-[9px] text-gray-400 font-bold uppercase ml-1">Ký tự sẽ bị xóa trước khi xử lý (ngăn cách bằng dấu phẩy)</p>
-                                        </div>
-
-                                        {/* Column Split Logic is now a General Setting */}
-                                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col gap-4">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">✂️</div>
-                                                    <div className="flex flex-col">
-                                                        <div className="text-xs font-black text-gray-700 uppercase tracking-widest">Keyword Detected</div>
-                                                        <div className="flex items-center gap-4 mt-1">
-                                                            <div className="flex items-center gap-1.5 cursor-pointer group" onClick={() => setColumnSplitApplyToText(!columnSplitApplyToText)}>
-                                                                <input type="checkbox" checked={columnSplitApplyToText} onChange={() => { }} className="w-3 h-3 accent-amber-600 rounded pointer-events-none" />
-                                                                <span className="text-[9px] font-black text-gray-400 uppercase group-hover:text-amber-600 transition-colors">Apply to Text</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-1.5 cursor-pointer group" onClick={() => setColumnSplitApplyToTable(!columnSplitApplyToTable)}>
-                                                                <input type="checkbox" checked={columnSplitApplyToTable} onChange={() => { }} className="w-3 h-3 accent-amber-600 rounded pointer-events-none" />
-                                                                <span className="text-[9px] font-black text-gray-400 uppercase group-hover:text-amber-600 transition-colors">Apply to Table</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <label className="relative inline-flex items-center cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        className="sr-only peer"
-                                                        checked={columnSplitEnabled}
-                                                        onChange={(e) => setColumnSplitEnabled(e.target.checked)}
-                                                    />
-                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
-                                                </label>
-                                            </div>
-
-                                            <div className="relative">
-                                                {!columnSplitEnabled && (
-                                                    <div className="absolute -inset-2 bg-white/60 backdrop-blur-[0.5px] z-[60] rounded-2xl cursor-not-allowed flex items-center justify-center">
-                                                        <div className="bg-white/90 px-3 py-1 rounded-full border border-amber-100 shadow-sm text-[8px] font-black text-amber-600 uppercase tracking-widest animate-in zoom-in duration-300">
-                                                            DISABLED
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                <div className={`flex flex-col gap-4 transition-all duration-300 ${columnSplitEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                                                    <div className="flex flex-col gap-1.5">
-                                                        <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Keywords</span>
-                                                        <input
-                                                            type="text"
-                                                            value={columnSplitKeywords}
-                                                            onChange={(e) => setColumnSplitKeywords(e.target.value)}
-                                                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-amber-500 font-mono transition-all"
-                                                            placeholder="e.g. AS, XX , YY, ZZ,..."
-                                                        />
-                                                    </div>
-
-                                                    <div className="px-4 py-2.5 bg-amber-50/50 rounded-xl border border-amber-100/50 flex gap-2 items-center">
-                                                        <span className="text-sm">💡</span>
-                                                        <p className="text-[9px] text-amber-800 font-bold uppercase tracking-tight">
-                                                            Nó sẽ tách các từ khóa trong chuỗi, các keyword sẽ phân chia với nhau bằng dấu phẩy ","
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {revertConfigTab === 'codeToTk' && (
-                                    <div className="p-8 flex flex-col gap-6 animate-in slide-in-from-bottom-2 duration-300">
-                                        <div className="bg-white p-8 rounded-3xl border border-dashed border-gray-200 flex flex-col items-center justify-center text-center">
-                                            <div className="text-4xl mb-4">⚙️</div>
-                                            <h4 className="text-sm font-black text-gray-800 uppercase tracking-widest mb-1">CODE TO TK CONFIGURATION</h4>
-                                            <p className="text-[10px] text-gray-400 font-bold max-w-xs leading-relaxed">
-                                                Rules for reverting code/SQL into Technical Specifications.
-                                                Specific logic settings will be added here soon.
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {revertConfigTab === 'tkToCode' && (
-                                    <div className="p-8 flex flex-col gap-6 animate-in slide-in-from-bottom-2 duration-300">
-
-                                        {/* Moved Layout config here temporarily as it's part of how we handle TK structures */}
-                                        <div className="flex flex-col gap-4">
-                                            <div className="flex justify-between items-center px-2">
-                                                <div className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Section Mappings (Spec structure)</div>
-                                            </div>
-                                            {/* New Section Input */}
-                                            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex gap-4 items-end">
-                                                <div className="flex-1">
-                                                    <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Label for new section</div>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="e.g. ■ Ghi chú"
-                                                        value={newSectionLabel}
-                                                        onChange={(e) => setNewSectionLabel(e.target.value)}
-                                                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                                                    />
-                                                </div>
-                                                <button
-                                                    onClick={() => {
-                                                        if (!newSectionLabel.trim()) return;
-                                                        const id = newSectionLabel.trim().toLowerCase().replace(/\s+/g, '-');
-                                                        const currentOffsets = revertTKMapping[0]?.offsets || [1, 1];
-                                                        setRevertTKMapping([...revertTKMapping, {
-                                                            id,
-                                                            label: newSectionLabel.trim(),
-                                                            offsets: [...currentOffsets],
-                                                            type: 'text'
-                                                        }]);
-                                                        setNewSectionLabel('');
-                                                    }}
-                                                    className="px-6 py-3 bg-indigo-600 text-white text-[10px] font-black rounded-xl hover:bg-indigo-700 shadow-md transition-all active:scale-95 uppercase tracking-widest"
-                                                >
-                                                    Add Section
-                                                </button>
-                                            </div>
-
-                                            {revertTKMapping.map((cfg, idx) => (
-                                                <div key={cfg.id} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-6 group hover:border-indigo-200 transition-all">
-                                                    <div className="w-48 shrink-0">
-                                                        <div className="text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-1">Section Title</div>
-                                                        <div className="text-xs font-black text-gray-800">{cfg.label}</div>
-                                                    </div>
-
-                                                    <div className="w-20 shrink-0 flex flex-col items-center">
-                                                        <div className="text-[9px] font-black text-gray-400 uppercase mb-1">Base Col</div>
-                                                        <div className="w-full py-2 bg-gray-100 border border-gray-200 rounded-lg text-center text-xs font-black text-gray-400">A</div>
-                                                    </div>
-
-                                                    <div className="flex-1 flex flex-col gap-2">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="flex items-center gap-2">
-                                                                {cfg.offsets.map((off, oIdx) => (
-                                                                    <div key={oIdx} className="flex items-center bg-gray-50 border border-gray-200 rounded-xl px-2 py-1.5 gap-2 shadow-inner group/off">
-                                                                        <div className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">
-                                                                            {oIdx === 0 ? "Offset" : `Col ${oIdx}`}
-                                                                        </div>
-                                                                        <input
-                                                                            type="number"
-                                                                            value={off}
-                                                                            onChange={(e) => {
-                                                                                const val = parseInt(e.target.value) || 1;
-                                                                                const newMapping = [...revertTKMapping];
-                                                                                newMapping[idx].offsets[oIdx] = val;
-                                                                                setRevertTKMapping(newMapping);
-                                                                            }}
-                                                                            className="w-10 bg-transparent text-xs font-black text-indigo-600 text-center outline-none focus:text-indigo-800"
-                                                                        />
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                            <div className="flex items-center gap-1.5 border-l border-gray-100 pl-4 ml-2">
-                                                                <button
-                                                                    onClick={() => {
-                                                                        const newMapping = revertTKMapping.map(item => ({
-                                                                            ...item,
-                                                                            offsets: [...item.offsets, 1]
-                                                                        }));
-                                                                        setRevertTKMapping(newMapping);
-                                                                    }}
-                                                                    className="w-7 h-7 flex items-center justify-center bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
-                                                                >
-                                                                    <span className="text-lg font-light">+</span>
-                                                                </button>
-                                                                {cfg.offsets.length > 1 && (
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            const newMapping = revertTKMapping.map(item => ({
-                                                                                ...item,
-                                                                                offsets: item.offsets.slice(0, -1)
-                                                                            }));
-                                                                            setRevertTKMapping(newMapping);
-                                                                        }}
-                                                                        className="w-7 h-7 flex items-center justify-center bg-red-50 text-red-400 rounded-full hover:bg-red-500 hover:text-white transition-all shadow-sm"
-                                                                    >
-                                                                        <span className="text-lg font-light">×</span>
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end items-center shrink-0">
-                                <button
-                                    onClick={async (e) => {
-                                        const btn = e.currentTarget;
-                                        const originalText = btn.innerText;
-                                        try {
-                                            btn.innerText = 'SAVING...';
-                                            await invoke('save_db_settings', {
-                                                settings: {
-                                                    connections,
-                                                    translate_file_path: translateFilePath,
-                                                    column_split_enabled: columnSplitEnabled,
-                                                    column_split_keywords: columnSplitKeywords,
-                                                    revert_tk_col_config: revertTKColConfig,
-                                                    column_split_apply_to_text: columnSplitApplyToText,
-                                                    column_split_apply_to_table: columnSplitApplyToTable,
-                                                    revert_tk_delete_chars: revertTKDeleteChars,
-                                                    revert_tk_mapping: revertTKMapping,
-                                                    excel_header_color: excelHeaderColor,
-                                                    run_shortcut: runShortcut
-                                                }
-                                            });
-                                            btn.innerText = '✅ SAVED';
-                                            btn.classList.add('bg-green-600');
-                                            setTimeout(() => {
-                                                setShowRevertConfig(false);
-                                            }, 500);
-                                        } catch (e) {
-                                            console.error('Failed to save settings', e);
-                                            btn.innerText = '❌ ERROR';
-                                            setTimeout(() => {
-                                                btn.innerText = originalText;
-                                            }, 2000);
-                                        }
-                                    }}
-                                    className="px-10 py-3 bg-indigo-600 text-white text-[10px] font-black rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95 uppercase tracking-widest"
-                                >
-                                    APPLY & SAVE
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
 
             {tooltip && createPortal(
                 <div className="fixed inset-0 z-[99999] pointer-events-none">

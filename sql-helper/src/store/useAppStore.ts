@@ -106,6 +106,36 @@ export interface AppState {
     revertTKMapping: Array<{ id: string, label: string, offsets: number[], type: 'text' | 'table' }>;
     setRevertTKMapping: (val: Array<{ id: string, label: string, offsets: number[], type: 'text' | 'table' }>) => void;
 
+    revertTKHeaderSelect: string;
+    setRevertTKHeaderSelect: (val: string) => void;
+    revertTKHeaderFrom: string;
+    setRevertTKHeaderFrom: (val: string) => void;
+    revertTKHeaderWhere: string;
+    setRevertTKHeaderWhere: (val: string) => void;
+    revertTKHeaderOrderby: string;
+    setRevertTKHeaderOrderby: (val: string) => void;
+    revertTKHeaderGroupby: string;
+    setRevertTKHeaderGroupby: (val: string) => void;
+    revertTKHeaderHaving: string;
+    setRevertTKHeaderHaving: (val: string) => void;
+    revertTKHeaderAnd: string;
+    setRevertTKHeaderAnd: (val: string) => void;
+
+    revertTKLineBreakSelect: boolean;
+    setRevertTKLineBreakSelect: (val: boolean) => void;
+    revertTKLineBreakFrom: boolean;
+    setRevertTKLineBreakFrom: (val: boolean) => void;
+    revertTKLineBreakWhere: boolean;
+    setRevertTKLineBreakWhere: (val: boolean) => void;
+    revertTKLineBreakOrderby: boolean;
+    setRevertTKLineBreakOrderby: (val: boolean) => void;
+    revertTKLineBreakGroupby: boolean;
+    setRevertTKLineBreakGroupby: (val: boolean) => void;
+    revertTKLineBreakHaving: boolean;
+    setRevertTKLineBreakHaving: (val: boolean) => void;
+    revertTKLineBreakAnd: boolean;
+    setRevertTKLineBreakAnd: (val: boolean) => void;
+
     textCompareDeleteChars: string;
     setTextCompareDeleteChars: (val: string) => void;
     textCompareRemoveAppend: boolean;
@@ -139,6 +169,16 @@ export interface AppState {
     setTextCompareExpectedInput: (val: string) => void;
     textCompareCurrentInput: string;
     setTextCompareCurrentInput: (val: string) => void;
+
+    // Shared RevertTK Inputs/State
+    revertTKInputStore: string;
+    setRevertTKInputStore: (val: string) => void;
+    revertTKResultStore: string;
+    setRevertTKResultStore: (val: string) => void;
+    revertTKModeStore: 'TKtoCode' | 'CodetoTK';
+    setRevertTKModeStore: (val: 'TKtoCode' | 'CodetoTK') => void;
+    revertTKResultFormatStore: 'text' | 'table';
+    setRevertTKResultFormatStore: (val: 'text' | 'table') => void;
 
     uiHighlightCopied: boolean;
     setUiHighlightCopied: (val: boolean) => void;
@@ -259,17 +299,42 @@ export const useAppStore = create<AppState>((set) => ({
     revertTKDeleteChars: "' | ,",
     setRevertTKDeleteChars: (val) => set({ revertTKDeleteChars: val }),
     revertTKMapping: [
-        { id: 'logic-name', label: '【SQL論理名】', offsets: [1, 1], type: 'text' },
-        { id: 'def-name', label: '【SQL定義名】', offsets: [1, 1], type: 'text' },
-        { id: 'target-table', label: '■ 対象テーブル', offsets: [1, 1], type: 'text' },
-        { id: 'extraction-cond', label: '■ 抽出条件', offsets: [1, 1], type: 'text' },
-        { id: 'ext-items', label: '■ 抽出項目', offsets: [1, 1], type: 'table' },
-        { id: 'ins-items', label: '■ 挿入項目', offsets: [1, 1], type: 'table' },
-        { id: 'sort-order', label: '■ 並び順', offsets: [1, 1], type: 'text' },
-        { id: 'join-cond', label: '■ 結合条件', offsets: [1, 1], type: 'text' },
-        { id: 'log-output', label: '・ログを出力する。', offsets: [1, 1], type: 'table' },
+        { id: 'ext-items', label: '抽出項目', offsets: [1, 1], type: 'table' },
+        { id: 'target-tables', label: '対象テーブル', offsets: [1, 1], type: 'table' },
+        { id: 'ext-conditions', label: '抽出条件', offsets: [1, 1], type: 'table' },
+        { id: 'sort', label: 'ソート', offsets: [1, 1], type: 'table' },
     ],
     setRevertTKMapping: (val) => set({ revertTKMapping: val }),
+
+    revertTKHeaderSelect: '■ 抽出項目',
+    setRevertTKHeaderSelect: (val) => set({ revertTKHeaderSelect: val }),
+    revertTKHeaderFrom: '■ 対象テーブル',
+    setRevertTKHeaderFrom: (val) => set({ revertTKHeaderFrom: val }),
+    revertTKHeaderWhere: '■ 抽出条件',
+    setRevertTKHeaderWhere: (val) => set({ revertTKHeaderWhere: val }),
+    revertTKHeaderOrderby: '■ ソート条件',
+    setRevertTKHeaderOrderby: (val) => set({ revertTKHeaderOrderby: val }),
+    revertTKHeaderGroupby: '■ グループ条件',
+    setRevertTKHeaderGroupby: (val) => set({ revertTKHeaderGroupby: val }),
+    revertTKHeaderHaving: '■ HAVING条件',
+    setRevertTKHeaderHaving: (val) => set({ revertTKHeaderHaving: val }),
+    revertTKHeaderAnd: 'AND',
+    setRevertTKHeaderAnd: (val) => set({ revertTKHeaderAnd: val }),
+
+    revertTKLineBreakSelect: true,
+    setRevertTKLineBreakSelect: (val) => set({ revertTKLineBreakSelect: val }),
+    revertTKLineBreakFrom: true,
+    setRevertTKLineBreakFrom: (val) => set({ revertTKLineBreakFrom: val }),
+    revertTKLineBreakWhere: true,
+    setRevertTKLineBreakWhere: (val) => set({ revertTKLineBreakWhere: val }),
+    revertTKLineBreakOrderby: true,
+    setRevertTKLineBreakOrderby: (val) => set({ revertTKLineBreakOrderby: val }),
+    revertTKLineBreakGroupby: true,
+    setRevertTKLineBreakGroupby: (val) => set({ revertTKLineBreakGroupby: val }),
+    revertTKLineBreakHaving: true,
+    setRevertTKLineBreakHaving: (val) => set({ revertTKLineBreakHaving: val }),
+    revertTKLineBreakAnd: true,
+    setRevertTKLineBreakAnd: (val) => set({ revertTKLineBreakAnd: val }),
 
     textCompareDeleteChars: ',);\t"',
     setTextCompareDeleteChars: (val) => set({ textCompareDeleteChars: val }),
@@ -303,7 +368,16 @@ export const useAppStore = create<AppState>((set) => ({
     textCompareCurrentInput: '',
     setTextCompareCurrentInput: (val) => set({ textCompareCurrentInput: val }),
 
-    uiHighlightCopied: true,
+    revertTKInputStore: '',
+    setRevertTKInputStore: (val) => set({ revertTKInputStore: val }),
+    revertTKResultStore: '',
+    setRevertTKResultStore: (val) => set({ revertTKResultStore: val }),
+    revertTKModeStore: 'CodetoTK',
+    setRevertTKModeStore: (val) => set({ revertTKModeStore: val }),
+    revertTKResultFormatStore: 'table',
+    setRevertTKResultFormatStore: (val) => set({ revertTKResultFormatStore: val }),
+
+    uiHighlightCopied: false,
     setUiHighlightCopied: (val) => set({ uiHighlightCopied: val }),
 
     settingsSection: 'database',

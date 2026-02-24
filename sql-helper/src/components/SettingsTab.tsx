@@ -70,7 +70,21 @@ export const SettingsTab: React.FC = React.memo(() => {
         revertTKDeleteChars, setRevertTKDeleteChars,
         columnSplitApplyToText, setColumnSplitApplyToText,
         columnSplitApplyToTable, setColumnSplitApplyToTable,
-        uiHighlightCopied, setUiHighlightCopied
+        uiHighlightCopied, setUiHighlightCopied,
+        revertTKHeaderSelect, setRevertTKHeaderSelect,
+        revertTKHeaderFrom, setRevertTKHeaderFrom,
+        revertTKHeaderWhere, setRevertTKHeaderWhere,
+        revertTKHeaderOrderby, setRevertTKHeaderOrderby,
+        revertTKHeaderGroupby, setRevertTKHeaderGroupby,
+        revertTKHeaderHaving, setRevertTKHeaderHaving,
+        revertTKHeaderAnd, setRevertTKHeaderAnd,
+        revertTKLineBreakSelect, setRevertTKLineBreakSelect,
+        revertTKLineBreakFrom, setRevertTKLineBreakFrom,
+        revertTKLineBreakWhere, setRevertTKLineBreakWhere,
+        revertTKLineBreakOrderby, setRevertTKLineBreakOrderby,
+        revertTKLineBreakGroupby, setRevertTKLineBreakGroupby,
+        revertTKLineBreakHaving, setRevertTKLineBreakHaving,
+        revertTKLineBreakAnd, setRevertTKLineBreakAnd,
     } = useAppStore(useShallow(state => ({
         connections: state.connections,
         setConnections: state.setConnections,
@@ -125,7 +139,35 @@ export const SettingsTab: React.FC = React.memo(() => {
         columnSplitApplyToTable: state.columnSplitApplyToTable,
         setColumnSplitApplyToTable: state.setColumnSplitApplyToTable,
         uiHighlightCopied: state.uiHighlightCopied,
-        setUiHighlightCopied: state.setUiHighlightCopied
+        setUiHighlightCopied: state.setUiHighlightCopied,
+        revertTKHeaderSelect: state.revertTKHeaderSelect,
+        setRevertTKHeaderSelect: state.setRevertTKHeaderSelect,
+        revertTKHeaderFrom: state.revertTKHeaderFrom,
+        setRevertTKHeaderFrom: state.setRevertTKHeaderFrom,
+        revertTKHeaderWhere: state.revertTKHeaderWhere,
+        setRevertTKHeaderWhere: state.setRevertTKHeaderWhere,
+        revertTKHeaderOrderby: state.revertTKHeaderOrderby,
+        setRevertTKHeaderOrderby: state.setRevertTKHeaderOrderby,
+        revertTKHeaderGroupby: state.revertTKHeaderGroupby,
+        setRevertTKHeaderGroupby: state.setRevertTKHeaderGroupby,
+        revertTKHeaderHaving: state.revertTKHeaderHaving,
+        setRevertTKHeaderHaving: state.setRevertTKHeaderHaving,
+        revertTKHeaderAnd: state.revertTKHeaderAnd,
+        setRevertTKHeaderAnd: state.setRevertTKHeaderAnd,
+        revertTKLineBreakSelect: state.revertTKLineBreakSelect,
+        setRevertTKLineBreakSelect: state.setRevertTKLineBreakSelect,
+        revertTKLineBreakFrom: state.revertTKLineBreakFrom,
+        setRevertTKLineBreakFrom: state.setRevertTKLineBreakFrom,
+        revertTKLineBreakWhere: state.revertTKLineBreakWhere,
+        setRevertTKLineBreakWhere: state.setRevertTKLineBreakWhere,
+        revertTKLineBreakOrderby: state.revertTKLineBreakOrderby,
+        setRevertTKLineBreakOrderby: state.setRevertTKLineBreakOrderby,
+        revertTKLineBreakGroupby: state.revertTKLineBreakGroupby,
+        setRevertTKLineBreakGroupby: state.setRevertTKLineBreakGroupby,
+        revertTKLineBreakHaving: state.revertTKLineBreakHaving,
+        setRevertTKLineBreakHaving: state.setRevertTKLineBreakHaving,
+        revertTKLineBreakAnd: state.revertTKLineBreakAnd,
+        setRevertTKLineBreakAnd: state.setRevertTKLineBreakAnd,
     })));
 
 
@@ -150,6 +192,20 @@ export const SettingsTab: React.FC = React.memo(() => {
                 if (settings.column_split_apply_to_table !== undefined) store.setColumnSplitApplyToTable(settings.column_split_apply_to_table);
                 if (settings.revert_tk_delete_chars) store.setRevertTKDeleteChars(settings.revert_tk_delete_chars);
                 if (settings.revert_tk_mapping) store.setRevertTKMapping(settings.revert_tk_mapping);
+                if (settings.revert_tk_header_select) store.setRevertTKHeaderSelect(settings.revert_tk_header_select);
+                if (settings.revert_tk_header_from) store.setRevertTKHeaderFrom(settings.revert_tk_header_from);
+                if (settings.revert_tk_header_where) store.setRevertTKHeaderWhere(settings.revert_tk_header_where);
+                if (settings.revert_tk_header_orderby) store.setRevertTKHeaderOrderby(settings.revert_tk_header_orderby);
+                if (settings.revert_tk_header_groupby) store.setRevertTKHeaderGroupby(settings.revert_tk_header_groupby);
+                if (settings.revert_tk_header_having) store.setRevertTKHeaderHaving(settings.revert_tk_header_having);
+                if (settings.revert_tk_header_and) store.setRevertTKHeaderAnd(settings.revert_tk_header_and);
+                if (settings.revert_tk_line_break_select !== undefined) store.setRevertTKLineBreakSelect(settings.revert_tk_line_break_select);
+                if (settings.revert_tk_line_break_from !== undefined) store.setRevertTKLineBreakFrom(settings.revert_tk_line_break_from);
+                if (settings.revert_tk_line_break_where !== undefined) store.setRevertTKLineBreakWhere(settings.revert_tk_line_break_where);
+                if (settings.revert_tk_line_break_orderby !== undefined) store.setRevertTKLineBreakOrderby(settings.revert_tk_line_break_orderby);
+                if (settings.revert_tk_line_break_groupby !== undefined) store.setRevertTKLineBreakGroupby(settings.revert_tk_line_break_groupby);
+                if (settings.revert_tk_line_break_having !== undefined) store.setRevertTKLineBreakHaving(settings.revert_tk_line_break_having);
+                if (settings.revert_tk_line_break_and !== undefined) store.setRevertTKLineBreakAnd(settings.revert_tk_line_break_and);
                 if (settings.text_compare_delete_chars) store.setTextCompareDeleteChars(settings.text_compare_delete_chars);
                 if (settings.text_compare_remove_append !== undefined) store.setTextCompareRemoveAppend(settings.text_compare_remove_append);
                 if (settings.text_compare_truncate_duplicate !== undefined) store.setTextCompareTruncateDuplicate(settings.text_compare_truncate_duplicate);
@@ -218,6 +274,20 @@ export const SettingsTab: React.FC = React.memo(() => {
                 column_split_apply_to_table: state.columnSplitApplyToTable,
                 revert_tk_delete_chars: state.revertTKDeleteChars,
                 revert_tk_mapping: state.revertTKMapping,
+                revert_tk_header_select: state.revertTKHeaderSelect,
+                revert_tk_header_from: state.revertTKHeaderFrom,
+                revert_tk_header_where: state.revertTKHeaderWhere,
+                revert_tk_header_orderby: state.revertTKHeaderOrderby,
+                revert_tk_header_groupby: state.revertTKHeaderGroupby,
+                revert_tk_header_having: state.revertTKHeaderHaving,
+                revert_tk_header_and: state.revertTKHeaderAnd,
+                revert_tk_line_break_select: state.revertTKLineBreakSelect,
+                revert_tk_line_break_from: state.revertTKLineBreakFrom,
+                revert_tk_line_break_where: state.revertTKLineBreakWhere,
+                revert_tk_line_break_orderby: state.revertTKLineBreakOrderby,
+                revert_tk_line_break_groupby: state.revertTKLineBreakGroupby,
+                revert_tk_line_break_having: state.revertTKLineBreakHaving,
+                revert_tk_line_break_and: state.revertTKLineBreakAnd,
                 text_compare_delete_chars: state.textCompareDeleteChars,
                 text_compare_remove_append: state.textCompareRemoveAppend,
                 text_compare_truncate_duplicate: state.textCompareTruncateDuplicate,
@@ -893,9 +963,60 @@ export const SettingsTab: React.FC = React.memo(() => {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Header Mapping Settings */}
+                            <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm">
+                                <div className="flex items-center gap-3 bg-gray-50 border-b border-gray-100 px-6 py-4">
+                                    <div className="w-8 h-8 bg-emerald-500 text-white rounded-xl flex items-center justify-center text-sm shadow-lg">🏷️</div>
+                                    <div>
+                                        <h4 className="text-xs font-black text-emerald-900 uppercase tracking-wider">Từ khóa hiển thị / Xuống dòng</h4>
+                                        <p className="text-[9px] text-emerald-600 font-bold uppercase">Ánh xạ từ khóa SQL sang tiêu đề hiển thị</p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-6">
+                                    {[
+                                        { label: 'SELECT', value: revertTKHeaderSelect, setter: setRevertTKHeaderSelect, br: revertTKLineBreakSelect, setBr: setRevertTKLineBreakSelect },
+                                        { label: 'FROM', value: revertTKHeaderFrom, setter: setRevertTKHeaderFrom, br: revertTKLineBreakFrom, setBr: setRevertTKLineBreakFrom },
+                                        { label: 'WHERE', value: revertTKHeaderWhere, setter: setRevertTKHeaderWhere, br: revertTKLineBreakWhere, setBr: setRevertTKLineBreakWhere },
+                                        { label: 'AND', value: revertTKHeaderAnd, setter: setRevertTKHeaderAnd, br: revertTKLineBreakAnd, setBr: setRevertTKLineBreakAnd },
+                                        { label: 'ORDER BY', value: revertTKHeaderOrderby, setter: setRevertTKHeaderOrderby, br: revertTKLineBreakOrderby, setBr: setRevertTKLineBreakOrderby },
+                                        { label: 'GROUP BY', value: revertTKHeaderGroupby, setter: setRevertTKHeaderGroupby, br: revertTKLineBreakGroupby, setBr: setRevertTKLineBreakGroupby },
+                                        { label: 'HAVING', value: revertTKHeaderHaving, setter: setRevertTKHeaderHaving, br: revertTKLineBreakHaving, setBr: setRevertTKLineBreakHaving },
+                                    ].map((item) => (
+                                        <div key={item.label} className="flex flex-col gap-2 p-4 bg-white border border-emerald-50 rounded-2xl shadow-sm hover:shadow-md transition-all group/item">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <label className="text-[10px] font-black text-emerald-800 uppercase tracking-widest pl-1">{item.label}</label>
+                                                <label className="flex items-center gap-1.5 cursor-pointer group/br" title="Insert line break before this keyword">
+                                                    <span className="text-[8px] font-black text-gray-300 group-hover/br:text-emerald-500 transition-colors uppercase tracking-tighter">Line Break</span>
+                                                    <div className="relative inline-flex items-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={item.br}
+                                                            onChange={e => { item.setBr(e.target.checked); setTimeout(handleGlobalSave, 100); }}
+                                                            className="sr-only peer"
+                                                        />
+                                                        <div className="w-7 h-4 bg-gray-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500 shadow-inner"></div>
+                                                    </div>
+                                                </label>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={item.value}
+                                                onChange={e => item.setter(e.target.value)}
+                                                onBlur={handleGlobalSave}
+                                                className="bg-gray-50/50 border border-emerald-100 rounded-xl px-4 py-2 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-mono placeholder:text-gray-200"
+                                                placeholder={`Display for ${item.label}...`}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 text-[10px] font-semibold text-gray-500 italic">
+                                    Lưu ý: Bạn có thể nhập bất kỳ chuỗi nào (như "LỰA CHỌN CỘT", "■ 抽出項目") hoặc để trống nếu bạn muốn bỏ qua. Hệ thống sẽ tự động ghép với nội dung SQL parse được.
+                                </div>
+                            </div>
                         </div>
                     )}
-
                     {/* COMPARE FEATURE CONFIG */}
                     {activeSection === 'compare' && (
                         <div className="flex flex-col animate-in fade-in slide-in-from-bottom-2 max-w-5xl">
@@ -976,6 +1097,6 @@ export const SettingsTab: React.FC = React.memo(() => {
                     )}
                 </div>
             </div>
-        </div>
+        </div >
     );
 });
