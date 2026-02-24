@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './store/useAppStore';
-import { ParamsTab } from './components/ParamsTab';
-import { JavaParserTab } from './components/JavaParserTab';
-import { SettingsTab } from './components/SettingsTab';
-import { CompareSuiteTab } from './components/CompareSuiteTab';
 import { clsx } from 'clsx';
 import { invoke } from '@tauri-apps/api/tauri';
-
-import { TranslateTab } from './components/TranslateTab';
-import { useRef } from 'react';
+import { useRef, Suspense, lazy, useDeferredValue } from 'react';
 import { HighlightText } from './utils/uiHelpers';
+
+// Lazy load heavy components for faster initial load
+const ParamsTab = lazy(() => import('./components/ParamsTab').then(m => ({ default: m.ParamsTab })));
+const JavaParserTab = lazy(() => import('./components/JavaParserTab').then(m => ({ default: m.JavaParserTab })));
+const SettingsTab = lazy(() => import('./components/SettingsTab').then(m => ({ default: m.SettingsTab })));
+const CompareSuiteTab = lazy(() => import('./components/CompareSuiteTab').then(m => ({ default: m.CompareSuiteTab })));
+const TranslateTab = lazy(() => import('./components/TranslateTab').then(m => ({ default: m.TranslateTab })));
 
 const TABS_CONFIG = [
     // Main Tabs
@@ -56,6 +57,7 @@ function App() {
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [selectedSugIdx, setSelectedSugIdx] = useState(-1);
     const lastSearchKeyTime = useRef(0);
+    const deferredGlobalSearchTerm = useDeferredValue(globalSearchTerm);
 
     const handleTabJump = (sug: any) => {
         setActiveTab(sug.jumpTab || sug.parent || sug.id);
@@ -219,13 +221,13 @@ function App() {
 
     // Search logic: Suggestions & Navigation
     useEffect(() => {
-        if (!globalSearchTerm.trim() || globalSearchTerm.length < 1) {
+        if (!deferredGlobalSearchTerm.trim() || deferredGlobalSearchTerm.length < 1) {
             setSuggestions([]);
             setSelectedSugIdx(-1);
             return;
         }
 
-        const term = globalSearchTerm.toLowerCase();
+        const term = deferredGlobalSearchTerm.toLowerCase();
 
         // Tab Matches
         const tabMatches = TABS_CONFIG.filter(t =>
@@ -283,7 +285,7 @@ function App() {
 
         setSuggestions(combined);
         setSelectedSugIdx(combined.length > 0 ? 0 : -1);
-    }, [globalSearchTerm]);
+    }, [deferredGlobalSearchTerm]);
 
     const handleSearchKeyDown = (e: React.KeyboardEvent) => {
         if (suggestions.length === 0) return;
@@ -399,11 +401,13 @@ function App() {
             </div>
 
             <main className="flex-1 container mx-auto max-w-full px-5 overflow-hidden flex flex-col">
-                {activeTab === 'params' && <ParamsTab />}
-                {(activeTab === 'compare-suite' || activeTab === 'lab' || activeTab === 'compare' || activeTab === 'text-compare' || activeTab === 'generate') && <CompareSuiteTab />}
-                {(activeTab === 'translate' || activeTab === 'revert-tk') && <TranslateTab />}
-                {activeTab === 'java-parser' && <JavaParserTab />}
-                {activeTab === 'settings' && <SettingsTab />}
+                <Suspense fallback={<div className="flex-1 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-200 border-b-indigo-600"></div></div>}>
+                    {activeTab === 'params' && <ParamsTab />}
+                    {(activeTab === 'compare-suite' || activeTab === 'lab' || activeTab === 'compare' || activeTab === 'text-compare' || activeTab === 'generate') && <CompareSuiteTab />}
+                    {(activeTab === 'translate' || activeTab === 'revert-tk') && <TranslateTab />}
+                    {activeTab === 'java-parser' && <JavaParserTab />}
+                    {activeTab === 'settings' && <SettingsTab />}
+                </Suspense>
             </main>
         </div>
     );

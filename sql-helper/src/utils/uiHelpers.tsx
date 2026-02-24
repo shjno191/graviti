@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 
 
 const unaccent = (str: string) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -10,37 +10,46 @@ function escapeRegex(str: string) {
 export const HighlightText: React.FC<{ text: string, term?: string, globalTerm?: string }> = ({ text, term, globalTerm }) => {
     if (!text) return null;
 
-    const activeTerms = [term, globalTerm].filter(t => t && t.trim().length > 0) as string[];
+    const regex = useMemo(() => {
+        const activeTerms = [term, globalTerm].filter(t => t && t.trim().length > 0) as string[];
+        if (activeTerms.length === 0) return null;
 
-    if (activeTerms.length === 0) return <>{text}</>;
+        const patterns = activeTerms.map(t => {
+            const cleanT = unaccent(t).trim();
+            return cleanT.split('').map(c => c.trim() ? escapeRegex(c) : '\\s*').join('.{0,15}?');
+        });
 
-    const cleanText = unaccent(text);
+        return new RegExp(`(${patterns.join('|')})`, 'gi');
+    }, [term, globalTerm]);
 
-    const patterns = activeTerms.map(t => {
-        const cleanT = unaccent(t).trim();
-        return cleanT.split('').map(c => c.trim() ? escapeRegex(c) : '\\s*').join('.{0,15}?');
-    });
+    const parts = useMemo(() => {
+        if (!regex) return null;
 
-    const regex = new RegExp(`(${patterns.join('|')})`, 'gi');
+        const cleanText = unaccent(text);
+        let match;
+        const result = [];
+        let lastIndex = 0;
 
-    let match;
-    const parts = [];
-    let lastIndex = 0;
+        // Reset regex state since it's cached
+        regex.lastIndex = 0;
 
-    while ((match = regex.exec(cleanText)) !== null) {
-        if (match.index > lastIndex) {
-            parts.push({ text: text.substring(lastIndex, match.index), highlight: false });
+        while ((match = regex.exec(cleanText)) !== null) {
+            if (match.index > lastIndex) {
+                result.push({ text: text.substring(lastIndex, match.index), highlight: false });
+            }
+            result.push({ text: text.substring(match.index, regex.lastIndex), highlight: true });
+            lastIndex = regex.lastIndex;
+            if (match[0].length === 0) regex.lastIndex++;
         }
-        parts.push({ text: text.substring(match.index, regex.lastIndex), highlight: true });
-        lastIndex = regex.lastIndex;
-        if (match[0].length === 0) regex.lastIndex++;
-    }
 
-    if (lastIndex < text.length) {
-        parts.push({ text: text.substring(lastIndex), highlight: false });
-    }
+        if (lastIndex < text.length) {
+            result.push({ text: text.substring(lastIndex), highlight: false });
+        }
 
-    if (parts.length === 0) return <>{text}</>;
+        return result.length > 0 ? result : null;
+    }, [text, regex]);
+
+    if (!parts) return <>{text}</>;
 
     return (
         <>
