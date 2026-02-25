@@ -231,9 +231,10 @@ const RevertTKGrid = React.memo((props: {
                 const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string }[] = [];
                 const normLine = normalizeText(text);
 
+                const lowerNormLine = normLine.toLowerCase();
                 for (const item of props.translationDict) {
                     // Performance optimization: fast fail if phrase not in line
-                    if (!normLine.includes(item.phrase)) continue;
+                    if (!lowerNormLine.includes(item.phrase)) continue;
 
                     item.regex.lastIndex = 0;
                     let match;
@@ -1830,10 +1831,11 @@ export const TranslateTab: React.FC = React.memo(() => {
                     // Normalize the dictionary phrase too
                     const phrase = normalizeText(rawPhrase);
                     if (phrase) {
-                        if (!dictMap.has(phrase)) {
-                            dictMap.set(phrase, new Set());
+                        const lowPhrase = phrase.toLowerCase();
+                        if (!dictMap.has(lowPhrase)) {
+                            dictMap.set(lowPhrase, new Set());
                         }
-                        dictMap.get(phrase)!.add(replacement);
+                        dictMap.get(lowPhrase)!.add(replacement);
                     }
                 }
             });
@@ -1850,7 +1852,7 @@ export const TranslateTab: React.FC = React.memo(() => {
                 return {
                     phrase,
                     replacements: Array.from(replacements),
-                    regex: new RegExp(pattern, 'g')
+                    regex: new RegExp(pattern, 'gi')
                 };
             })
             .sort((a, b) => b.phrase.length - a.phrase.length);
@@ -1882,10 +1884,11 @@ export const TranslateTab: React.FC = React.memo(() => {
             const newTranslatedLines: TranslatedLine[] = lines.map((line, lIdx) => {
                 const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string }[] = [];
                 const normLine = normalizeText(line);
+                const lowerNormLine = normLine.toLowerCase();
 
                 for (const item of translationDict) {
                     // Performance optimization: fast fail if phrase not in line
-                    if (!normLine.includes(item.phrase)) continue;
+                    if (!lowerNormLine.includes(item.phrase)) continue;
 
                     item.regex.lastIndex = 0;
                     let match;
@@ -1946,10 +1949,11 @@ export const TranslateTab: React.FC = React.memo(() => {
             const newTranslatedLines: TranslatedLine[] = lines.map((line, lIdx) => {
                 const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string }[] = [];
                 const normLine = normalizeText(line);
+                const lowerNormLine = normLine.toLowerCase();
 
                 for (const item of translationDict) {
                     // Performance optimization: fast fail if phrase not in line
-                    if (!normLine.includes(item.phrase)) continue;
+                    if (!lowerNormLine.includes(item.phrase)) continue;
 
                     item.regex.lastIndex = 0;
                     let match;
