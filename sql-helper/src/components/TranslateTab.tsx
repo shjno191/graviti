@@ -32,8 +32,7 @@ interface ParserConfig {
     splitEnabled: boolean;
     keywords: string[];
     deleteChars?: string[];
-    headers: Record<string, string>;
-    lineBreaks: Record<string, boolean>;
+    revertRules?: any[];
     revertTKMapping?: any[];
 }
 
@@ -263,7 +262,7 @@ const parseJavaSql = (input: string, config: ParserConfig): string => {
 
     for (const raw of rawLines) {
         const trimmed = raw.trim();
-        if (!trimmed) continue;
+        if (!trimmed || trimmed.startsWith('//')) continue;
 
         const ifMatch = trimmed.match(/^if\s*\((.+?)\)\s*\{?$/);
         if (ifMatch) {
@@ -281,10 +280,15 @@ const parseJavaSql = (input: string, config: ParserConfig): string => {
         if (trimmed === '{') { braceDepth++; continue; }
 
         let sqlLine = trimmed;
-        const appendMatch = sqlLine.match(/^[\w$]+\.append\s*\(\s*"?(.*?)"?\s*\)\s*;?$/);
-        if (appendMatch) {
-            sqlLine = appendMatch[1].trim();
+        // Aggressively strip Java StringBuilder/StringBuffer append wrappers
+        // Handles: sb.append("..."), sql.append("..."), append("..."), etc.
+        if (/\.append\s*\(/.test(sqlLine) || sqlLine.startsWith('append(')) {
+            sqlLine = sqlLine.replace(/^.*?\.\s*append\s*\(\s*/i, ''); // Strip leading part up to .append(
+            sqlLine = sqlLine.replace(/^append\s*\(\s*/i, '');       // Strip leading append(
+            sqlLine = sqlLine.replace(/\s*\)\s*;?.*$/i, '');          // Strip trailing ); and anything after
+            sqlLine = sqlLine.replace(/^"|"$/g, '').replace(/^'|'$/g, ''); // Strip leading/trailing quotes
         }
+
         sqlLine = sqlLine.replace(/"\s*\+\s*([\w.$()]+)\s*\+\s*"/g, '【入力．$1】');
         sqlLine = sqlLine.replace(/"/g, '').replace(/\+/g, '').replace(/;/g, '').trim();
 
@@ -296,12 +300,12 @@ const parseJavaSql = (input: string, config: ParserConfig): string => {
         });
     }
 
-    type Section = 'none' | 'select' | 'from' | 'where' | 'orderby' | 'groupby' | 'having' | 'join';
+    type Section = 'none' | 'select' | 'from' | 'where' | 'orderby' | 'groupby' | 'having' | 'insert' | 'values' | 'update' | 'set' | 'delete';
     let section: Section = 'none';
     const aliasMap = new Map<string, string>();
 
     const outputSections: Record<string, string[]> = {
-        select: [], from: [], where: [], orderby: [], groupby: [], having: []
+        insert: [], values: [], select: [], from: [], where: [], update: [], set: [], delete: [], orderby: [], groupby: [], having: []
     };
 
     const parseConditionLine = (line: string, condition: string | null): string => {
@@ -343,15 +347,22 @@ const parseJavaSql = (input: string, config: ParserConfig): string => {
     let pendingRest = '';
     for (const { sql, condition } of preprocessed) {
         const upper = sql.toUpperCase().trim();
-        if (/^SELECT\b/.test(upper)) { section = 'select'; pendingRest = sql.replace(/^SELECT\s*/i, '').trim(); continue; }
-        if (/^FROM\b/.test(upper)) { section = 'from'; pendingRest = sql.replace(/^FROM\s*/i, '').trim(); continue; }
-        if (/^WHERE\b/.test(upper)) { section = 'where'; pendingRest = sql.replace(/^WHERE\s*/i, '').trim(); continue; }
-        if (/^ORDER\s+BY\b/.test(upper)) { section = 'orderby'; pendingRest = sql.replace(/^ORDER\s+BY\s*/i, '').trim(); continue; }
-        if (/^GROUP\s+BY\b/.test(upper)) { section = 'groupby'; pendingRest = sql.replace(/^GROUP\s+BY\s*/i, '').trim(); continue; }
-        if (/^HAVING\b/.test(upper)) { section = 'having'; pendingRest = sql.replace(/^HAVING\s*/i, '').trim(); continue; }
-        if (/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN\b/.test(upper)) {
+
+        if (/^SELECT\b/i.test(upper)) { section = 'select'; pendingRest = sql.replace(/^SELECT\s*/i, '').trim(); continue; }
+        if (/^FROM\b/i.test(upper)) { section = 'from'; pendingRest = sql.replace(/^FROM\s*/i, '').trim(); continue; }
+        if (/^WHERE\b/i.test(upper)) { section = 'where'; pendingRest = sql.replace(/^WHERE\s*/i, '').trim(); continue; }
+        if (/^INSERT\s+INTO\b/i.test(upper)) { section = 'insert'; pendingRest = sql.replace(/^INSERT\s+INTO\s*/i, '').trim(); continue; }
+        if (/^UPDATE\b/i.test(upper)) { section = 'update'; pendingRest = sql.replace(/^UPDATE\s*/i, '').trim(); continue; }
+        if (/^SET\b/i.test(upper)) { section = 'set'; pendingRest = sql.replace(/^SET\s*/i, '').trim(); continue; }
+        if (/^VALUES\b/i.test(upper)) { section = 'values'; pendingRest = sql.replace(/^VALUES\s*/i, '').trim(); continue; }
+        if (/^DELETE\s+FROM\b/i.test(upper) || /^DELETE\b/i.test(upper)) { section = 'delete'; pendingRest = sql.replace(/^DELETE\s+(FROM\s+)?/i, '').trim(); continue; }
+        if (/^ORDER\s+BY\b/i.test(upper)) { section = 'orderby'; pendingRest = sql.replace(/^ORDER\s+BY\s*/i, '').trim(); continue; }
+        if (/^GROUP\s+BY\b/i.test(upper)) { section = 'groupby'; pendingRest = sql.replace(/^GROUP\s+BY\s*/i, '').trim(); continue; }
+        if (/^HAVING\b/i.test(upper)) { section = 'having'; pendingRest = sql.replace(/^HAVING\s*/i, '').trim(); continue; }
+
+        if (/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN\b/i.test(upper)) {
             section = 'from';
-            const joinType = upper.match(/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN/)?.[0] ?? 'JOIN';
+            const joinType = upper.match(/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN/i)?.[0] ?? 'JOIN';
             pendingRest = sql.replace(/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN\s*/i, '').trim();
             const parts = pendingRest.split(/\s+/);
             const tbl = parts[0] || pendingRest;
@@ -366,18 +377,37 @@ const parseJavaSql = (input: string, config: ParserConfig): string => {
         pendingRest = '';
         if (!workLine) continue;
 
-        if (section === 'select' || section === 'groupby') {
+        if (section === 'select' || section === 'groupby' || section === 'insert' || section === 'values') {
             const items = splitByComma(workLine).filter(Boolean);
-            const target = section === 'select' ? outputSections.select : outputSections.groupby;
-            items.forEach(item => target.push(`\t${item}`));
-        } else if (section === 'from') {
+            let target: string[];
+            if (section === 'select') target = outputSections.select;
+            else if (section === 'groupby') target = outputSections.groupby;
+            else if (section === 'insert') target = outputSections.insert;
+            else target = outputSections.values;
+
+            items.forEach(item => {
+                const cleaned = item.replace(/^\(|\)$/g, '').trim();
+                if (cleaned) target.push(`\t${cleaned}`);
+            });
+        } else if (section === 'from' || section === 'update' || section === 'delete') {
+            const target = section === 'from' ? outputSections.from : (section === 'update' ? outputSections.update : outputSections.delete);
             const tables = splitByComma(workLine);
             tables.forEach(entry => {
                 const p = entry.trim().split(/\s+/);
                 const tbl = p[0];
                 const alias = p[1];
                 if (alias) aliasMap.set(alias, tbl);
-                outputSections.from.push(`\t${tbl}${alias ? ` (${alias})` : ''}`);
+                target.push(`\t${tbl}${alias ? ` (${alias})` : ''}`);
+            });
+        } else if (section === 'set') {
+            const items = splitByComma(workLine).filter(Boolean);
+            items.forEach(item => {
+                const cmp = item.match(/^(.+?)\s*=\s*(.+)$/);
+                if (cmp) {
+                    outputSections.set.push(`\t${cmp[1].trim()}\t=\t${cmp[2].trim()}`);
+                } else {
+                    outputSections.set.push(`\t${item.trim()}`);
+                }
             });
         } else if (section === 'where' || section === 'having') {
             const target = section === 'where' ? outputSections.where : outputSections.having;
@@ -409,12 +439,21 @@ const parseJavaSql = (input: string, config: ParserConfig): string => {
     }
 
     const lines: string[] = [];
-    const sectionOrder: (keyof typeof outputSections)[] = ['select', 'from', 'where', 'orderby', 'groupby', 'having'];
+    const sectionOrder: (keyof typeof outputSections)[] = ['insert', 'values', 'update', 'set', 'delete', 'select', 'from', 'where', 'orderby', 'groupby', 'having'];
     for (const key of sectionOrder) {
         const rows = outputSections[key];
         if (rows.length > 0) {
-            if (config.lineBreaks[key] && lines.length > 0) lines.push('');
-            lines.push(config.headers[key] || `■ ${key.toUpperCase()}`);
+            const rule = (config.revertRules || []).find(r =>
+                r.keyword.toLowerCase() === key.toLowerCase() ||
+                r.keyword.replace(/\s+/g, '').toLowerCase() === key.toLowerCase()
+            );
+
+            if (rule) {
+                if (rule.lineBreak && lines.length > 0) lines.push('');
+                lines.push(rule.header || `■ ${key.toUpperCase()}`);
+            } else {
+                lines.push(`■ ${key.toUpperCase()}`);
+            }
             lines.push(...rows);
         }
     }
@@ -439,17 +478,16 @@ const smartFormatSqlDesign = (input: string, config: ParserConfig): string => {
 
     let lines = text.split('\n').map(line => line.replace(/\t/g, ' ').replace(/\s+$/g, ''));
 
-    const SQL_KEYWORDS = ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'GROUP BY', 'HAVING'];
-    const { headers, lineBreaks } = config;
-
     const preprocessedLines: string[] = [];
     lines.forEach(line => {
         const trimmed = line.trim().toUpperCase();
-        if (SQL_KEYWORDS.includes(trimmed)) {
-            if (lineBreaks[trimmed.replace(' ', '').toLowerCase()] && preprocessedLines.length > 0) {
+        const rule = (config.revertRules || []).find(r => r.keyword.toUpperCase() === trimmed);
+
+        if (rule) {
+            if (rule.lineBreak && preprocessedLines.length > 0) {
                 preprocessedLines.push('');
             }
-            preprocessedLines.push(headers[trimmed.replace(' ', '').toLowerCase()] || trimmed);
+            preprocessedLines.push(rule.header || trimmed);
         } else {
             preprocessedLines.push(line);
         }
@@ -587,10 +625,11 @@ const smartFormatSqlDesign = (input: string, config: ParserConfig): string => {
             if (joinLines.length > 0) {
                 const BETWEEN_REGEX = /^(.*?)\s+BETWEEN\s+(.*?)\s+AND\s+(.*?)$/i;
                 const COMPARE_REGEX = /^(.*?)\s*(=|<=|>=|<>|!=|<|>)\s*(.*)$/;
+                const andRule = (config.revertRules || []).find(r => r.keyword.toUpperCase() === 'AND');
                 joinLines.forEach(({ idx: lineIdx, op, rest }) => {
                     const trimmedRest = rest.trim();
                     const between = trimmedRest.match(BETWEEN_REGEX);
-                    const displayOp = op.toUpperCase() === 'AND' ? (headers.and || 'AND') : op;
+                    const displayOp = op.toUpperCase() === 'AND' ? (andRule?.header || 'AND') : op;
                     if (between) result[lineIdx] = `\t${displayOp}\t${between[1].trim()}\tBETWEEN\t${between[2].trim()}\t～ ${between[3].trim()}`;
                     else {
                         const compare = trimmedRest.match(COMPARE_REGEX);
@@ -995,21 +1034,7 @@ export const TranslateTab: React.FC = React.memo(() => {
         revertTKResult, setRevertTKResult,
         revertTKMode, setRevertTKMode,
         revertTKResultFormat, setRevertTKResultFormat,
-        setSettingsSection,
-        revertTKHeaderSelect,
-        revertTKHeaderFrom,
-        revertTKHeaderWhere,
-        revertTKHeaderOrderby,
-        revertTKHeaderGroupby,
-        revertTKHeaderHaving,
-        revertTKHeaderAnd,
-        revertTKLineBreakSelect,
-        revertTKLineBreakFrom,
-        revertTKLineBreakWhere,
-        revertTKLineBreakOrderby,
-        revertTKLineBreakGroupby,
-        revertTKLineBreakHaving,
-        revertTKLineBreakAnd,
+        revertRules,
         bulkInput, setBulkInput,
         targetLang, setTargetLang,
         searchTerm, setSearchTerm,
@@ -1052,21 +1077,7 @@ export const TranslateTab: React.FC = React.memo(() => {
         setRevertTKMode: state.setRevertTKModeStore,
         revertTKResultFormat: state.revertTKResultFormatStore,
         setRevertTKResultFormat: state.setRevertTKResultFormatStore,
-        setSettingsSection: state.setSettingsSection,
-        revertTKHeaderSelect: state.revertTKHeaderSelect,
-        revertTKHeaderFrom: state.revertTKHeaderFrom,
-        revertTKHeaderWhere: state.revertTKHeaderWhere,
-        revertTKHeaderOrderby: state.revertTKHeaderOrderby,
-        revertTKHeaderGroupby: state.revertTKHeaderGroupby,
-        revertTKHeaderHaving: state.revertTKHeaderHaving,
-        revertTKHeaderAnd: state.revertTKHeaderAnd,
-        revertTKLineBreakSelect: state.revertTKLineBreakSelect,
-        revertTKLineBreakFrom: state.revertTKLineBreakFrom,
-        revertTKLineBreakWhere: state.revertTKLineBreakWhere,
-        revertTKLineBreakOrderby: state.revertTKLineBreakOrderby,
-        revertTKLineBreakGroupby: state.revertTKLineBreakGroupby,
-        revertTKLineBreakHaving: state.revertTKLineBreakHaving,
-        revertTKLineBreakAnd: state.revertTKLineBreakAnd,
+        revertRules: state.revertRules,
         bulkInput: state.translateInputStore,
         setBulkInput: state.setTranslateInputStore,
         targetLang: state.translateTargetLangStore,
@@ -1133,6 +1144,8 @@ export const TranslateTab: React.FC = React.memo(() => {
     const highlighterRef = useRef<HTMLDivElement>(null);
     const revertTKInputRef = useRef<HTMLTextAreaElement>(null);
     const [revertTKTranslatedLines, setRevertTKTranslatedLines] = useState<TranslatedLine[]>([]);
+    const [revertTKResultTranslatedLines, setRevertTKResultTranslatedLines] = useState<TranslatedLine[]>([]);
+    const deferredRevertTKResult = useDeferredValue(revertTKResult);
 
     const scrollSourceRef = useRef<HTMLElement | null>(null);
 
@@ -1338,32 +1351,15 @@ export const TranslateTab: React.FC = React.memo(() => {
                     (revertTKResultFormat === 'text' && columnSplitApplyToText) ||
                     (revertTKResultFormat === 'table' && columnSplitApplyToTable)
                 );
-                const parserConfig = {
+                const parserConfig: ParserConfig = {
                     splitEnabled: shouldSplit,
                     keywords: columnSplitKeywords.split('|').map(k => k.trim()).filter(Boolean),
                     deleteChars: revertTKDeleteChars.split('|').map(k => k.trim()).filter(Boolean),
-                    headers: {
-                        select: revertTKHeaderSelect,
-                        from: revertTKHeaderFrom,
-                        where: revertTKHeaderWhere,
-                        orderby: revertTKHeaderOrderby,
-                        groupby: revertTKHeaderGroupby,
-                        having: revertTKHeaderHaving,
-                        and: revertTKHeaderAnd
-                    },
-                    lineBreaks: {
-                        select: revertTKLineBreakSelect,
-                        from: revertTKLineBreakFrom,
-                        where: revertTKLineBreakWhere,
-                        orderby: revertTKLineBreakOrderby,
-                        groupby: revertTKLineBreakGroupby,
-                        having: revertTKLineBreakHaving,
-                        and: revertTKLineBreakAnd
-                    },
-                    revertTKMapping // Added this line
+                    revertRules,
+                    revertTKMapping
                 };
 
-                const isJava = /[\w$]+\.append\s*\(/i.test(revertTKInput);
+                const isJava = /append\s*\(/i.test(revertTKInput);
                 if (isJava) {
                     result = parseJavaSql(revertTKInput, parserConfig);
                 } else {
@@ -1561,17 +1557,20 @@ export const TranslateTab: React.FC = React.memo(() => {
         const trimmedSearch = deferredSearchTerm.trim();
 
         if (!trimmedSearch) return results;
-        const lowerSearch = trimmedSearch.toLowerCase();
+        const searchTerms = trimmedSearch.split('|').map(s => s.trim().toLowerCase()).filter(Boolean);
+        if (searchTerms.length === 0) return results;
 
         return results.filter(({ item }) => {
-            if (searchStrict) {
-                return item.japanese.toLowerCase() === lowerSearch ||
-                    item.english.toLowerCase() === lowerSearch ||
-                    item.vietnamese.toLowerCase() === lowerSearch;
-            }
-            return item.japanese.toLowerCase().includes(lowerSearch) ||
-                item.english.toLowerCase().includes(lowerSearch) ||
-                item.vietnamese.toLowerCase().includes(lowerSearch);
+            return searchTerms.some(term => {
+                const lowerJp = item.japanese.toLowerCase();
+                const lowerEn = item.english.toLowerCase();
+                const lowerVi = item.vietnamese.toLowerCase();
+
+                if (searchStrict) {
+                    return lowerJp === term || lowerEn === term || lowerVi === term;
+                }
+                return lowerJp.includes(term) || lowerEn.includes(term) || lowerVi.includes(term);
+            });
         });
     }, [data, deferredSearchTerm, searchStrict]);
 
@@ -1804,6 +1803,23 @@ export const TranslateTab: React.FC = React.memo(() => {
 
         return () => clearTimeout(timer);
     }, [deferredRevertTKInput, translationDict, selections]);
+
+    useEffect(() => {
+        if (!deferredRevertTKResult) {
+            setRevertTKResultTranslatedLines([]);
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            const lines = deferredRevertTKResult.split('\n');
+            const newTranslatedLines: TranslatedLine[] = lines.map((line, lIdx) => ({
+                segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rr')
+            }));
+            setRevertTKResultTranslatedLines(newTranslatedLines);
+        }, 150);
+
+        return () => clearTimeout(timer);
+    }, [deferredRevertTKResult, translationDict, selections]);
 
     useEffect(() => {
         if (activeTab === 'translate' || activeTab === 'revert-tk') {
@@ -2245,15 +2261,6 @@ export const TranslateTab: React.FC = React.memo(() => {
                                 </div>
                                 <div className="flex items-center gap-2 mr-2">
                                     <button
-                                        onClick={() => {
-                                            setSettingsSection('revertTK');
-                                            setActiveTab('settings');
-                                        }}
-                                        className="px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-black rounded-lg hover:bg-indigo-700 transition-all shadow active:scale-95"
-                                    >
-                                        ⚙️ CONFIG
-                                    </button>
-                                    <button
                                         onClick={() => revertTKResult && navigator.clipboard.writeText(revertTKResult)}
                                         disabled={!revertTKResult}
                                         className="px-3 py-1.5 rounded-lg text-[10px] font-black bg-white text-amber-600 border border-amber-100 hover:bg-amber-50 disabled:opacity-50 hover:shadow-sm active:scale-95 transition-all flex items-center gap-1.5"
@@ -2295,17 +2302,32 @@ export const TranslateTab: React.FC = React.memo(() => {
                                                     <div key={i} className="text-right pr-3" style={{ lineHeight: `${lineSpacing}` }}>{i + 1}</div>
                                                 ))}
                                             </div>
-                                            <textarea
-                                                readOnly
-                                                wrap="off"
-                                                className="flex-1 p-6 font-mono text-sm outline-none resize-none bg-white text-gray-800 caret-gray-800 overflow-auto"
+                                            <div
+                                                className="flex-1 p-6 font-mono text-sm outline-none overflow-auto custom-scrollbar bg-white text-gray-800 box-border"
                                                 style={{
                                                     lineHeight: `${lineSpacing}`,
-                                                    whiteSpace: 'pre',
                                                     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
                                                 }}
-                                                value={revertTKResult}
-                                            />
+                                            >
+                                                {revertTKResultTranslatedLines.map((line, lIdx) => (
+                                                    <div key={lIdx} style={{ minHeight: `${lineSpacing}em` }}>
+                                                        {line.segments.length > 0 ? line.segments.map(seg => (
+                                                            <MemoizedSegment
+                                                                key={seg.uid}
+                                                                seg={seg}
+                                                                hoveredUid={hoveredUid}
+                                                                hoveredKey={hoveredKey}
+                                                                onHover={(u, k) => { setHoveredUid(u); setHoveredKey(k); }}
+                                                                onClick={handleSegmentClick}
+                                                                copiedKey={segmentCopyFeedback}
+                                                                lIdx={lIdx}
+                                                                onShowTooltip={handleShowTooltip}
+                                                                globalTerm={deferredGlobalSearchTerm}
+                                                            />
+                                                        )) : '\u200B'}
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     )
                                 ) : (

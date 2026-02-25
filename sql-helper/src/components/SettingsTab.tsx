@@ -71,20 +71,7 @@ export const SettingsTab: React.FC = React.memo(() => {
         columnSplitApplyToText, setColumnSplitApplyToText,
         columnSplitApplyToTable, setColumnSplitApplyToTable,
         uiHighlightCopied, setUiHighlightCopied,
-        revertTKHeaderSelect, setRevertTKHeaderSelect,
-        revertTKHeaderFrom, setRevertTKHeaderFrom,
-        revertTKHeaderWhere, setRevertTKHeaderWhere,
-        revertTKHeaderOrderby, setRevertTKHeaderOrderby,
-        revertTKHeaderGroupby, setRevertTKHeaderGroupby,
-        revertTKHeaderHaving, setRevertTKHeaderHaving,
-        revertTKHeaderAnd, setRevertTKHeaderAnd,
-        revertTKLineBreakSelect, setRevertTKLineBreakSelect,
-        revertTKLineBreakFrom, setRevertTKLineBreakFrom,
-        revertTKLineBreakWhere, setRevertTKLineBreakWhere,
-        revertTKLineBreakOrderby, setRevertTKLineBreakOrderby,
-        revertTKLineBreakGroupby, setRevertTKLineBreakGroupby,
-        revertTKLineBreakHaving, setRevertTKLineBreakHaving,
-        revertTKLineBreakAnd, setRevertTKLineBreakAnd,
+        revertRules, setRevertRules, addRevertRule, updateRevertRule, removeRevertRule, resetRevertRule
     } = useAppStore(useShallow(state => ({
         connections: state.connections,
         setConnections: state.setConnections,
@@ -140,34 +127,12 @@ export const SettingsTab: React.FC = React.memo(() => {
         setColumnSplitApplyToTable: state.setColumnSplitApplyToTable,
         uiHighlightCopied: state.uiHighlightCopied,
         setUiHighlightCopied: state.setUiHighlightCopied,
-        revertTKHeaderSelect: state.revertTKHeaderSelect,
-        setRevertTKHeaderSelect: state.setRevertTKHeaderSelect,
-        revertTKHeaderFrom: state.revertTKHeaderFrom,
-        setRevertTKHeaderFrom: state.setRevertTKHeaderFrom,
-        revertTKHeaderWhere: state.revertTKHeaderWhere,
-        setRevertTKHeaderWhere: state.setRevertTKHeaderWhere,
-        revertTKHeaderOrderby: state.revertTKHeaderOrderby,
-        setRevertTKHeaderOrderby: state.setRevertTKHeaderOrderby,
-        revertTKHeaderGroupby: state.revertTKHeaderGroupby,
-        setRevertTKHeaderGroupby: state.setRevertTKHeaderGroupby,
-        revertTKHeaderHaving: state.revertTKHeaderHaving,
-        setRevertTKHeaderHaving: state.setRevertTKHeaderHaving,
-        revertTKHeaderAnd: state.revertTKHeaderAnd,
-        setRevertTKHeaderAnd: state.setRevertTKHeaderAnd,
-        revertTKLineBreakSelect: state.revertTKLineBreakSelect,
-        setRevertTKLineBreakSelect: state.setRevertTKLineBreakSelect,
-        revertTKLineBreakFrom: state.revertTKLineBreakFrom,
-        setRevertTKLineBreakFrom: state.setRevertTKLineBreakFrom,
-        revertTKLineBreakWhere: state.revertTKLineBreakWhere,
-        setRevertTKLineBreakWhere: state.setRevertTKLineBreakWhere,
-        revertTKLineBreakOrderby: state.revertTKLineBreakOrderby,
-        setRevertTKLineBreakOrderby: state.setRevertTKLineBreakOrderby,
-        revertTKLineBreakGroupby: state.revertTKLineBreakGroupby,
-        setRevertTKLineBreakGroupby: state.setRevertTKLineBreakGroupby,
-        revertTKLineBreakHaving: state.revertTKLineBreakHaving,
-        setRevertTKLineBreakHaving: state.setRevertTKLineBreakHaving,
-        revertTKLineBreakAnd: state.revertTKLineBreakAnd,
-        setRevertTKLineBreakAnd: state.setRevertTKLineBreakAnd,
+        revertRules: state.revertRules,
+        setRevertRules: state.setRevertRules,
+        addRevertRule: state.addRevertRule,
+        updateRevertRule: state.updateRevertRule,
+        removeRevertRule: state.removeRevertRule,
+        resetRevertRule: state.resetRevertRule,
     })));
 
 
@@ -192,20 +157,7 @@ export const SettingsTab: React.FC = React.memo(() => {
                 if (settings.column_split_apply_to_table !== undefined) store.setColumnSplitApplyToTable(settings.column_split_apply_to_table);
                 if (settings.revert_tk_delete_chars) store.setRevertTKDeleteChars(settings.revert_tk_delete_chars);
                 if (settings.revert_tk_mapping) store.setRevertTKMapping(settings.revert_tk_mapping);
-                if (settings.revert_tk_header_select) store.setRevertTKHeaderSelect(settings.revert_tk_header_select);
-                if (settings.revert_tk_header_from) store.setRevertTKHeaderFrom(settings.revert_tk_header_from);
-                if (settings.revert_tk_header_where) store.setRevertTKHeaderWhere(settings.revert_tk_header_where);
-                if (settings.revert_tk_header_orderby) store.setRevertTKHeaderOrderby(settings.revert_tk_header_orderby);
-                if (settings.revert_tk_header_groupby) store.setRevertTKHeaderGroupby(settings.revert_tk_header_groupby);
-                if (settings.revert_tk_header_having) store.setRevertTKHeaderHaving(settings.revert_tk_header_having);
-                if (settings.revert_tk_header_and) store.setRevertTKHeaderAnd(settings.revert_tk_header_and);
-                if (settings.revert_tk_line_break_select !== undefined) store.setRevertTKLineBreakSelect(settings.revert_tk_line_break_select);
-                if (settings.revert_tk_line_break_from !== undefined) store.setRevertTKLineBreakFrom(settings.revert_tk_line_break_from);
-                if (settings.revert_tk_line_break_where !== undefined) store.setRevertTKLineBreakWhere(settings.revert_tk_line_break_where);
-                if (settings.revert_tk_line_break_orderby !== undefined) store.setRevertTKLineBreakOrderby(settings.revert_tk_line_break_orderby);
-                if (settings.revert_tk_line_break_groupby !== undefined) store.setRevertTKLineBreakGroupby(settings.revert_tk_line_break_groupby);
-                if (settings.revert_tk_line_break_having !== undefined) store.setRevertTKLineBreakHaving(settings.revert_tk_line_break_having);
-                if (settings.revert_tk_line_break_and !== undefined) store.setRevertTKLineBreakAnd(settings.revert_tk_line_break_and);
+                if (settings.revert_rules) store.setRevertRules(settings.revert_rules);
                 if (settings.text_compare_delete_chars) store.setTextCompareDeleteChars(settings.text_compare_delete_chars);
                 if (settings.text_compare_remove_append !== undefined) store.setTextCompareRemoveAppend(settings.text_compare_remove_append);
                 if (settings.text_compare_truncate_duplicate !== undefined) store.setTextCompareTruncateDuplicate(settings.text_compare_truncate_duplicate);
@@ -274,20 +226,7 @@ export const SettingsTab: React.FC = React.memo(() => {
                 column_split_apply_to_table: state.columnSplitApplyToTable,
                 revert_tk_delete_chars: state.revertTKDeleteChars,
                 revert_tk_mapping: state.revertTKMapping,
-                revert_tk_header_select: state.revertTKHeaderSelect,
-                revert_tk_header_from: state.revertTKHeaderFrom,
-                revert_tk_header_where: state.revertTKHeaderWhere,
-                revert_tk_header_orderby: state.revertTKHeaderOrderby,
-                revert_tk_header_groupby: state.revertTKHeaderGroupby,
-                revert_tk_header_having: state.revertTKHeaderHaving,
-                revert_tk_header_and: state.revertTKHeaderAnd,
-                revert_tk_line_break_select: state.revertTKLineBreakSelect,
-                revert_tk_line_break_from: state.revertTKLineBreakFrom,
-                revert_tk_line_break_where: state.revertTKLineBreakWhere,
-                revert_tk_line_break_orderby: state.revertTKLineBreakOrderby,
-                revert_tk_line_break_groupby: state.revertTKLineBreakGroupby,
-                revert_tk_line_break_having: state.revertTKLineBreakHaving,
-                revert_tk_line_break_and: state.revertTKLineBreakAnd,
+                revert_rules: state.revertRules,
                 text_compare_delete_chars: state.textCompareDeleteChars,
                 text_compare_remove_append: state.textCompareRemoveAppend,
                 text_compare_truncate_duplicate: state.textCompareTruncateDuplicate,
@@ -975,41 +914,73 @@ export const SettingsTab: React.FC = React.memo(() => {
                                 </div>
 
                                 <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-6">
-                                    {[
-                                        { label: 'SELECT', value: revertTKHeaderSelect, setter: setRevertTKHeaderSelect, br: revertTKLineBreakSelect, setBr: setRevertTKLineBreakSelect },
-                                        { label: 'FROM', value: revertTKHeaderFrom, setter: setRevertTKHeaderFrom, br: revertTKLineBreakFrom, setBr: setRevertTKLineBreakFrom },
-                                        { label: 'WHERE', value: revertTKHeaderWhere, setter: setRevertTKHeaderWhere, br: revertTKLineBreakWhere, setBr: setRevertTKLineBreakWhere },
-                                        { label: 'AND', value: revertTKHeaderAnd, setter: setRevertTKHeaderAnd, br: revertTKLineBreakAnd, setBr: setRevertTKLineBreakAnd },
-                                        { label: 'ORDER BY', value: revertTKHeaderOrderby, setter: setRevertTKHeaderOrderby, br: revertTKLineBreakOrderby, setBr: setRevertTKLineBreakOrderby },
-                                        { label: 'GROUP BY', value: revertTKHeaderGroupby, setter: setRevertTKHeaderGroupby, br: revertTKLineBreakGroupby, setBr: setRevertTKLineBreakGroupby },
-                                        { label: 'HAVING', value: revertTKHeaderHaving, setter: setRevertTKHeaderHaving, br: revertTKLineBreakHaving, setBr: setRevertTKLineBreakHaving },
-                                    ].map((item) => (
-                                        <div key={item.label} className="flex flex-col gap-2 p-4 bg-white border border-emerald-50 rounded-2xl shadow-sm hover:shadow-md transition-all group/item">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <label className="text-[10px] font-black text-emerald-800 uppercase tracking-widest pl-1">{item.label}</label>
-                                                <label className="flex items-center gap-1.5 cursor-pointer group/br" title="Insert line break before this keyword">
-                                                    <span className="text-[8px] font-black text-gray-300 group-hover/br:text-emerald-500 transition-colors uppercase tracking-tighter">Line Break</span>
-                                                    <div className="relative inline-flex items-center">
+                                    <button
+                                        onClick={() => { addRevertRule(); setTimeout(handleGlobalSave, 100); }}
+                                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-black uppercase rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-2"
+                                    >
+                                        <span>+ Add Rule</span>
+                                    </button>
+                                </div>
+
+                                <div className="p-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                        {revertRules.map((rule) => (
+                                            <div key={rule.id} className="flex flex-col gap-3 p-4 bg-white border border-emerald-50 rounded-2xl shadow-sm hover:shadow-md transition-all group/item relative">
+                                                <div className="flex justify-between items-center">
+                                                    <div className="flex items-center gap-2">
                                                         <input
-                                                            type="checkbox"
-                                                            checked={item.br}
-                                                            onChange={e => { item.setBr(e.target.checked); setTimeout(handleGlobalSave, 100); }}
-                                                            className="sr-only peer"
+                                                            type="text"
+                                                            value={rule.keyword}
+                                                            onChange={e => updateRevertRule(rule.id, { keyword: e.target.value })}
+                                                            onBlur={handleGlobalSave}
+                                                            className="text-[10px] font-black text-emerald-800 uppercase tracking-widest bg-transparent border-b border-emerald-100 focus:border-emerald-500 outline-none w-full"
+                                                            placeholder="KEYWORD"
                                                         />
-                                                        <div className="w-7 h-4 bg-gray-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500 shadow-inner"></div>
                                                     </div>
-                                                </label>
+                                                    <div className="flex items-center gap-3">
+                                                        <label className="flex items-center gap-1.5 cursor-pointer group/br" title="Insert line break before this keyword">
+                                                            <span className="text-[8px] font-black text-gray-300 group-hover/br:text-emerald-500 transition-colors uppercase tracking-tighter">BR</span>
+                                                            <div className="relative inline-flex items-center">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={rule.lineBreak}
+                                                                    onChange={e => { updateRevertRule(rule.id, { lineBreak: e.target.checked }); setTimeout(handleGlobalSave, 100); }}
+                                                                    className="sr-only peer"
+                                                                />
+                                                                <div className="w-7 h-4 bg-gray-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500 shadow-inner"></div>
+                                                            </div>
+                                                        </label>
+
+                                                        {rule.isDefault ? (
+                                                            <button
+                                                                onClick={() => { resetRevertRule(rule.id); setTimeout(handleGlobalSave, 100); }}
+                                                                className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-emerald-50 text-emerald-300 hover:text-emerald-600 transition-colors"
+                                                                title="Reset to default"
+                                                            >
+                                                                🔄
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => { removeRevertRule(rule.id); setTimeout(handleGlobalSave, 100); }}
+                                                                className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-300 hover:text-red-600 transition-colors"
+                                                                title="Delete rule"
+                                                            >
+                                                                🗑️
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    value={rule.header}
+                                                    onChange={e => updateRevertRule(rule.id, { header: e.target.value })}
+                                                    onBlur={handleGlobalSave}
+                                                    className="bg-gray-50/50 border border-emerald-100 rounded-xl px-4 py-2 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-mono placeholder:text-gray-300"
+                                                    placeholder={`Display header...`}
+                                                />
                                             </div>
-                                            <input
-                                                type="text"
-                                                value={item.value}
-                                                onChange={e => item.setter(e.target.value)}
-                                                onBlur={handleGlobalSave}
-                                                className="bg-gray-50/50 border border-emerald-100 rounded-xl px-4 py-2 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-mono placeholder:text-gray-200"
-                                                placeholder={`Display for ${item.label}...`}
-                                            />
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
                                 <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 text-[10px] font-semibold text-gray-500 italic">
                                     Lưu ý: Bạn có thể nhập bất kỳ chuỗi nào (như "LỰA CHỌN CỘT", "■ 抽出項目") hoặc để trống nếu bạn muốn bỏ qua. Hệ thống sẽ tự động ghép với nội dung SQL parse được.

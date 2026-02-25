@@ -8,19 +8,27 @@ const InputWithLineNumbers = ({
     value,
     onChange,
     placeholder,
-    label
+    label,
+    globalTerm
 }: {
     value: string,
     onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void,
     placeholder: string,
-    label: string
+    label: string,
+    globalTerm?: string
 }) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const lineNumbersRef = useRef<HTMLDivElement>(null);
+    const highlightRef = useRef<HTMLDivElement>(null);
 
     const handleScroll = () => {
-        if (textareaRef.current && lineNumbersRef.current) {
-            lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+        if (textareaRef.current) {
+            const { scrollTop, scrollLeft } = textareaRef.current;
+            if (lineNumbersRef.current) lineNumbersRef.current.scrollTop = scrollTop;
+            if (highlightRef.current) {
+                highlightRef.current.scrollTop = scrollTop;
+                highlightRef.current.scrollLeft = scrollLeft;
+            }
         }
     };
 
@@ -35,25 +43,37 @@ const InputWithLineNumbers = ({
                 <span className="text-gray-400 text-xs font-mono">{lineCount} lines</span>
             </div>
 
-            <div className="flex-1 flex border border-gray-300 rounded overflow-hidden focus-within:ring-2 focus-within:ring-primary focus-within:border-primary min-h-0 bg-white shadow-sm">
+            <div className="flex-1 flex border border-gray-300 rounded overflow-hidden focus-within:ring-2 focus-within:ring-primary focus-within:border-primary min-h-0 bg-white shadow-sm relative">
                 <div
                     ref={lineNumbersRef}
-                    className="bg-gray-50 text-gray-400 font-mono text-xs py-3 pr-2 text-right select-none border-r border-gray-200 overflow-hidden shrink-0"
+                    className="bg-gray-50 text-gray-400 font-mono text-xs py-3 pr-2 text-right select-none border-r border-gray-200 overflow-hidden shrink-0 z-10"
                     style={{ width: '3rem' }}
                 >
                     {Array.from({ length: lineCount }, (_, i) => (
                         <div key={i} className="h-6 leading-6">{i + 1}</div>
                     ))}
                 </div>
-                <textarea
-                    ref={textareaRef}
-                    onScroll={handleScroll}
-                    className="flex-1 p-3 resize-none outline-none font-mono text-xs whitespace-pre overflow-auto border-none w-full leading-6"
-                    value={value}
-                    onChange={onChange}
-                    placeholder={placeholder}
-                    spellCheck={false}
-                />
+
+                <div className="flex-1 relative min-h-0 min-w-0">
+                    {/* Highlighter Overlay */}
+                    <div
+                        ref={highlightRef}
+                        className="absolute inset-0 p-3 pointer-events-none font-mono text-xs whitespace-pre overflow-hidden leading-6 text-transparent z-0 break-all"
+                        aria-hidden="true"
+                    >
+                        <HighlightText text={value} globalTerm={globalTerm} />
+                    </div>
+
+                    <textarea
+                        ref={textareaRef}
+                        onScroll={handleScroll}
+                        className="absolute inset-0 w-full h-full p-3 resize-none outline-none font-mono text-xs whitespace-pre overflow-auto border-none leading-6 bg-transparent text-gray-800 z-[1] break-all"
+                        value={value}
+                        onChange={onChange}
+                        placeholder={placeholder}
+                        spellCheck={false}
+                    />
+                </div>
             </div>
         </div>
     );
@@ -82,7 +102,6 @@ export function TextCompareTab() {
     const setActiveTab = useAppStore(state => state.setActiveTab);
     const setTranslateSubTab = useAppStore(state => state.setTranslateSubTab);
 
-    const [searchTerm, setSearchTerm] = useState('');
     const deferredGlobalSearchTerm = React.useDeferredValue(globalSearchTerm);
 
     const [diffInputs, setDiffInputs] = useState({ expected: '', current: '' });
@@ -217,12 +236,14 @@ export function TextCompareTab() {
                     value={expectedInput}
                     onChange={(e) => setExpectedInput(e.target.value)}
                     placeholder="Paste text A here..."
+                    globalTerm={deferredGlobalSearchTerm}
                 />
                 <InputWithLineNumbers
                     label="Side B"
                     value={currentInput}
                     onChange={(e) => setCurrentInput(e.target.value)}
                     placeholder="Paste text B here..."
+                    globalTerm={deferredGlobalSearchTerm}
                 />
             </div>
 
@@ -277,17 +298,6 @@ export function TextCompareTab() {
                     >
                         ⚡ QUICK TRANSLATE
                     </button>
-                    <div className="relative group ml-2">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
-                        <input
-                            type="text"
-                            placeholder="Highlight matches..."
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            onFocus={(e) => e.target.select()}
-                            className="app-local-search w-32 focus:w-48 transition-all bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-3 py-1 text-[10px] outline-none focus:ring-1 focus:ring-indigo-400 shadow-inner font-bold"
-                        />
-                    </div>
                     <span className="text-gray-400 text-[10px] font-mono bg-gray-100 px-2 py-1 rounded">
                         {diffResult.lines.length} LINES
                     </span>
@@ -325,7 +335,7 @@ export function TextCompareTab() {
                                             {line.originalIndex !== undefined ? line.originalIndex + 1 : ''}
                                         </span>
                                         <div className="flex-1 overflow-x-auto custom-scrollbar-hidden whitespace-pre leading-relaxed text-[11px]">
-                                            {line.type !== 'added' ? <HighlightText text={line.text || ''} term={searchTerm} globalTerm={deferredGlobalSearchTerm} /> : ''}
+                                            {line.type !== 'added' ? <HighlightText text={line.text || ''} globalTerm={deferredGlobalSearchTerm} /> : ''}
                                         </div>
                                     </div>
                                 </div>
@@ -344,7 +354,7 @@ export function TextCompareTab() {
                                             {line.currentIndex !== undefined ? line.currentIndex + 1 : ''}
                                         </span>
                                         <div className="flex-1 overflow-x-auto custom-scrollbar-hidden whitespace-pre leading-relaxed text-[11px]">
-                                            {line.type !== 'removed' ? <HighlightText text={(line.currentText ?? line.text) || ''} term={searchTerm} globalTerm={deferredGlobalSearchTerm} /> : ''}
+                                            {line.type !== 'removed' ? <HighlightText text={(line.currentText ?? line.text) || ''} globalTerm={deferredGlobalSearchTerm} /> : ''}
                                         </div>
                                     </div>
                                 </div>

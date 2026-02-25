@@ -11,11 +11,22 @@ export const HighlightText: React.FC<{ text: string, term?: string, globalTerm?:
     if (!text) return null;
 
     const regex = useMemo(() => {
-        const activeTerms = [term, globalTerm].filter(t => t && t.trim().length > 0) as string[];
+        const rawTerms = [term, globalTerm].filter(t => t && t.trim().length > 0) as string[];
+        if (rawTerms.length === 0) return null;
+
+        const activeTerms: string[] = [];
+        rawTerms.forEach(t => {
+            t.split('|').forEach(part => {
+                const trimmed = part.trim();
+                if (trimmed) activeTerms.push(trimmed);
+            });
+        });
+
         if (activeTerms.length === 0) return null;
 
         const patterns = activeTerms.map(t => {
             const cleanT = unaccent(t).trim();
+            // Fuzzy matching logic: allow some characters between letters
             return cleanT.split('').map(c => c.trim() ? escapeRegex(c) : '\\s*').join('.{0,15}?');
         });
 

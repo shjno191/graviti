@@ -1,5 +1,29 @@
 import { create } from 'zustand';
 
+export interface RevertRule {
+    id: string;
+    keyword: string;
+    header: string;
+    lineBreak: boolean;
+    isDefault?: boolean;
+}
+
+export const REVERT_DEFAULT_RULES: RevertRule[] = [
+    { id: 'select', keyword: 'SELECT', header: '■ 抽出項目', lineBreak: true, isDefault: true },
+    { id: 'from', keyword: 'FROM', header: '■ 対象テーブル', lineBreak: true, isDefault: true },
+    { id: 'where', keyword: 'WHERE', header: '■ 抽出条件', lineBreak: true, isDefault: true },
+    { id: 'and', keyword: 'AND', header: 'AND', lineBreak: true, isDefault: true },
+    { id: 'orderby', keyword: 'ORDER BY', header: '■ ソート条件', lineBreak: true, isDefault: true },
+    { id: 'groupby', keyword: 'GROUP BY', header: '■ グループ条件', lineBreak: true, isDefault: true },
+    { id: 'having', keyword: 'HAVING', header: '■ HAVING条件', lineBreak: true, isDefault: true },
+    { id: 'insert', keyword: 'INSERT INTO', header: '■ 挿入項目', lineBreak: true, isDefault: true },
+    { id: 'update', keyword: 'UPDATE', header: '■ 更新テーブル', lineBreak: true, isDefault: true },
+    { id: 'set', keyword: 'SET', header: '■ 更新内容', lineBreak: true, isDefault: true },
+    { id: 'deletefrom', keyword: 'DELETE FROM', header: '■ 削除テーブル', lineBreak: true, isDefault: true },
+    { id: 'values', keyword: 'VALUES', header: '■ 登録値', lineBreak: true, isDefault: true },
+    { id: 'delete', keyword: 'DELETE', header: '■ 削除項目', lineBreak: true, isDefault: true },
+];
+
 export interface DbConfig {
     id: string;
     name: string;
@@ -106,35 +130,12 @@ export interface AppState {
     revertTKMapping: Array<{ id: string, label: string, offsets: number[], type: 'text' | 'table' }>;
     setRevertTKMapping: (val: Array<{ id: string, label: string, offsets: number[], type: 'text' | 'table' }>) => void;
 
-    revertTKHeaderSelect: string;
-    setRevertTKHeaderSelect: (val: string) => void;
-    revertTKHeaderFrom: string;
-    setRevertTKHeaderFrom: (val: string) => void;
-    revertTKHeaderWhere: string;
-    setRevertTKHeaderWhere: (val: string) => void;
-    revertTKHeaderOrderby: string;
-    setRevertTKHeaderOrderby: (val: string) => void;
-    revertTKHeaderGroupby: string;
-    setRevertTKHeaderGroupby: (val: string) => void;
-    revertTKHeaderHaving: string;
-    setRevertTKHeaderHaving: (val: string) => void;
-    revertTKHeaderAnd: string;
-    setRevertTKHeaderAnd: (val: string) => void;
-
-    revertTKLineBreakSelect: boolean;
-    setRevertTKLineBreakSelect: (val: boolean) => void;
-    revertTKLineBreakFrom: boolean;
-    setRevertTKLineBreakFrom: (val: boolean) => void;
-    revertTKLineBreakWhere: boolean;
-    setRevertTKLineBreakWhere: (val: boolean) => void;
-    revertTKLineBreakOrderby: boolean;
-    setRevertTKLineBreakOrderby: (val: boolean) => void;
-    revertTKLineBreakGroupby: boolean;
-    setRevertTKLineBreakGroupby: (val: boolean) => void;
-    revertTKLineBreakHaving: boolean;
-    setRevertTKLineBreakHaving: (val: boolean) => void;
-    revertTKLineBreakAnd: boolean;
-    setRevertTKLineBreakAnd: (val: boolean) => void;
+    revertRules: RevertRule[];
+    setRevertRules: (val: RevertRule[]) => void;
+    addRevertRule: () => void;
+    updateRevertRule: (id: string, updates: Partial<RevertRule>) => void;
+    removeRevertRule: (id: string) => void;
+    resetRevertRule: (id: string) => void;
 
     textCompareDeleteChars: string;
     setTextCompareDeleteChars: (val: string) => void;
@@ -317,35 +318,32 @@ export const useAppStore = create<AppState>((set) => ({
     ],
     setRevertTKMapping: (val) => set({ revertTKMapping: val }),
 
-    revertTKHeaderSelect: '■ 抽出項目',
-    setRevertTKHeaderSelect: (val) => set({ revertTKHeaderSelect: val }),
-    revertTKHeaderFrom: '■ 対象テーブル',
-    setRevertTKHeaderFrom: (val) => set({ revertTKHeaderFrom: val }),
-    revertTKHeaderWhere: '■ 抽出条件',
-    setRevertTKHeaderWhere: (val) => set({ revertTKHeaderWhere: val }),
-    revertTKHeaderOrderby: '■ ソート条件',
-    setRevertTKHeaderOrderby: (val) => set({ revertTKHeaderOrderby: val }),
-    revertTKHeaderGroupby: '■ グループ条件',
-    setRevertTKHeaderGroupby: (val) => set({ revertTKHeaderGroupby: val }),
-    revertTKHeaderHaving: '■ HAVING条件',
-    setRevertTKHeaderHaving: (val) => set({ revertTKHeaderHaving: val }),
-    revertTKHeaderAnd: 'AND',
-    setRevertTKHeaderAnd: (val) => set({ revertTKHeaderAnd: val }),
-
-    revertTKLineBreakSelect: true,
-    setRevertTKLineBreakSelect: (val) => set({ revertTKLineBreakSelect: val }),
-    revertTKLineBreakFrom: true,
-    setRevertTKLineBreakFrom: (val) => set({ revertTKLineBreakFrom: val }),
-    revertTKLineBreakWhere: true,
-    setRevertTKLineBreakWhere: (val) => set({ revertTKLineBreakWhere: val }),
-    revertTKLineBreakOrderby: true,
-    setRevertTKLineBreakOrderby: (val) => set({ revertTKLineBreakOrderby: val }),
-    revertTKLineBreakGroupby: true,
-    setRevertTKLineBreakGroupby: (val) => set({ revertTKLineBreakGroupby: val }),
-    revertTKLineBreakHaving: true,
-    setRevertTKLineBreakHaving: (val) => set({ revertTKLineBreakHaving: val }),
-    revertTKLineBreakAnd: true,
-    setRevertTKLineBreakAnd: (val) => set({ revertTKLineBreakAnd: val }),
+    revertRules: REVERT_DEFAULT_RULES,
+    setRevertRules: (val) => set({ revertRules: val }),
+    addRevertRule: () => set((state) => ({
+        revertRules: [...state.revertRules, {
+            id: Math.random().toString(36).substr(2, 9),
+            keyword: 'NEW KEYWORD',
+            header: 'New Header',
+            lineBreak: true,
+            isDefault: false
+        }]
+    })),
+    updateRevertRule: (id, updates) => set((state) => ({
+        revertRules: state.revertRules.map(r => r.id === id ? { ...r, ...updates } : r)
+    })),
+    removeRevertRule: (id) => set((state) => ({
+        revertRules: state.revertRules.filter(r => r.id !== id)
+    })),
+    resetRevertRule: (id) => set((state) => ({
+        revertRules: state.revertRules.map(r => {
+            if (r.id === id) {
+                const def = REVERT_DEFAULT_RULES.find(d => d.id === id);
+                return def ? { ...def } : r;
+            }
+            return r;
+        })
+    })),
 
     textCompareDeleteChars: ',);\t"',
     setTextCompareDeleteChars: (val) => set({ textCompareDeleteChars: val }),
