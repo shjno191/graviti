@@ -132,17 +132,17 @@ fn generate_mermaid_graph(
 #[tauri::command]
 fn read_log_file(path: String) -> Result<String, String> {
     // Open file in read-only mode (can read even if file is being used by other apps)
-    let mut file = File::open(&path).map_err(|e| format!("Không thể mở file: {}", e))?;
+    let mut file = File::open(&path).map_err(|e| format!("Khﾃｴng th盻? m盻? file: {}", e))?;
     
     // Read file content as bytes
     let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).map_err(|e| format!("Không thể đọc file: {}", e))?;
+    file.read_to_end(&mut buffer).map_err(|e| format!("Khﾃｴng th盻? ﾄ黛ｻ皇 file: {}", e))?;
     
     // Decode from Shift-JIS to UTF-8
     let (decoded, _, had_errors) = SHIFT_JIS.decode(&buffer);
     
     if had_errors {
-        return Err("File có ký tự không hợp lệ (Shift-JIS encoding)".to_string());
+        return Err("File cﾃｳ kﾃｽ t盻ｱ khﾃｴng h盻｣p l盻? (Shift-JIS encoding)".to_string());
     }
     
     Ok(decoded.to_string())
@@ -211,10 +211,10 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
     if config.db_type == "mssql" {
         let tiberius_config = build_mssql_config(&config)?;
         
-        let tcp = TcpStream::connect(tiberius_config.get_addr()).await.map_err(|e: std::io::Error| format!("Lỗi kết nối mạng (TCP): {}", e))?;
+        let tcp = TcpStream::connect(tiberius_config.get_addr()).await.map_err(|e: std::io::Error| format!("L盻擁 k蘯ｿt n盻訴 m蘯｡ng (TCP): {}", e))?;
         tcp.set_nodelay(true).map_err(|e: std::io::Error| e.to_string())?;
 
-        let mut client = Client::connect(tiberius_config, tcp.compat_write()).await.map_err(|e: tiberius::error::Error| format!("Lỗi đăng nhập Database: {}", e))?;
+        let mut client = Client::connect(tiberius_config, tcp.compat_write()).await.map_err(|e: tiberius::error::Error| format!("L盻擁 ﾄ惰ハg nh蘯ｭp Database: {}", e))?;
         
         // Execute query
         let mut results = client.query(query, &[]).await.map_err(|e: tiberius::error::Error| e.to_string())?;
@@ -300,9 +300,9 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
 async fn test_connection(config: DbConfig) -> Result<String, String> {
     if config.db_type == "mssql" {
         let tiberius_config = build_mssql_config(&config)?;
-        let tcp = TcpStream::connect(tiberius_config.get_addr()).await.map_err(|e: std::io::Error| format!("Lỗi kết nối mạng: {}", e))?;
-        let _client = Client::connect(tiberius_config, tcp.compat_write()).await.map_err(|e: tiberius::error::Error| format!("Lỗi đăng nhập: {}", e))?;
-        return Ok("Kết nối thành công (MSSQL)!".to_string());
+        let tcp = TcpStream::connect(tiberius_config.get_addr()).await.map_err(|e: std::io::Error| format!("L盻擁 k蘯ｿt n盻訴 m蘯｡ng: {}", e))?;
+        let _client = Client::connect(tiberius_config, tcp.compat_write()).await.map_err(|e: tiberius::error::Error| format!("L盻擁 ﾄ惰ハg nh蘯ｭp: {}", e))?;
+        return Ok("K蘯ｿt n盻訴 thﾃ?nh cﾃｴng (MSSQL)!".to_string());
     }
 
     let url = build_db_url(&config)?;
@@ -316,7 +316,7 @@ async fn test_connection(config: DbConfig) -> Result<String, String> {
         _ => return Err("Unsupported database type".to_string()),
     }
 
-    Ok("Kết nối thành công!".to_string())
+    Ok("K蘯ｿt n盻訴 thﾃ?nh cﾃｴng!".to_string())
 }
 
 #[tauri::command]
@@ -435,9 +435,9 @@ fn main() {
             save_db_settings,
             load_db_settings,
             open_file,
-            get_setting_path
+            get_setting_path,
             save_flow_settings,
-            load_flow_settings,
+            load_flow_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
