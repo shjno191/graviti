@@ -1,16 +1,22 @@
 import React from 'react';
 import { QueryResult, useAppStore } from '../store/useAppStore';
+import { HighlightText } from '../utils/uiHelpers';
 
 interface ResultSetTableProps {
     result: QueryResult;
 }
 
 export const ResultSetTable: React.FC<ResultSetTableProps> = React.memo(({ result }) => {
-    const { excelHeaderColor } = useAppStore();
+    const { excelHeaderColor, globalSearchTerm } = useAppStore();
+    const deferredGlobalTerm = React.useDeferredValue(globalSearchTerm);
     if (!result || !result.columns.length) return null;
 
     const [copyStatus, setCopyStatus] = React.useState(false);
     const [menuPos, setMenuPos] = React.useState<{ x: number, y: number, rowIndex: number } | null>(null);
+
+    const filteredRows = React.useMemo(() => {
+        return result.rows; // Global search now only highlights, does not hide data
+    }, [result.rows]);
 
     React.useEffect(() => {
         const handleClick = () => setMenuPos(null);
@@ -128,18 +134,25 @@ export const ResultSetTable: React.FC<ResultSetTableProps> = React.memo(({ resul
                         </tr>
                     </thead>
                     <tbody>
-                        {result.rows.slice(0, 1000).map((row, rowIndex) => (
+                        {filteredRows.slice(0, 1000).map((row, rowIndex) => (
                             <tr
                                 key={rowIndex}
-                                onContextMenu={(e) => {
-                                    e.preventDefault();
-                                    setMenuPos({ x: e.clientX, y: e.clientY, rowIndex });
-                                }}
                                 className="hover:bg-blue-50/50 transition-colors group cursor-default"
                             >
                                 {row.map((cell, cellIndex) => (
-                                    <td key={cellIndex} className="px-3 py-1.5 border-r border-b border-gray-200 font-mono text-xs text-gray-600 whitespace-pre">
-                                        {cell}
+                                    <td
+                                        key={cellIndex}
+                                        onContextMenu={(e) => {
+                                            e.preventDefault();
+                                            setMenuPos({ x: e.clientX, y: e.clientY, rowIndex });
+                                        }}
+                                        className="px-3 py-1.5 border-r border-b border-gray-200 font-mono text-xs text-gray-600 whitespace-pre"
+                                    >
+                                        {cell === null ? (
+                                            <span className="text-gray-300 italic font-mono text-[10px]">NULL</span>
+                                        ) : (
+                                            <HighlightText text={cell.toString()} globalTerm={deferredGlobalTerm} />
+                                        )}
                                     </td>
                                 ))}
                             </tr>

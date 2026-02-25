@@ -12,6 +12,7 @@ export interface DbConfig {
     trust_server_certificate?: boolean;
     encrypt?: boolean;
     verified?: boolean;
+    sessionStatus?: 'untested' | 'success' | 'error';
 }
 
 export interface QueryResult {
@@ -38,8 +39,8 @@ export interface TableScript {
 }
 
 export interface AppState {
-    activeTab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser' | 'compare-suite';
-    setActiveTab: (tab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'text-compare' | 'java-parser' | 'compare-suite') => void;
+    activeTab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'revert-tk' | 'text-compare' | 'java-parser' | 'compare-suite';
+    setActiveTab: (tab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'revert-tk' | 'text-compare' | 'java-parser' | 'compare-suite') => void;
 
     logFileContent: string;
     setLogFileContent: (content: string) => void;
@@ -75,6 +76,8 @@ export interface AppState {
 
     runShortcut: string;
     setRunShortcut: (shortcut: string) => void;
+    focusSearchShortcut: string;
+    setFocusSearchShortcut: (shortcut: string) => void;
 
     formatRemoveSpaces: boolean;
     setFormatRemoveSpaces: (val: boolean) => void;
@@ -103,17 +106,63 @@ export interface AppState {
     revertTKMapping: Array<{ id: string, label: string, offsets: number[], type: 'text' | 'table' }>;
     setRevertTKMapping: (val: Array<{ id: string, label: string, offsets: number[], type: 'text' | 'table' }>) => void;
 
+    revertTKHeaderSelect: string;
+    setRevertTKHeaderSelect: (val: string) => void;
+    revertTKHeaderFrom: string;
+    setRevertTKHeaderFrom: (val: string) => void;
+    revertTKHeaderWhere: string;
+    setRevertTKHeaderWhere: (val: string) => void;
+    revertTKHeaderOrderby: string;
+    setRevertTKHeaderOrderby: (val: string) => void;
+    revertTKHeaderGroupby: string;
+    setRevertTKHeaderGroupby: (val: string) => void;
+    revertTKHeaderHaving: string;
+    setRevertTKHeaderHaving: (val: string) => void;
+    revertTKHeaderAnd: string;
+    setRevertTKHeaderAnd: (val: string) => void;
+
+    revertTKLineBreakSelect: boolean;
+    setRevertTKLineBreakSelect: (val: boolean) => void;
+    revertTKLineBreakFrom: boolean;
+    setRevertTKLineBreakFrom: (val: boolean) => void;
+    revertTKLineBreakWhere: boolean;
+    setRevertTKLineBreakWhere: (val: boolean) => void;
+    revertTKLineBreakOrderby: boolean;
+    setRevertTKLineBreakOrderby: (val: boolean) => void;
+    revertTKLineBreakGroupby: boolean;
+    setRevertTKLineBreakGroupby: (val: boolean) => void;
+    revertTKLineBreakHaving: boolean;
+    setRevertTKLineBreakHaving: (val: boolean) => void;
+    revertTKLineBreakAnd: boolean;
+    setRevertTKLineBreakAnd: (val: boolean) => void;
+
     textCompareDeleteChars: string;
     setTextCompareDeleteChars: (val: string) => void;
     textCompareRemoveAppend: boolean;
     setTextCompareRemoveAppend: (val: boolean) => void;
     textCompareTruncateDuplicate: boolean;
     setTextCompareTruncateDuplicate: (val: boolean) => void;
+    textCompareRemoveEmptyLines: boolean;
+    setTextCompareRemoveEmptyLines: (val: boolean) => void;
+    textCompareOrdered: boolean;
+    setTextCompareOrdered: (val: boolean) => void;
+    textCompareIgnoreCase: boolean;
+    setTextCompareIgnoreCase: (val: boolean) => void;
+    textCompareTrimWhitespace: boolean;
+    setTextCompareTrimWhitespace: (val: boolean) => void;
+    textCompareAutoCompare: boolean;
+    setTextCompareAutoCompare: (val: boolean) => void;
+    textCompareSort: boolean;
+    setTextCompareSort: (val: boolean) => void;
 
     translateDeleteChars: string;
     setTranslateDeleteChars: (val: string) => void;
     translateTruncateDuplicate: boolean;
     setTranslateTruncateDuplicate: (val: boolean) => void;
+
+    // Global Search
+    globalSearchTerm: string;
+    setGlobalSearchTerm: (term: string) => void;
 
     // Shared Text Compare Inputs
     textCompareExpectedInput: string;
@@ -121,8 +170,30 @@ export interface AppState {
     textCompareCurrentInput: string;
     setTextCompareCurrentInput: (val: string) => void;
 
-    translateSubTab: 'dictionary' | 'quick' | 'revertTK';
-    setTranslateSubTab: (tab: 'dictionary' | 'quick' | 'revertTK') => void;
+    // Shared RevertTK Inputs/State
+    revertTKInputStore: string;
+    setRevertTKInputStore: (val: string) => void;
+    revertTKResultStore: string;
+    setRevertTKResultStore: (val: string) => void;
+    revertTKModeStore: 'TKtoCode' | 'CodetoTK';
+    setRevertTKModeStore: (val: 'TKtoCode' | 'CodetoTK') => void;
+    revertTKResultFormatStore: 'text' | 'table';
+    setRevertTKResultFormatStore: (val: 'text' | 'table') => void;
+
+    uiHighlightCopied: boolean;
+    setUiHighlightCopied: (val: boolean) => void;
+
+    translateSubTab: 'dictionary' | 'quick';
+    setTranslateSubTab: (tab: 'dictionary' | 'quick') => void;
+    translateLineHeight: number;
+    setTranslateLineHeight: (val: number) => void;
+    compareSubTab: 'data' | 'schema' | 'text' | 'generate';
+    setCompareSubTab: (tab: 'data' | 'schema' | 'text' | 'generate') => void;
+
+    updateConnectionSessionStatus: (id: string, status: 'success' | 'error') => void;
+
+    settingsSection: 'database' | 'shortcuts' | 'appearance' | 'translate' | 'revertTK' | 'compare';
+    setSettingsSection: (section: 'database' | 'shortcuts' | 'appearance' | 'translate' | 'revertTK' | 'compare') => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -131,8 +202,10 @@ export const useAppStore = create<AppState>((set) => ({
 
     translateSubTab: 'dictionary',
     setTranslateSubTab: (tab) => set({ translateSubTab: tab }),
-
-    // ... (existing initializers) ...
+    translateLineHeight: 1.6,
+    setTranslateLineHeight: (val) => set({ translateLineHeight: val }),
+    compareSubTab: 'data',
+    setCompareSubTab: (tab) => set({ compareSubTab: tab }),
 
     logFileContent: '',
     setLogFileContent: (content) => set({ logFileContent: content }),
@@ -190,6 +263,8 @@ export const useAppStore = create<AppState>((set) => ({
 
     runShortcut: 'F5',
     setRunShortcut: (val) => set({ runShortcut: val }),
+    focusSearchShortcut: 'CTRL+F',
+    setFocusSearchShortcut: (val) => set({ focusSearchShortcut: val }),
 
     formatRemoveSpaces: true,
     setFormatRemoveSpaces: (val) => set({ formatRemoveSpaces: val }),
@@ -200,11 +275,20 @@ export const useAppStore = create<AppState>((set) => ({
     setSearchStrict: (val: boolean) => set({ searchStrict: val }),
 
     connections: [],
-    setConnections: (connections) => set({ connections }),
+    setConnections: (connections) => set((state) => ({
+        connections: connections.map(c => ({
+            ...c,
+            sessionStatus: (state.connections.find(ex => ex.id === c.id)?.sessionStatus) || 'untested'
+        }))
+    })),
+
+    updateConnectionSessionStatus: (id, status) => set((state) => ({
+        connections: state.connections.map(c => c.id === id ? { ...c, sessionStatus: status } : c)
+    })),
 
     columnSplitEnabled: true,
     setColumnSplitEnabled: (val) => set({ columnSplitEnabled: val }),
-    columnSplitKeywords: ' AS , .',
+    columnSplitKeywords: ' AS | .',
     setColumnSplitKeywords: (val) => set({ columnSplitKeywords: val }),
     revertTKColConfig: 'A:150, B:250',
     setRevertTKColConfig: (val) => set({ revertTKColConfig: val }),
@@ -212,20 +296,45 @@ export const useAppStore = create<AppState>((set) => ({
     setColumnSplitApplyToText: (val) => set({ columnSplitApplyToText: val }),
     columnSplitApplyToTable: true,
     setColumnSplitApplyToTable: (val) => set({ columnSplitApplyToTable: val }),
-    revertTKDeleteChars: "',",
+    revertTKDeleteChars: "' | ,",
     setRevertTKDeleteChars: (val) => set({ revertTKDeleteChars: val }),
     revertTKMapping: [
-        { id: 'logic-name', label: '【SQL論理名】', offsets: [1, 1], type: 'text' },
-        { id: 'def-name', label: '【SQL定義名】', offsets: [1, 1], type: 'text' },
-        { id: 'target-table', label: '■ 対象テーブル', offsets: [1, 1], type: 'text' },
-        { id: 'extraction-cond', label: '■ 抽出条件', offsets: [1, 1], type: 'text' },
-        { id: 'ext-items', label: '■ 抽出項目', offsets: [1, 1], type: 'table' },
-        { id: 'ins-items', label: '■ 挿入項目', offsets: [1, 1], type: 'table' },
-        { id: 'sort-order', label: '■ 並び順', offsets: [1, 1], type: 'text' },
-        { id: 'join-cond', label: '■ 結合条件', offsets: [1, 1], type: 'text' },
-        { id: 'log-output', label: '・ログを出力する。', offsets: [1, 1], type: 'table' },
+        { id: 'ext-items', label: '抽出項目', offsets: [1, 1], type: 'table' },
+        { id: 'target-tables', label: '対象テーブル', offsets: [1, 1], type: 'table' },
+        { id: 'ext-conditions', label: '抽出条件', offsets: [1, 1], type: 'table' },
+        { id: 'sort', label: 'ソート', offsets: [1, 1], type: 'table' },
     ],
     setRevertTKMapping: (val) => set({ revertTKMapping: val }),
+
+    revertTKHeaderSelect: '■ 抽出項目',
+    setRevertTKHeaderSelect: (val) => set({ revertTKHeaderSelect: val }),
+    revertTKHeaderFrom: '■ 対象テーブル',
+    setRevertTKHeaderFrom: (val) => set({ revertTKHeaderFrom: val }),
+    revertTKHeaderWhere: '■ 抽出条件',
+    setRevertTKHeaderWhere: (val) => set({ revertTKHeaderWhere: val }),
+    revertTKHeaderOrderby: '■ ソート条件',
+    setRevertTKHeaderOrderby: (val) => set({ revertTKHeaderOrderby: val }),
+    revertTKHeaderGroupby: '■ グループ条件',
+    setRevertTKHeaderGroupby: (val) => set({ revertTKHeaderGroupby: val }),
+    revertTKHeaderHaving: '■ HAVING条件',
+    setRevertTKHeaderHaving: (val) => set({ revertTKHeaderHaving: val }),
+    revertTKHeaderAnd: 'AND',
+    setRevertTKHeaderAnd: (val) => set({ revertTKHeaderAnd: val }),
+
+    revertTKLineBreakSelect: true,
+    setRevertTKLineBreakSelect: (val) => set({ revertTKLineBreakSelect: val }),
+    revertTKLineBreakFrom: true,
+    setRevertTKLineBreakFrom: (val) => set({ revertTKLineBreakFrom: val }),
+    revertTKLineBreakWhere: true,
+    setRevertTKLineBreakWhere: (val) => set({ revertTKLineBreakWhere: val }),
+    revertTKLineBreakOrderby: true,
+    setRevertTKLineBreakOrderby: (val) => set({ revertTKLineBreakOrderby: val }),
+    revertTKLineBreakGroupby: true,
+    setRevertTKLineBreakGroupby: (val) => set({ revertTKLineBreakGroupby: val }),
+    revertTKLineBreakHaving: true,
+    setRevertTKLineBreakHaving: (val) => set({ revertTKLineBreakHaving: val }),
+    revertTKLineBreakAnd: true,
+    setRevertTKLineBreakAnd: (val) => set({ revertTKLineBreakAnd: val }),
 
     textCompareDeleteChars: ',);\t"',
     setTextCompareDeleteChars: (val) => set({ textCompareDeleteChars: val }),
@@ -233,14 +342,44 @@ export const useAppStore = create<AppState>((set) => ({
     setTextCompareRemoveAppend: (val) => set({ textCompareRemoveAppend: val }),
     textCompareTruncateDuplicate: false,
     setTextCompareTruncateDuplicate: (val) => set({ textCompareTruncateDuplicate: val }),
+    textCompareRemoveEmptyLines: false,
+    setTextCompareRemoveEmptyLines: (val) => set({ textCompareRemoveEmptyLines: val }),
+    textCompareOrdered: false,
+    setTextCompareOrdered: (val) => set({ textCompareOrdered: val }),
+    textCompareIgnoreCase: false,
+    setTextCompareIgnoreCase: (val) => set({ textCompareIgnoreCase: val }),
+    textCompareTrimWhitespace: false,
+    setTextCompareTrimWhitespace: (val) => set({ textCompareTrimWhitespace: val }),
+    textCompareAutoCompare: false,
+    setTextCompareAutoCompare: (val) => set({ textCompareAutoCompare: val }),
+    textCompareSort: false,
+    setTextCompareSort: (val) => set({ textCompareSort: val }),
 
     translateDeleteChars: '',
     setTranslateDeleteChars: (val) => set({ translateDeleteChars: val }),
     translateTruncateDuplicate: false,
     setTranslateTruncateDuplicate: (val) => set({ translateTruncateDuplicate: val }),
 
+    globalSearchTerm: '',
+    setGlobalSearchTerm: (term) => set({ globalSearchTerm: term }),
+
     textCompareExpectedInput: '',
     setTextCompareExpectedInput: (val) => set({ textCompareExpectedInput: val }),
     textCompareCurrentInput: '',
     setTextCompareCurrentInput: (val) => set({ textCompareCurrentInput: val }),
+
+    revertTKInputStore: '',
+    setRevertTKInputStore: (val) => set({ revertTKInputStore: val }),
+    revertTKResultStore: '',
+    setRevertTKResultStore: (val) => set({ revertTKResultStore: val }),
+    revertTKModeStore: 'CodetoTK',
+    setRevertTKModeStore: (val) => set({ revertTKModeStore: val }),
+    revertTKResultFormatStore: 'table',
+    setRevertTKResultFormatStore: (val) => set({ revertTKResultFormatStore: val }),
+
+    uiHighlightCopied: false,
+    setUiHighlightCopied: (val) => set({ uiHighlightCopied: val }),
+
+    settingsSection: 'database',
+    setSettingsSection: (section) => set({ settingsSection: section }),
 }));

@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore, QueryResult, DbConfig } from '../store/useAppStore';
 import { findLogEntriesOptimized, findLastId, replaceParamsInSql } from '../utils/sqlParser';
 import { open } from '@tauri-apps/api/dialog';
@@ -6,12 +7,46 @@ import { invoke } from '@tauri-apps/api/tauri';
 import { ResultSetTable } from './ResultSetTable';
 import { checkDangerousSql } from '../utils/sqlGuard';
 
-export const ParamsTab: React.FC = () => {
+export const ParamsTab: React.FC = React.memo(() => {
     const {
         queryGroups, addQueryGroup, updateQueryGroup, removeQueryGroup,
         autoClipboard, setAutoClipboard, connections,
-        runShortcut
-    } = useAppStore();
+        runShortcut, updateConnectionSessionStatus
+    } = useAppStore(useShallow(state => ({
+        queryGroups: state.queryGroups,
+        addQueryGroup: state.addQueryGroup,
+        updateQueryGroup: state.updateQueryGroup,
+        removeQueryGroup: state.removeQueryGroup,
+        autoClipboard: state.autoClipboard,
+        setAutoClipboard: state.setAutoClipboard,
+        connections: state.connections,
+        runShortcut: state.runShortcut,
+        updateConnectionSessionStatus: state.updateConnectionSessionStatus
+    })));
+
+    const [searchTerm, setSearchTerm] = React.useState('');
+
+    const filteredGroups = React.useMemo(() => {
+        if (!searchTerm) return queryGroups;
+        const term = searchTerm.toLowerCase();
+        return queryGroups.filter(g => {
+            const matchInGroup =
+                (g.statementId?.toLowerCase().includes(term)) ||
+                (g.sql?.toLowerCase().includes(term)) ||
+                (g.params?.toLowerCase().includes(term));
+
+            if (matchInGroup) return true;
+
+            // Search in results if present
+            if (g.result) {
+                const matchInColumns = g.result.columns.some(col => col.toLowerCase().includes(term));
+                if (matchInColumns) return true;
+                const matchInRows = g.result.rows.some(row => row.some(cell => cell?.toString().toLowerCase().includes(term)));
+                if (matchInRows) return true;
+            }
+            return false;
+        });
+    }, [queryGroups, searchTerm]);
 
     const [globalLogPath, setGlobalLogPath] = React.useState<string>('');
 
@@ -134,9 +169,11 @@ export const ParamsTab: React.FC = () => {
                 query: sql
             });
             updateQueryGroup(groupId, { status: 'success', result });
+            updateConnectionSessionStatus(conn.id, 'success');
         } catch (err: any) {
             const errorMessage = typeof err === 'string' ? err : JSON.stringify(err);
             updateQueryGroup(groupId, { status: 'error', errorMessage });
+            updateConnectionSessionStatus(conn.id, 'error');
         }
     };
 
@@ -252,6 +289,19 @@ export const ParamsTab: React.FC = () => {
                         />
                         <span className="text-sm font-bold text-gray-600 group-hover:text-primary transition-colors">Auto Copy</span>
                     </label>
+
+                    <div className="relative group mx-2">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                        <input
+                            type="text"
+                            placeholder="Search fragments..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            onFocus={(e) => e.target.select()}
+                            className="app-local-search w-40 focus:w-60 transition-all bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-primary shadow-inner font-bold"
+                        />
+                    </div>
+
                     <button
                         onClick={addQueryGroup}
                         className="px-6 py-3 bg-primary text-white rounded-2xl font-black shadow-lg hover:shadow-primary/30 transition-all flex items-center gap-2"
@@ -262,7 +312,7 @@ export const ParamsTab: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-6 pb-20">
-                {queryGroups.map((group, index) => (
+                {filteredGroups.map((group, index) => (
                     <div key={group.id} className="grid grid-cols-[300px_1fr] gap-6 p-6 border border-gray-100 rounded-3xl bg-white relative shadow-sm hover:shadow-md transition-all group/card">
                         <div className="col-span-full border-b border-gray-100 pb-3 flex justify-between items-center px-2">
                             <div className="flex items-center gap-4">
@@ -409,7 +459,7 @@ export const ParamsTab: React.FC = () => {
                     </div>
                 ))}
 
-                {queryGroups.length === 0 && (
+                {filteredGroups.length === 0 && (
                     <div className="flex flex-col items-center justify-center py-20 bg-white border-2 border-dashed border-gray-200 rounded-[40px] text-gray-300 gap-4">
                         <span className="text-6xl">📄</span>
                         <p className="font-bold uppercase tracking-widest">Add a fragment to start processing</p>
@@ -458,4 +508,4 @@ export const ParamsTab: React.FC = () => {
             )}
         </div>
     );
-};
+});

@@ -436,6 +436,7 @@ const CallGraphNode = ({
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export function JavaParserTab() {
+    const [searchTerm, setSearchTerm] = useState('');
     const [mode, setMode] = useState<'properties' | 'graph'>('properties');
     const [sourceCode, setSourceCode] = useState('');
     const [notification, setNotification] = useState<string | null>(null);
@@ -448,6 +449,16 @@ export function JavaParserTab() {
         return [];
     }, [sourceCode, mode]);
 
+    const filteredFields = useMemo(() => {
+        if (!searchTerm) return parsedFields;
+        const term = searchTerm.toLowerCase();
+        return parsedFields.filter(f =>
+            (f.name || '').toLowerCase().includes(term) ||
+            (f.type || '').toLowerCase().includes(term) ||
+            (f.description || '').toLowerCase().includes(term)
+        );
+    }, [parsedFields, searchTerm]);
+
     // New Graph logic
     const [graphData, setGraphData] = useState<CallGraph | null>(null);
     const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
@@ -456,7 +467,21 @@ export function JavaParserTab() {
     const [loadingGraph, setLoadingGraph] = useState(false);
     const [loadingMermaid, setLoadingMermaid] = useState(false);
     const [zoom, setZoom] = useState(1);
-    const [zoomInputValue, setZoomInputValue] = useState('100');
+
+    const filteredMethods = useMemo(() => {
+        if (!graphData) return [];
+        const methods = Object.values(graphData.nodes)
+            .filter(node => node.modifiers.includes('public') || node.modifiers.includes('protected'));
+
+        if (!searchTerm) return methods.sort((a, b) => a.name.localeCompare(b.name));
+
+        const term = searchTerm.toLowerCase();
+        return methods.filter(node =>
+            node.name.toLowerCase().includes(term) ||
+            node.returnType.toLowerCase().includes(term) ||
+            node.modifiers.some(m => m.toLowerCase().includes(term))
+        ).sort((a, b) => a.name.localeCompare(b.name));
+    }, [graphData, searchTerm]);
     const [showModal, setShowModal] = useState(false);
     const [highlightOffset, setHighlightOffset] = useState<number | null>(null);
 
@@ -658,14 +683,9 @@ export function JavaParserTab() {
         setMermaidGraph('');
         setZoom(1);
         try {
-            const result = await invoke<MermaidResult>('generate_mermaid_graph', {
+            const mermaid = await invoke<string>('generate_mermaid_graph', {
                 source: sourceCode,
-                methodName: methodName,
-                options: {
-                    session_ignore_services: sessionIgnoreServices,
-                    collapse_details: collapseDetails,
-                    show_source_reference: showSourceReference,
-                } as MermaidOptions,
+                methodName: methodName
             });
             setMermaidGraph(result.mermaid);
             setDetectedServices(result.external_services.sort());
@@ -713,31 +733,41 @@ export function JavaParserTab() {
     const closeModal = useCallback(() => setShowModal(false), []);
 
     return (
-        <div className="flex flex-col h-[calc(100vh-140px)] gap-4 p-4 relative">
+        <div className="flex flex-col h-[calc(100vh-80px)] gap-4 p-4 relative">
             {notification && (
                 <div className="absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-gray-800 text-white text-sm rounded shadow-lg z-50 animate-fade-in-down">
                     {notification}
                 </div>
             )}
 
-            {/* Mode Toggle */}
-            <div className="flex gap-2 bg-gray-100 p-1 rounded-lg w-fit">
-                <button
-                    onClick={() => setMode('properties')}
-                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                        mode === 'properties' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                >
-                    Property Extractor
-                </button>
-                <button
-                    onClick={() => setMode('graph')}
-                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                        mode === 'graph' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                >
-                    Call Graph Analyzer
-                </button>
+            <div className="flex justify-between items-center bg-gray-100 p-1 rounded-lg w-full">
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setMode('properties')}
+                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'properties' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                    >
+                        Property Extractor
+                    </button>
+                    <button
+                        onClick={() => setMode('graph')}
+                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'graph' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                    >
+                        Call Graph Analyzer
+                    </button>
+                </div>
+                <div className="relative group mr-2">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                    <input
+                        type="text"
+                        placeholder="Search Java..."
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        onFocus={(e) => e.target.select()}
+                        className="app-local-search w-48 focus:w-64 transition-all bg-white border border-gray-200 rounded-lg pl-8 pr-4 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary shadow-sm"
+                    />
+                </div>
             </div>
 
             <div className="flex-1 flex gap-4 min-h-0">
@@ -750,7 +780,7 @@ export function JavaParserTab() {
                         onChange={(e) => setSourceCode(e.target.value)}
                         placeholder="Paste Java class here..."
                     />
-                     {mode === 'graph' && (
+                    {mode === 'graph' && (
                         <button
                             onClick={generateGraph}
                             disabled={loadingGraph || !sourceCode}
@@ -767,7 +797,7 @@ export function JavaParserTab() {
                         <>
                             <div className="flex justify-between items-center mb-2">
                                 <label className="font-bold text-gray-700">Extracted Properties</label>
-                                <span className="text-gray-500 text-sm">{parsedFields.length} fields found</span>
+                                <span className="text-gray-500 text-sm">{filteredFields.length} fields found</span>
                             </div>
                             <div className="flex-1 border border-gray-300 rounded bg-white overflow-auto">
                                 <table className="w-full text-sm text-left text-gray-700">
@@ -794,14 +824,14 @@ export function JavaParserTab() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {parsedFields.length === 0 ? (
+                                        {filteredFields.length === 0 ? (
                                             <tr>
                                                 <td colSpan={3} className="px-4 py-8 text-center text-gray-400">
-                                                    No fields extracted.
+                                                    No fields matches.
                                                 </td>
                                             </tr>
                                         ) : (
-                                            parsedFields.map((field, index) => (
+                                            filteredFields.map((field, index) => (
                                                 <tr key={index} className="bg-white border-b border-gray-100 hover:bg-gray-50">
                                                     <td className="px-4 py-2 font-medium break-words max-w-[200px]">
                                                         {field.description || <span className="text-gray-300 italic">No description</span>}
@@ -838,15 +868,14 @@ export function JavaParserTab() {
                                                 Public & Protected Methods
                                             </div>
                                             <div className="flex-1 overflow-auto p-1">
-                                                {sortedMethods.map(node => (
+                                                {filteredMethods.map(node => (
                                                     <button
                                                         key={node.name}
                                                         onClick={() => selectMethod(node.name)}
-                                                        className={`w-full text-left p-2 rounded text-sm mb-1 transition-all flex flex-col gap-1 border ${
-                                                            selectedMethod === node.name
-                                                                ? 'bg-primary/10 text-primary border-primary/20 shadow-sm'
-                                                                : 'hover:bg-gray-100 text-gray-700 border-transparent hover:border-gray-200'
-                                                        }`}
+                                                        className={`w-full text-left p-2 rounded text-sm mb-1 transition-all flex flex-col gap-1 border ${selectedMethod === node.name
+                                                            ? 'bg-primary/10 text-primary border-primary/20 shadow-sm'
+                                                            : 'hover:bg-gray-100 text-gray-700 border-transparent hover:border-gray-200'
+                                                            }`}
                                                     >
                                                         <div className="flex justify-between items-start w-full">
                                                             <div className="font-mono font-bold truncate pr-2" title={node.name}>
@@ -858,9 +887,8 @@ export function JavaParserTab() {
                                                         </div>
                                                         <div className="flex gap-1 items-center">
                                                             {node.modifiers.map(m => (
-                                                                <span key={m} className={`text-[9px] px-1 rounded-sm uppercase font-bold tracking-tighter ${
-                                                                    m === 'public' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                                                                }`}>
+                                                                <span key={m} className={`text-[9px] px-1 rounded-sm uppercase font-bold tracking-tighter ${m === 'public' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                                                                    }`}>
                                                                     {m}
                                                                 </span>
                                                             ))}
@@ -879,17 +907,33 @@ export function JavaParserTab() {
                                                             <h3 className="font-bold text-gray-800 truncate" title={`Flow: ${selectedMethod}`}>Flow: {selectedMethod}</h3>
                                                             {loadingMermaid && <div className="text-[10px] text-primary animate-pulse">Generating...</div>}
                                                         </div>
-                                                        <div className="flex gap-2 items-center flex-shrink-0">
-                                                            <div className="mr-2">
-                                                                <ZoomControls
-                                                                    zoomInputValue={zoomInputValue}
-                                                                    onZoomIn={handleZoomIn}
-                                                                    onZoomOut={handleZoomOut}
-                                                                    onZoomReset={handleZoomReset}
-                                                                    onZoomInputChange={handleZoomInputChange}
-                                                                    onZoomInputCommit={applyZoomFromInput}
-                                                                    variant="light"
-                                                                />
+                                                        <div className="flex gap-2 items-center">
+                                                            {/* Zoom Controls */}
+                                                            <div className="flex items-center gap-1 bg-white border border-gray-200 rounded p-0.5 shadow-sm mr-2">
+                                                                <button
+                                                                    onClick={() => setZoom(z => Math.max(0.2, z - 0.1))}
+                                                                    className="p-1 hover:bg-gray-100 rounded text-gray-500"
+                                                                    title="Zoom Out"
+                                                                >
+                                                                    ➖
+                                                                </button>
+                                                                <span className="text-[10px] font-mono min-w-[40px] text-center">
+                                                                    {Math.round(zoom * 100)}%
+                                                                </span>
+                                                                <button
+                                                                    onClick={() => setZoom(z => Math.min(3, z + 0.1))}
+                                                                    className="p-1 hover:bg-gray-100 rounded text-gray-500"
+                                                                    title="Zoom In"
+                                                                >
+                                                                    ➕
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setZoom(1)}
+                                                                    className="p-1 hover:bg-gray-100 rounded text-xs text-gray-400"
+                                                                    title="Reset Zoom"
+                                                                >
+                                                                    ↺
+                                                                </button>
                                                             </div>
                                                             <button
                                                                 onClick={openModal}
@@ -946,12 +990,20 @@ export function JavaParserTab() {
                                                         </div>
                                                     ) : mermaidGraph ? (
                                                         <div className="flex flex-col gap-6 h-full min-h-0">
-                                                            <div className="flex-1 flex gap-4 min-h-0 min-w-0">
-                                                                <FlowDiagramPanel
-                                                                    mermaidGraph={mermaidGraph}
-                                                                    zoom={zoom}
-                                                                    onNodeClick={handleNodeClick}
-                                                                />
+                                                            <div className="flex-1 flex gap-4 min-h-0">
+                                                                {/* Graph Panel */}
+                                                                <div className="flex-[2] bg-white rounded border border-gray-200 shadow-inner overflow-auto relative flex flex-col">
+                                                                    <div
+                                                                        style={{
+                                                                            transform: `scale(${zoom})`,
+                                                                            transformOrigin: 'top left',
+                                                                            transition: 'transform 0.1s ease-out'
+                                                                        }}
+                                                                        className="p-4"
+                                                                    >
+                                                                        <Mermaid chart={mermaidGraph} />
+                                                                    </div>
+                                                                </div>
 
                                                                 {/* Source View Panel */}
                                                                 <div className="flex-1 flex flex-col min-h-0 min-w-0">
@@ -1011,22 +1063,87 @@ export function JavaParserTab() {
             </div>
 
             {/* Modal Dialog */}
-            <ModalDialog
-                show={showModal}
-                selectedMethod={selectedMethod}
-                mermaidGraph={mermaidGraph}
-                sourceCode={sourceCode}
-                highlightOffset={highlightOffset}
-                zoom={zoom}
-                zoomInputValue={zoomInputValue}
-                onClose={closeModal}
-                onNodeClick={handleNodeClick}
-                onZoomIn={handleZoomIn}
-                onZoomOut={handleZoomOut}
-                onZoomReset={handleZoomReset}
-                onZoomInputChange={handleZoomInputChange}
-                onZoomInputCommit={applyZoomFromInput}
-            />
+            {showModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-8">
+                    <div className="bg-white w-full h-full rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <header className="bg-gray-800 text-white p-4 flex justify-between items-center shrink-0">
+                            <div className="flex flex-col">
+                                <h1 className="text-lg font-bold">Flow: {selectedMethod}</h1>
+                                <span className="text-xs text-gray-400">Modal Viewer</span>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-1 bg-gray-700 rounded p-1 shadow-inner">
+                                    <button
+                                        onClick={() => setZoom(z => Math.max(0.1, z - 0.1))}
+                                        className="p-1 hover:bg-gray-600 rounded text-gray-100"
+                                        title="Zoom Out"
+                                    >
+                                        ➖
+                                    </button>
+                                    <span className="text-xs font-mono min-w-[50px] text-center text-gray-100">
+                                        {Math.round(zoom * 100)}%
+                                    </span>
+                                    <button
+                                        onClick={() => setZoom(z => Math.min(5, z + 0.1))}
+                                        className="p-1 hover:bg-gray-600 rounded text-gray-100"
+                                        title="Zoom In"
+                                    >
+                                        ➕
+                                    </button>
+                                    <button
+                                        onClick={() => setZoom(1)}
+                                        className="p-1 hover:bg-gray-600 rounded text-xs text-gray-400"
+                                        title="Reset Zoom"
+                                    >
+                                        ↺
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={() => setShowModal(false)}
+                                    className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm font-bold transition-colors"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </header>
+
+                        <main className="flex-1 overflow-hidden bg-gray-50 flex min-h-0">
+                            <div className="flex-1 flex gap-4 p-6 min-h-0">
+                                {/* Graph Panel */}
+                                <div className="flex-[2] bg-white rounded border border-gray-200 shadow-inner overflow-auto relative flex flex-col">
+                                    <div
+                                        style={{
+                                            transform: `scale(${zoom})`,
+                                            transformOrigin: 'top left',
+                                            transition: 'transform 0.1s ease-out'
+                                        }}
+                                        className="p-4"
+                                    >
+                                        <Mermaid chart={mermaidGraph} />
+                                    </div>
+                                </div>
+
+                                {/* Source View Panel */}
+                                <div className="flex-1 flex flex-col min-h-0">
+                                    <div className="text-[10px] font-bold text-gray-500 uppercase mb-2 flex justify-between items-center px-1">
+                                        <span>Source Reference</span>
+                                        <span className="text-primary animate-pulse normal-case">Linked to diagram</span>
+                                    </div>
+                                    <SourceCodeViewer
+                                        source={sourceCode}
+                                        highlightOffset={highlightOffset}
+                                    />
+                                </div>
+                            </div>
+                        </main>
+
+                        <footer className="bg-gray-50 border-t border-gray-200 p-3 text-xs text-gray-400 text-center shrink-0">
+                            Use the controls in the top right to zoom. Press ESC or click Close to return.
+                        </footer>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

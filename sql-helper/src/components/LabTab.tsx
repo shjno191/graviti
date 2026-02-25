@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore, QueryResult } from '../store/useAppStore';
 import { invoke } from '@tauri-apps/api/tauri';
 import { checkDangerousSql } from '../utils/sqlGuard';
+import { HighlightText } from '../utils/uiHelpers';
 
 interface LabStatement {
     sql: string;
@@ -25,11 +27,12 @@ interface LabTableProps {
     getOrderedColumns: (cols: string[]) => string[];
     isDifferent: (rowIdx: number, colName: string, val: string, otherResult?: QueryResult) => boolean;
     colSearch: string;
+    globalTerm?: string;
 }
 
 const LabTable: React.FC<LabTableProps> = React.memo(({
     idx, state, otherState, excelHeaderColor, priorityCols, debouncedSearch,
-    onContextMenuCol, onContextMenuRow, scrollRef, onScroll, getOrderedColumns, isDifferent, colSearch
+    onContextMenuCol, onContextMenuRow, scrollRef, onScroll, getOrderedColumns, isDifferent, colSearch, globalTerm
 }) => {
     if (state.loading) return <div className="p-10 text-center animate-pulse text-orange-500 font-bold">EXECUTING SQL...</div>;
     if (state.error) return <div className="p-6 bg-red-50 text-red-600 rounded-xl text-sm font-mono border border-red-100">{state.error}</div>;
@@ -106,7 +109,7 @@ const LabTable: React.FC<LabTableProps> = React.memo(({
                                             style={{ width: 160 }}
                                             title={String(val)}
                                         >
-                                            {val}
+                                            <HighlightText text={String(val)} term={debouncedSearch} globalTerm={globalTerm} />
                                         </td>
                                     );
                                 })}
@@ -119,17 +122,26 @@ const LabTable: React.FC<LabTableProps> = React.memo(({
     );
 });
 
-export const LabTab: React.FC = () => {
-    const { connections, excelHeaderColor, runShortcut } = useAppStore();
+export const LabTab: React.FC = React.memo(() => {
+    const { connections, excelHeaderColor, runShortcut, updateConnectionSessionStatus, globalSearchTerm } = useAppStore(useShallow(state => ({
+        connections: state.connections,
+        excelHeaderColor: state.excelHeaderColor,
+        runShortcut: state.runShortcut,
+        updateConnectionSessionStatus: state.updateConnectionSessionStatus,
+        globalSearchTerm: state.globalSearchTerm
+    })));
+
+    const [searchTerm, setSearchTerm] = useState('');
     const [showExecPicker, setShowExecPicker] = useState(false);
     const [stmt1, setStmt1] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
     const [stmt2, setStmt2] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
-    const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [colSearch, setColSearch] = useState('');
     const [priorityCols, setPriorityCols] = useState('');
     const [menuPos, setMenuPos] = useState<{ x: number, y: number, type: 'col' | 'row', content?: string, rowIndex?: number, idx?: 1 | 2 } | null>(null);
     const [copyStatus, setCopyStatus] = useState<{ [key: string]: boolean }>({});
+
+    const deferredGlobalSearchTerm = React.useDeferredValue(globalSearchTerm);
 
     const scrollRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
     const isSyncing = useRef(false);
@@ -239,7 +251,9 @@ export const LabTab: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchTerm);
+        }, 300);
         return () => clearTimeout(timer);
     }, [searchTerm]);
 
@@ -274,8 +288,10 @@ export const LabTab: React.FC = () => {
                 query: stmt.sql
             });
             setStmt(prev => ({ ...prev, loading: false, result: res }));
+            updateConnectionSessionStatus(conn.id, 'success');
         } catch (err: any) {
             setStmt(prev => ({ ...prev, loading: false, error: String(err) }));
+            updateConnectionSessionStatus(conn.id, 'error');
         }
     };
 
@@ -408,14 +424,15 @@ export const LabTab: React.FC = () => {
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-wrap items-center gap-6 z-40">
                 <h2 className="text-xl font-black bg-gradient-to-br from-orange-500 to-red-600 bg-clip-text text-transparent uppercase tracking-tight">Compare Data</h2>
                 <div className="flex-1 flex gap-4 min-w-[500px]">
-                    <div className="relative flex-1 group">
+                    <div className="relative group">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
                         <input
                             type="text"
-                            placeholder="Data Search..."
+                            placeholder="Search data..."
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-500 shadow-inner"
+                            onFocus={(e) => e.target.select()}
+                            className="app-local-search w-36 focus:w-48 transition-all bg-gray-50 border border-gray-200 rounded-xl pl-8 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-primary shadow-inner font-bold"
                         />
                     </div>
                     <div className="relative flex-1 group">
@@ -425,6 +442,7 @@ export const LabTab: React.FC = () => {
                             placeholder="Column Search..."
                             value={colSearch}
                             onChange={e => setColSearch(e.target.value)}
+                            onFocus={(e) => e.target.select()}
                             className="w-full bg-blue-50 border border-blue-100 rounded-xl pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 shadow-inner"
                         />
                     </div>
@@ -435,6 +453,7 @@ export const LabTab: React.FC = () => {
                             placeholder="Priority Columns..."
                             value={priorityCols}
                             onChange={e => setPriorityCols(e.target.value)}
+                            onFocus={(e) => e.target.select()}
                             className="w-full bg-orange-50 border border-orange-200 rounded-xl pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-500 font-bold text-orange-900 shadow-inner"
                         />
                     </div>
@@ -512,6 +531,7 @@ export const LabTab: React.FC = () => {
                                     getOrderedColumns={getOrderedColumns}
                                     isDifferent={isDifferent}
                                     colSearch={colSearch}
+                                    globalTerm={deferredGlobalSearchTerm}
                                 />
                             </div>
                         </div>
@@ -585,4 +605,4 @@ export const LabTab: React.FC = () => {
             )}
         </div>
     );
-};
+});
