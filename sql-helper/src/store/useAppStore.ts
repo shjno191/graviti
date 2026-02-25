@@ -180,6 +180,17 @@ export interface AppState {
     revertTKResultFormatStore: 'text' | 'table';
     setRevertTKResultFormatStore: (val: 'text' | 'table') => void;
 
+    translateInputStore: string;
+    setTranslateInputStore: (val: string) => void;
+    translateTargetLangStore: 'jp' | 'en' | 'vi';
+    setTranslateTargetLangStore: (val: 'jp' | 'en' | 'vi') => void;
+    translateSearchStore: string;
+    setTranslateSearchStore: (val: string) => void;
+    translateSelectionsStore: Record<string, string>;
+    setTranslateSelectionsStore: (val: Record<string, string>) => void;
+    translateDataStore: any[];
+    setTranslateDataStore: (val: any[]) => void;
+
     uiHighlightCopied: boolean;
     setUiHighlightCopied: (val: boolean) => void;
 
@@ -376,6 +387,17 @@ export const useAppStore = create<AppState>((set) => ({
     setRevertTKModeStore: (val) => set({ revertTKModeStore: val }),
     revertTKResultFormatStore: 'table',
     setRevertTKResultFormatStore: (val) => set({ revertTKResultFormatStore: val }),
+
+    translateInputStore: '',
+    setTranslateInputStore: (val) => set({ translateInputStore: val }),
+    translateTargetLangStore: 'en',
+    setTranslateTargetLangStore: (val) => set({ translateTargetLangStore: val }),
+    translateSearchStore: '',
+    setTranslateSearchStore: (val) => set({ translateSearchStore: val }),
+    translateSelectionsStore: {},
+    setTranslateSelectionsStore: (val) => set({ translateSelectionsStore: val }),
+    translateDataStore: [],
+    setTranslateDataStore: (val) => set({ translateDataStore: val }),
 
     uiHighlightCopied: false,
     setUiHighlightCopied: (val) => set({ uiHighlightCopied: val }),

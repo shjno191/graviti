@@ -28,6 +28,16 @@ interface TranslatedLine {
     segments: TranslatedSegment[];
 }
 
+interface ParserConfig {
+    splitEnabled: boolean;
+    keywords: string[];
+    deleteChars?: string[];
+    headers: Record<string, string>;
+    lineBreaks: Record<string, boolean>;
+    revertTKMapping?: any[];
+}
+
+
 const MemoizedSegment = React.memo(({ seg, hoveredUid, hoveredKey, onHover, onClick, copiedKey, lIdx, onShowTooltip, globalTerm }: {
     seg: TranslatedSegment,
     hoveredUid: string | null,
@@ -148,6 +158,485 @@ const normalizeText = (s: string) => s
     .replace(/　/g, ' ') // Full-width space to half-width
     .replace(/[\t\r\n\v\f]/g, ' '); // All whitespace-like to standard space (1-to-1)
 
+const splitSqlColumn = (val: string, keywords: string[]): string[] => {
+    if (!val) return [''];
+    let expression = val.trim();
+
+    const sortedKeywords = keywords
+        .map(k => k.trim())
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length);
+
+    if (sortedKeywords.length === 0) return [expression];
+
+    const escaped = sortedKeywords.map(k => {
+        const pattern = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return /^[a-zA-Z0-9_]+$/.test(k) ? `\\b${pattern}\\b` : pattern;
+    });
+
+    const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+    return expression.split(regex)
+        .map(p => p.trim())
+        .filter(p => p !== '');
+};
+
+const getSegmentsFromText = (
+    line: string,
+    lIdx: number | string,
+    translationDict: any[],
+    selections: Record<string, string>,
+    prefix: string = 't'
+): TranslatedSegment[] => {
+    if (!line) return [];
+
+    const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string }[] = [];
+    const normLine = normalizeText(line);
+    const lowerNormLine = normLine.toLowerCase();
+
+    for (const item of translationDict) {
+        if (!lowerNormLine.includes(item.phrase)) continue;
+
+        item.regex.lastIndex = 0;
+        let match;
+        while ((match = item.regex.exec(normLine)) !== null) {
+            const start = match.index;
+            const end = start + item.phrase.length;
+            if (!matches.some(m => (start < m.end && end > m.start))) {
+                matches.push({
+                    start,
+                    end,
+                    replacements: item.replacements,
+                    phrase: line.substring(start, end),
+                    dictKey: item.phrase
+                });
+            }
+            if (item.phrase.length === 0) break;
+        }
+    }
+
+    matches.sort((a, b) => a.start - b.start);
+    const segments: TranslatedSegment[] = [];
+    let lastIndex = 0;
+
+    matches.forEach((match) => {
+        if (match.start > lastIndex) {
+            const txt = line.substring(lastIndex, match.start);
+            const posKey = `${prefix}-txt-${lIdx}-${lastIndex}`;
+            segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
+        }
+        const selectionKey = `vkey-${encodeURIComponent(match.dictKey || match.phrase)}`;
+        const posKey = `${prefix}-phr-${lIdx}-${match.start}`;
+        segments.push({
+            type: 'phrase',
+            text: selections[selectionKey] || match.replacements[0],
+            original: match.phrase,
+            key: selectionKey,
+            uid: posKey,
+            isMultiple: match.replacements.length > 1,
+            options: match.replacements
+        });
+        lastIndex = match.end;
+    });
+
+    if (lastIndex < line.length) {
+        const txt = line.substring(lastIndex);
+        const posKey = `${prefix}-txt-${lIdx}-${lastIndex}`;
+        segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
+    }
+
+    return segments;
+};
+
+const parseJavaSql = (input: string, config: ParserConfig): string => {
+    let text = input;
+
+    if (config.deleteChars && config.deleteChars.length > 0) {
+        const escapedChars = config.deleteChars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const deleteRegex = new RegExp(`(${escapedChars.join('|')})`, 'g');
+        text = text.replace(deleteRegex, '');
+    }
+
+    const rawLines = text.split('\n');
+    const preprocessed: { sql: string; condition: string | null }[] = [];
+    let braceDepth = 0;
+    let conditionStack: string[] = [];
+
+    for (const raw of rawLines) {
+        const trimmed = raw.trim();
+        if (!trimmed) continue;
+
+        const ifMatch = trimmed.match(/^if\s*\((.+?)\)\s*\{?$/);
+        if (ifMatch) {
+            conditionStack.push(ifMatch[1].trim());
+            braceDepth++;
+            continue;
+        }
+        if (/^else\s*\{?$/.test(trimmed) || trimmed === '}') {
+            if (trimmed === '}' && braceDepth > 0) {
+                braceDepth--;
+                if (braceDepth < conditionStack.length) conditionStack.pop();
+            }
+            continue;
+        }
+        if (trimmed === '{') { braceDepth++; continue; }
+
+        let sqlLine = trimmed;
+        const appendMatch = sqlLine.match(/^[\w$]+\.append\s*\(\s*"?(.*?)"?\s*\)\s*;?$/);
+        if (appendMatch) {
+            sqlLine = appendMatch[1].trim();
+        }
+        sqlLine = sqlLine.replace(/"\s*\+\s*([\w.$()]+)\s*\+\s*"/g, '【入力．$1】');
+        sqlLine = sqlLine.replace(/"/g, '').replace(/\+/g, '').replace(/;/g, '').trim();
+
+        if (!sqlLine) continue;
+
+        preprocessed.push({
+            sql: sqlLine,
+            condition: conditionStack.length > 0 ? conditionStack[conditionStack.length - 1] : null
+        });
+    }
+
+    type Section = 'none' | 'select' | 'from' | 'where' | 'orderby' | 'groupby' | 'having' | 'join';
+    let section: Section = 'none';
+    const aliasMap = new Map<string, string>();
+
+    const outputSections: Record<string, string[]> = {
+        select: [], from: [], where: [], orderby: [], groupby: [], having: []
+    };
+
+    const parseConditionLine = (line: string, condition: string | null): string => {
+        const t = line.trim();
+        const bw = t.match(/^(.+?)\s+BETWEEN\s+(.+?)\s+AND\s+(.+)$/i);
+        if (bw) {
+            const note = condition ? `\t【条件: ${condition}】` : '';
+            return `\t${bw[1].trim()}\tBETWEEN\t${bw[2].trim()}\t～ ${bw[3].trim()}${note}`;
+        }
+        const cmp = t.match(/^(.+?)\s*(>=|<=|<>|!=|=|>|<)\s*(.+)$/);
+        if (cmp) {
+            const note = condition ? `\t【条件: ${condition}】` : '';
+            return `\t${cmp[1].trim()}\t${cmp[2]}\t${cmp[3].trim()}${note}`;
+        }
+        if (config.splitEnabled && config.keywords && config.keywords.length > 0) {
+            const parts = splitSqlColumn(t, config.keywords);
+            if (parts.length > 1) {
+                const note = condition ? `\t【条件: ${condition}】` : '';
+                return `\t${parts.join('\t')}${note}`;
+            }
+        }
+        const note = condition ? `\t【条件: ${condition}】` : '';
+        return `\t${t}${note}`;
+    };
+
+    const splitByComma = (s: string): string[] => {
+        const parts: string[] = [];
+        let depth = 0, cur = '';
+        for (const ch of s) {
+            if (ch === '(') depth++;
+            if (ch === ')') depth--;
+            if (ch === ',' && depth === 0) { parts.push(cur.trim()); cur = ''; }
+            else cur += ch;
+        }
+        if (cur.trim()) parts.push(cur.trim());
+        return parts;
+    };
+
+    let pendingRest = '';
+    for (const { sql, condition } of preprocessed) {
+        const upper = sql.toUpperCase().trim();
+        if (/^SELECT\b/.test(upper)) { section = 'select'; pendingRest = sql.replace(/^SELECT\s*/i, '').trim(); continue; }
+        if (/^FROM\b/.test(upper)) { section = 'from'; pendingRest = sql.replace(/^FROM\s*/i, '').trim(); continue; }
+        if (/^WHERE\b/.test(upper)) { section = 'where'; pendingRest = sql.replace(/^WHERE\s*/i, '').trim(); continue; }
+        if (/^ORDER\s+BY\b/.test(upper)) { section = 'orderby'; pendingRest = sql.replace(/^ORDER\s+BY\s*/i, '').trim(); continue; }
+        if (/^GROUP\s+BY\b/.test(upper)) { section = 'groupby'; pendingRest = sql.replace(/^GROUP\s+BY\s*/i, '').trim(); continue; }
+        if (/^HAVING\b/.test(upper)) { section = 'having'; pendingRest = sql.replace(/^HAVING\s*/i, '').trim(); continue; }
+        if (/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN\b/.test(upper)) {
+            section = 'from';
+            const joinType = upper.match(/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN/)?.[0] ?? 'JOIN';
+            pendingRest = sql.replace(/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN\s*/i, '').trim();
+            const parts = pendingRest.split(/\s+/);
+            const tbl = parts[0] || pendingRest;
+            const alias = parts[1];
+            if (alias) aliasMap.set(alias, tbl);
+            outputSections.from.push(`\t${tbl}${alias ? ` (${alias})` : ''} （${joinType}）`);
+            pendingRest = '';
+            continue;
+        }
+
+        const workLine = (pendingRest ? pendingRest + ' ' + sql : sql).trim();
+        pendingRest = '';
+        if (!workLine) continue;
+
+        if (section === 'select' || section === 'groupby') {
+            const items = splitByComma(workLine).filter(Boolean);
+            const target = section === 'select' ? outputSections.select : outputSections.groupby;
+            items.forEach(item => target.push(`\t${item}`));
+        } else if (section === 'from') {
+            const tables = splitByComma(workLine);
+            tables.forEach(entry => {
+                const p = entry.trim().split(/\s+/);
+                const tbl = p[0];
+                const alias = p[1];
+                if (alias) aliasMap.set(alias, tbl);
+                outputSections.from.push(`\t${tbl}${alias ? ` (${alias})` : ''}`);
+            });
+        } else if (section === 'where' || section === 'having') {
+            const target = section === 'where' ? outputSections.where : outputSections.having;
+            const condParts = workLine.replace(/\s+(AND|OR)\s+(?!.*AND.*(?:AND|OR))/gi, '\n$1 ').split('\n');
+            condParts.forEach(part => {
+                const isAnd = /^AND\b/i.test(part.trim());
+                const isOr = /^OR\b/i.test(part.trim());
+                const stripped = part.replace(/^(AND|OR)\s+/i, '').trim();
+                if (stripped) {
+                    if (isAnd && config.lineBreaks.and && target.length > 0) {
+                        target.push("");
+                    }
+                    const prefix = isAnd ? (config.headers.and || 'AND') : (isOr ? 'OR' : '');
+                    const lineOutput = parseConditionLine(stripped, condition);
+                    target.push(prefix ? (prefix + lineOutput) : lineOutput);
+                }
+            });
+        } else if (section === 'orderby') {
+            const items = splitByComma(workLine);
+            items.forEach(item => {
+                const t = item.trim();
+                if (/\bDESC\b/i.test(t)) {
+                    outputSections.orderby.push(`\t${t.replace(/\s*DESC\s*$/i, '').trim()}\t降順`);
+                } else {
+                    outputSections.orderby.push(`\t${t.replace(/\s*ASC\s*$/i, '').trim()}\t昇順`);
+                }
+            });
+        }
+    }
+
+    const lines: string[] = [];
+    const sectionOrder: (keyof typeof outputSections)[] = ['select', 'from', 'where', 'orderby', 'groupby', 'having'];
+    for (const key of sectionOrder) {
+        const rows = outputSections[key];
+        if (rows.length > 0) {
+            if (config.lineBreaks[key] && lines.length > 0) lines.push('');
+            lines.push(config.headers[key] || `■ ${key.toUpperCase()}`);
+            lines.push(...rows);
+        }
+    }
+    return lines.join('\n');
+};
+
+const smartFormatSqlDesign = (input: string, config: ParserConfig): string => {
+    if (!input.trim()) return input;
+
+    let text = input;
+
+    if (config.deleteChars && config.deleteChars.length > 0) {
+        const escapedChars = config.deleteChars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const deleteRegex = new RegExp(`(${escapedChars.join('|')})`, 'g');
+        text = text.replace(deleteRegex, '');
+    }
+
+    text = text.replace(/StringBuilder\s+\w+\s*=\s*new\s+StringBuilder\(\s*\)\s*;/gi, '');
+    text = text.replace(/[\w$]+\.append\s*\(\s*\"?/gi, '');
+    text = text.replace(/\"?\s*\)\s*;/g, '');
+    text = text.replace(/\"/g, '').replace(/\+/g, '');
+
+    let lines = text.split('\n').map(line => line.replace(/\t/g, ' ').replace(/\s+$/g, ''));
+
+    const SQL_KEYWORDS = ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'GROUP BY', 'HAVING'];
+    const { headers, lineBreaks } = config;
+
+    const preprocessedLines: string[] = [];
+    lines.forEach(line => {
+        const trimmed = line.trim().toUpperCase();
+        if (SQL_KEYWORDS.includes(trimmed)) {
+            if (lineBreaks[trimmed.replace(' ', '').toLowerCase()] && preprocessedLines.length > 0) {
+                preprocessedLines.push('');
+            }
+            preprocessedLines.push(headers[trimmed.replace(' ', '').toLowerCase()] || trimmed);
+        } else {
+            preprocessedLines.push(line);
+        }
+    });
+    lines = preprocessedLines;
+
+    const formatConfiguredBlocks = (src: string[]): string[] => {
+        let result = [...src];
+        (config.revertTKMapping || []).forEach(cfg => {
+            for (let i = 0; i < result.length; i++) {
+                const line = result[i];
+                const trimmed = line.trim();
+                if (trimmed.startsWith(cfg.label)) {
+                    const gapToValue1 = "\t".repeat(cfg.offsets[0]);
+                    if (cfg.type === 'text') {
+                        if (trimmed.includes('：') || trimmed.includes(':')) {
+                            const splitChar = trimmed.includes('：') ? '：' : ':';
+                            const labelPart = trimmed.substring(0, trimmed.indexOf(splitChar)).trim();
+                            const valuePart = trimmed.substring(trimmed.indexOf(splitChar) + 1).trim();
+                            result[i] = `${labelPart}${splitChar}${gapToValue1}${valuePart}`;
+                        } else {
+                            result[i] = trimmed;
+                        }
+                    } else if (cfg.type === 'table') {
+                        result[i] = trimmed;
+                    }
+                }
+            }
+        });
+        return result;
+    };
+
+    const formatTableHeaders = (src: string[]): string[] => {
+        const result = [...src];
+        (config.revertTKMapping || []).filter((c: any) => c.type === 'table').forEach((cfg: any) => {
+            for (let i = 0; i < result.length; i++) {
+                const trimmed = result[i].trim();
+                if (trimmed === cfg.label || trimmed.startsWith(cfg.label + ' ')) {
+                    const nextIdx = i + 1;
+                    if (nextIdx >= result.length) continue;
+                    const nextLine = result[nextIdx].trim();
+                    if (!nextLine) continue;
+
+                    let header = "";
+                    const gap = "\t".repeat(cfg.offsets[1] || 1);
+                    if (cfg.id === 'ext-items' || cfg.id === 'ins-items') {
+                        header = config.splitEnabled ? `エイリアス${gap}カラム名${gap}セット内容` : `カラム名${gap}セット内容`;
+                    } else if (cfg.id === 'log-output') header = `レベル${gap}メッセージ`;
+
+                    if (header && !nextLine.includes(header.split('\t')[0])) {
+                        const lead = "\t".repeat(cfg.offsets[0] || 1);
+                        result.splice(nextIdx, 0, lead + header);
+                    }
+                }
+            }
+        });
+        return result;
+    };
+
+    const formatTwoColumnTables = (src: string[]): string[] => {
+        const result = [...src];
+        const tableHeaderKeywords = ['カラム名', 'セット内容', '抽出項目', '挿入項目', 'レベル', 'メッセージ'];
+        const isHeaderLine = (line: string) => tableHeaderKeywords.some(k => line.includes(k));
+
+        let i = 0;
+        while (i < result.length) {
+            if (!isHeaderLine(result[i])) { i++; continue; }
+            const start = i;
+            let end = i;
+            for (let j = i + 1; j < result.length; j++) {
+                if (!result[j].trim() || isHeaderLine(result[j]) || result[j].trim().startsWith('■')) break;
+                end = j;
+            }
+            const rows: { idx: number; col1: string; col2: string }[] = [];
+            for (let k = start; k <= end; k++) {
+                const trimmed = result[k].trim();
+                if (!trimmed) continue;
+                if (trimmed.includes('カラム名') && trimmed.includes('\t')) {
+                    const parts = trimmed.split(/\t/);
+                    rows.push({ idx: k, col1: (parts[0] || '').trim(), col2: (parts[1] || '').trim() });
+                } else {
+                    const m = trimmed.match(/^(\S(?:.*?\S)?)\s{2,}(.*\S.*)$/) || trimmed.match(/^(\S+)\s+(.+)$/);
+                    if (m) rows.push({ idx: k, col1: m[1], col2: m[2] });
+                }
+            }
+            if (rows.length > 0) {
+                rows.forEach(({ idx: lineIdx, col1, col2 }) => {
+                    const isSplittableBlock = result[start].toLowerCase().includes('セット内容') || result[start].toLowerCase().includes('抽出項目') || result[start].toLowerCase().includes('挿入項目');
+                    if (config.splitEnabled && isSplittableBlock) {
+                        const splitParts = splitSqlColumn(col2, config.keywords);
+                        result[lineIdx] = `${col1}\t` + splitParts.join('\t');
+                    } else {
+                        result[lineIdx] = `${col1}\t${col2}`;
+                    }
+                });
+            }
+            i = end + 1;
+        }
+        return result;
+    };
+
+    const formatJoinBlocks = (src: string[]): string[] => {
+        const result = [...src];
+        const SPLIT_REGEX = /\s+(AND|OR)\s+/g;
+        let i = 0;
+        while (i < result.length) {
+            if (!result[i].trim().startsWith('・')) { i++; continue; }
+            let offset = 1;
+            while (i + offset < result.length) {
+                const idx = i + offset;
+                if (result[idx].trim().startsWith('■') || result[idx].trim().startsWith('・')) break;
+                if (SPLIT_REGEX.test(result[idx])) {
+                    const placeholders: string[] = [];
+                    const protectedLine = result[idx].replace(/BETWEEN\s+[\s\S]*?\s+AND\b/gi, (m) => {
+                        placeholders.push(m);
+                        return `__BW_PH_${placeholders.length - 1}__`;
+                    });
+                    const parts = protectedLine.replace(SPLIT_REGEX, '\n$1 ').split('\n');
+                    if (parts.length > 1) {
+                        const cleanedParts = parts.map(p => p.trim().replace(/__BW_PH_(\d+)__/g, (_, idx) => placeholders[parseInt(idx)])).filter(p => p);
+                        if (cleanedParts.length > 0) result.splice(idx, 1, ...cleanedParts);
+                    }
+                }
+                offset++;
+            }
+            const joinStart = i + 1;
+            const joinLines: { idx: number; op: string; rest: string }[] = [];
+            for (let j = joinStart; j < result.length; j++) {
+                const trimmed = result[j].trim();
+                if (!trimmed) continue;
+                if (trimmed.startsWith('■') || trimmed.startsWith('・')) break;
+                const m = trimmed.match(/^(ON|AND|OR)\s+(.*)$/);
+                if (m) joinLines.push({ idx: j, op: m[1], rest: m[2] });
+            }
+            if (joinLines.length > 0) {
+                const BETWEEN_REGEX = /^(.*?)\s+BETWEEN\s+(.*?)\s+AND\s+(.*?)$/i;
+                const COMPARE_REGEX = /^(.*?)\s*(=|<=|>=|<>|!=|<|>)\s*(.*)$/;
+                joinLines.forEach(({ idx: lineIdx, op, rest }) => {
+                    const trimmedRest = rest.trim();
+                    const between = trimmedRest.match(BETWEEN_REGEX);
+                    const displayOp = op.toUpperCase() === 'AND' ? (headers.and || 'AND') : op;
+                    if (between) result[lineIdx] = `\t${displayOp}\t${between[1].trim()}\tBETWEEN\t${between[2].trim()}\t～ ${between[3].trim()}`;
+                    else {
+                        const compare = trimmedRest.match(COMPARE_REGEX);
+                        if (compare) result[lineIdx] = `\t${displayOp}\t${compare[1].trim()}\t${compare[2]}\t${compare[3].trim()}`;
+                        else result[lineIdx] = `\t${displayOp}\t${trimmedRest}`;
+                    }
+                });
+                const nextIdx = joinLines[joinLines.length - 1].idx + 1;
+                if (nextIdx < result.length && result[nextIdx].trim().startsWith('・')) result.splice(nextIdx, 0, '');
+                i = nextIdx;
+            } else i++;
+        }
+        return result;
+    };
+
+    const formatHeaderBlocks = (src: string[]): string[] => {
+        const result = [...src];
+        for (let i = 0; i < result.length; i++) {
+            if (!result[i].trim().startsWith('■')) continue;
+            for (let j = i + 1; j < result.length; j++) {
+                const l = result[j];
+                if (!l.trim() || l.trim().startsWith('■') || /^・.*（.*JOIN.*）/.test(l.trim()) || l.trim().startsWith('【') || l.startsWith('\t')) break;
+                result[j] = `\t${l.trimStart()}`;
+            }
+        }
+        return result;
+    };
+
+    lines = formatConfiguredBlocks(lines);
+    lines = formatTableHeaders(lines);
+    lines = formatTwoColumnTables(lines);
+    lines = formatJoinBlocks(lines);
+    lines = formatHeaderBlocks(lines);
+
+    if (config.splitEnabled) {
+        lines = lines.map(line => {
+            if (line.includes('\t')) return line;
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('■') || trimmed.startsWith('・') || trimmed.startsWith('【')) return line;
+            const split = splitSqlColumn(line, config.keywords);
+            return split.length > 1 ? split.join('\t') : line;
+        });
+    }
+    return lines.join('\n');
+};
+
 const RevertTKGrid = React.memo((props: {
     content: string,
     defaultWidth: number,
@@ -227,68 +716,7 @@ const RevertTKGrid = React.memo((props: {
             row.map((cellText, cIdx) => {
                 const text = cellText || '';
                 if (!text) return null;
-
-                const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string }[] = [];
-                const normLine = normalizeText(text);
-
-                const lowerNormLine = normLine.toLowerCase();
-                for (const item of props.translationDict) {
-                    // Performance optimization: fast fail if phrase not in line
-                    if (!lowerNormLine.includes(item.phrase)) continue;
-
-                    item.regex.lastIndex = 0;
-                    let match;
-                    while ((match = item.regex.exec(normLine)) !== null) {
-                        const start = match.index;
-                        const end = start + item.phrase.length;
-                        if (!matches.some(m => (start < m.end && end > m.start))) {
-                            matches.push({
-                                start,
-                                end,
-                                replacements: item.replacements,
-                                phrase: text.substring(start, end),
-                                dictKey: item.phrase
-                            });
-                        }
-                        if (item.phrase.length === 0) break;
-                    }
-                }
-
-                if (matches.length === 0) return null;
-
-                matches.sort((a, b) => a.start - b.start);
-                const segments: TranslatedSegment[] = [];
-                let lastIndex = 0;
-
-                matches.forEach((m) => {
-                    if (m.start > lastIndex) {
-                        const txt = text.substring(lastIndex, m.start);
-                        const posKey = `rg-t-${rIdx}-${cIdx}-${lastIndex}`;
-                        segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
-                    }
-
-                    const selectionKey = `vkey-${encodeURIComponent(m.dictKey || m.phrase)}`;
-                    const currentSelection = props.selections[selectionKey] || m.replacements[0];
-                    const posKey = `rg-p-${rIdx}-${cIdx}-${m.start}`;
-
-                    segments.push({
-                        type: 'phrase',
-                        text: currentSelection,
-                        original: m.phrase,
-                        key: selectionKey,
-                        uid: posKey,
-                        isMultiple: m.replacements.length > 1,
-                        options: m.replacements
-                    });
-                    lastIndex = m.end;
-                });
-
-                if (lastIndex < text.length) {
-                    const txt = text.substring(lastIndex);
-                    const posKey = `rg-t-${rIdx}-${cIdx}-${lastIndex}`;
-                    segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
-                }
-                return segments;
+                return getSegmentsFromText(text, `${rIdx}-${cIdx}`, props.translationDict, props.selections, 'rg');
             })
         );
     }, [dataRows, props.translationDict, props.selections]);
@@ -582,6 +1010,11 @@ export const TranslateTab: React.FC = React.memo(() => {
         revertTKLineBreakGroupby,
         revertTKLineBreakHaving,
         revertTKLineBreakAnd,
+        bulkInput, setBulkInput,
+        targetLang, setTargetLang,
+        searchTerm, setSearchTerm,
+        selections, setSelections,
+        data, setData,
     } = useAppStore(useShallow(state => ({
         activeTab: state.activeTab,
         setActiveTab: state.setActiveTab,
@@ -634,20 +1067,25 @@ export const TranslateTab: React.FC = React.memo(() => {
         revertTKLineBreakGroupby: state.revertTKLineBreakGroupby,
         revertTKLineBreakHaving: state.revertTKLineBreakHaving,
         revertTKLineBreakAnd: state.revertTKLineBreakAnd,
+        bulkInput: state.translateInputStore,
+        setBulkInput: state.setTranslateInputStore,
+        targetLang: state.translateTargetLangStore,
+        setTargetLang: state.setTranslateTargetLangStore,
+        searchTerm: state.translateSearchStore,
+        setSearchTerm: state.setTranslateSearchStore,
+        selections: state.translateSelectionsStore,
+        setSelections: state.setTranslateSelectionsStore,
+        data: state.translateDataStore,
+        setData: state.setTranslateDataStore,
     })));
 
-    const [searchTerm, setSearchTerm] = useState('');
     const deferredGlobalSearchTerm = React.useDeferredValue(globalSearchTerm);
 
-    const [data, setData] = useState<TranslateEntry[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [copyFeedback, setCopyFeedback] = useState<{ row: number, col: 'jp' | 'en' | 'vi' } | null>(null);
-    const [bulkInput, setBulkInput] = useState('');
-    const [targetLang, setTargetLang] = useState<'jp' | 'en' | 'vi'>('en');
     const [syncing, setSyncing] = useState(false);
     const [syncProgress, setSyncProgress] = useState(0);
-    const [selections, setSelections] = useState<Record<string, string>>({});
     const [translatedLines, setTranslatedLines] = useState<TranslatedLine[]>([]);
     const [hoveredUid, setHoveredUid] = useState<string | null>(null);
     const [hoveredKey, setHoveredKey] = useState<string | null>(null);
@@ -887,233 +1325,7 @@ export const TranslateTab: React.FC = React.memo(() => {
         return codeLines.join('\n');
     };
 
-    /**
-     * Java SQL Parser – Phase 1/2/3 engine based on rever.md rules.
-     * Used when input text contains sb.append / sql.append style Java SQL.
-     */
-    const parseJavaSql = (input: string, config?: { splitEnabled: boolean, keywords: string[], deleteChars?: string[] }): string => {
-        let text = input;
 
-        // Custom delete chars
-        if (config?.deleteChars && config.deleteChars.length > 0) {
-            const escapedChars = config.deleteChars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-            const deleteRegex = new RegExp(`(${escapedChars.join('|')})`, 'g');
-            text = text.replace(deleteRegex, '');
-        }
-
-        // ── Phase 1: Line-by-line preprocessing ──────────────────────────────
-        const rawLines = text.split('\n');
-        const preprocessed: { sql: string; condition: string | null }[] = [];
-        let braceDepth = 0;
-        let conditionStack: string[] = [];
-
-        for (const raw of rawLines) {
-            const trimmed = raw.trim();
-            if (!trimmed) continue;
-
-            // Capture if(...) conditions (start of conditional block)
-            const ifMatch = trimmed.match(/^if\s*\((.+?)\)\s*\{?$/);
-            if (ifMatch) {
-                conditionStack.push(ifMatch[1].trim());
-                braceDepth++;
-                continue;
-            }
-            // Track else { / } 
-            if (/^else\s*\{?$/.test(trimmed) || trimmed === '}') {
-                if (trimmed === '}' && braceDepth > 0) {
-                    braceDepth--;
-                    if (braceDepth < conditionStack.length) conditionStack.pop();
-                }
-                continue;
-            }
-            if (trimmed === '{') { braceDepth++; continue; }
-
-            // Extract java variables: " + bean.getXxx() + "  →  【入力．getXxx()】
-            let sqlLine = trimmed;
-
-            // Strip sql.append( ... );
-            const appendMatch = sqlLine.match(/^[\w$]+\.append\s*\(\s*"?(.*?)"?\s*\)\s*;?$/);
-            if (appendMatch) {
-                sqlLine = appendMatch[1].trim();
-            }
-
-            // Replace dynamic java vars embedded in string: " + inBean.x() + "
-            sqlLine = sqlLine.replace(/"\s*\+\s*([\w.$()]+)\s*\+\s*"/g, '【入力．$1】');
-
-            // Strip leftover quotes, + signs, semicolons
-            sqlLine = sqlLine.replace(/"/g, '').replace(/\+/g, '').replace(/;/g, '').trim();
-
-            if (!sqlLine) continue;
-
-            preprocessed.push({
-                sql: sqlLine,
-                condition: conditionStack.length > 0 ? conditionStack[conditionStack.length - 1] : null
-            });
-        }
-
-        // ── Phase 2: SQL section state machine ───────────────────────────────
-        type Section = 'none' | 'select' | 'from' | 'where' | 'orderby' | 'groupby' | 'having' | 'join';
-        let section: Section = 'none';
-        const aliasMap = new Map<string, string>(); // alias → table name
-
-        const SECTION_HEADERS: Record<string, string> = {
-            select: revertTKHeaderSelect,
-            from: revertTKHeaderFrom,
-            where: revertTKHeaderWhere,
-            orderby: revertTKHeaderOrderby,
-            groupby: revertTKHeaderGroupby,
-            having: revertTKHeaderHaving,
-        };
-
-        const LINE_BREAKS: Record<string, boolean> = {
-            select: revertTKLineBreakSelect,
-            from: revertTKLineBreakFrom,
-            where: revertTKLineBreakWhere,
-            orderby: revertTKLineBreakOrderby,
-            groupby: revertTKLineBreakGroupby,
-            having: revertTKLineBreakHaving,
-        };
-
-        const outputSections: Record<string, string[]> = {
-            select: [], from: [], where: [], orderby: [], groupby: [], having: []
-        };
-
-        // Helper: parse a WHERE / HAVING / ON condition line into tab cols
-        const parseConditionLine = (line: string, condition: string | null): string => {
-            const t = line.trim();
-            // BETWEEN
-            const bw = t.match(/^(.+?)\s+BETWEEN\s+(.+?)\s+AND\s+(.+)$/i);
-            if (bw) {
-                const note = condition ? `\t【条件: ${condition}】` : '';
-                return `\t${bw[1].trim()}\tBETWEEN\t${bw[2].trim()}\t～ ${bw[3].trim()}${note}`;
-            }
-            // Comparison operators
-            const cmp = t.match(/^(.+?)\s*(>=|<=|<>|!=|=|>|<)\s*(.+)$/);
-            if (cmp) {
-                const note = condition ? `\t【条件: ${condition}】` : '';
-                return `\t${cmp[1].trim()}\t${cmp[2]}\t${cmp[3].trim()}${note}`;
-            }
-            // Custom Tokens / Keywords
-            if (config?.splitEnabled && config.keywords && config.keywords.length > 0) {
-                const parts = splitSqlColumn(t, config.keywords);
-                if (parts.length > 1) {
-                    const note = condition ? `\t【条件: ${condition}】` : '';
-                    return `\t${parts.join('\t')}${note}`;
-                }
-            }
-            // Fallback
-            const note = condition ? `\t【条件: ${condition}】` : '';
-            return `\t${t}${note}`;
-        };
-
-        // Helper: split comma-separated items (guards against commas inside parens)
-        const splitByComma = (s: string): string[] => {
-            const parts: string[] = [];
-            let depth = 0, cur = '';
-            for (const ch of s) {
-                if (ch === '(') depth++;
-                if (ch === ')') depth--;
-                if (ch === ',' && depth === 0) { parts.push(cur.trim()); cur = ''; }
-                else cur += ch;
-            }
-            if (cur.trim()) parts.push(cur.trim());
-            return parts;
-        };
-
-        // Walk each preprocessed SQL line
-        let pendingRest = '';
-        for (const { sql, condition } of preprocessed) {
-            const upper = sql.toUpperCase().trim();
-
-            // Detect section-changing anchor keywords
-            if (/^SELECT\b/.test(upper)) { section = 'select'; pendingRest = sql.replace(/^SELECT\s*/i, '').trim(); continue; }
-            if (/^FROM\b/.test(upper)) { section = 'from'; pendingRest = sql.replace(/^FROM\s*/i, '').trim(); continue; }
-            if (/^WHERE\b/.test(upper)) { section = 'where'; pendingRest = sql.replace(/^WHERE\s*/i, '').trim(); continue; }
-            if (/^ORDER\s+BY\b/.test(upper)) { section = 'orderby'; pendingRest = sql.replace(/^ORDER\s+BY\s*/i, '').trim(); continue; }
-            if (/^GROUP\s+BY\b/.test(upper)) { section = 'groupby'; pendingRest = sql.replace(/^GROUP\s+BY\s*/i, '').trim(); continue; }
-            if (/^HAVING\b/.test(upper)) { section = 'having'; pendingRest = sql.replace(/^HAVING\s*/i, '').trim(); continue; }
-            if (/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN\b/.test(upper)) {
-                section = 'from';
-                const joinType = upper.match(/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN/)?.[0] ?? 'JOIN';
-                pendingRest = sql.replace(/(INNER|LEFT|RIGHT|FULL|CROSS|OUTER)?\s*JOIN\s*/i, '').trim();
-                const parts = pendingRest.split(/\s+/);
-                const tbl = parts[0] || pendingRest;
-                const alias = parts[1];
-                if (alias) aliasMap.set(alias, tbl);
-                outputSections.from.push(`\t${tbl}${alias ? ` (${alias})` : ''} （${joinType}）`);
-                pendingRest = '';
-                continue;
-            }
-
-            const workLine = (pendingRest ? pendingRest + ' ' + sql : sql).trim();
-            pendingRest = '';
-
-            if (!workLine) continue;
-
-            if (section === 'select' || section === 'groupby') {
-                const items = splitByComma(workLine).filter(Boolean);
-                const target = section === 'select' ? outputSections.select : outputSections.groupby;
-                items.forEach(item => target.push(`\t${item}`));
-            } else if (section === 'from') {
-                // FROM may list multiple tables: TABLE1 A, TABLE2 B
-                const tables = splitByComma(workLine);
-                tables.forEach(entry => {
-                    const p = entry.trim().split(/\s+/);
-                    const tbl = p[0];
-                    const alias = p[1];
-                    if (alias) aliasMap.set(alias, tbl);
-                    outputSections.from.push(`\t${tbl}${alias ? ` (${alias})` : ''}`);
-                });
-            } else if (section === 'where' || section === 'having') {
-                const target = section === 'where' ? outputSections.where : outputSections.having;
-                // Split on leading AND / OR
-                const condParts = workLine
-                    .replace(/\s+(AND|OR)\s+(?!.*AND.*(?:AND|OR))/gi, '\n$1 ')
-                    .split('\n');
-                condParts.forEach(part => {
-                    const isAnd = /^AND\b/i.test(part.trim());
-                    const isOr = /^OR\b/i.test(part.trim());
-                    const stripped = part.replace(/^(AND|OR)\s+/i, '').trim();
-                    if (stripped) {
-                        if (isAnd && revertTKLineBreakAnd && target.length > 0) {
-                            target.push("");
-                        }
-                        const prefix = isAnd ? revertTKHeaderAnd : (isOr ? 'OR' : '');
-                        const lineOutput = parseConditionLine(stripped, condition);
-                        // If we have a prefix, we replace the first \t in parseConditionLine result
-                        target.push(prefix ? (prefix + lineOutput) : lineOutput);
-                    }
-                });
-            } else if (section === 'orderby') {
-                const items = splitByComma(workLine);
-                items.forEach(item => {
-                    const t = item.trim();
-                    if (/\bDESC\b/i.test(t)) {
-                        outputSections.orderby.push(`\t${t.replace(/\s*DESC\s*$/i, '').trim()}\t降順`);
-                    } else {
-                        outputSections.orderby.push(`\t${t.replace(/\s*ASC\s*$/i, '').trim()}\t昇順`);
-                    }
-                });
-            }
-        }
-
-        // ── Phase 3: Assemble output ──────────────────────────────────────────
-        const lines: string[] = [];
-        const sectionOrder: (keyof typeof outputSections)[] = ['select', 'from', 'where', 'orderby', 'groupby', 'having'];
-        for (const key of sectionOrder) {
-            const rows = outputSections[key];
-            if (rows.length > 0) {
-                if (LINE_BREAKS[key] && lines.length > 0) {
-                    lines.push('');
-                }
-                lines.push(SECTION_HEADERS[key]);
-                lines.push(...rows);
-                lines.push('');
-            }
-        }
-
-        return lines.join('\n').trimEnd();
-    };
 
     const handleRevertTK = () => {
         if (!revertTKInput.trim()) return;
@@ -1126,18 +1338,36 @@ export const TranslateTab: React.FC = React.memo(() => {
                     (revertTKResultFormat === 'text' && columnSplitApplyToText) ||
                     (revertTKResultFormat === 'table' && columnSplitApplyToTable)
                 );
-                const options = {
+                const parserConfig = {
                     splitEnabled: shouldSplit,
                     keywords: columnSplitKeywords.split('|').map(k => k.trim()).filter(Boolean),
-                    deleteChars: revertTKDeleteChars.split('|').map(k => k.trim()).filter(Boolean)
+                    deleteChars: revertTKDeleteChars.split('|').map(k => k.trim()).filter(Boolean),
+                    headers: {
+                        select: revertTKHeaderSelect,
+                        from: revertTKHeaderFrom,
+                        where: revertTKHeaderWhere,
+                        orderby: revertTKHeaderOrderby,
+                        groupby: revertTKHeaderGroupby,
+                        having: revertTKHeaderHaving,
+                        and: revertTKHeaderAnd
+                    },
+                    lineBreaks: {
+                        select: revertTKLineBreakSelect,
+                        from: revertTKLineBreakFrom,
+                        where: revertTKLineBreakWhere,
+                        orderby: revertTKLineBreakOrderby,
+                        groupby: revertTKLineBreakGroupby,
+                        having: revertTKLineBreakHaving,
+                        and: revertTKLineBreakAnd
+                    },
+                    revertTKMapping // Added this line
                 };
 
-                // Auto-detect Java append code vs raw design-doc text
                 const isJava = /[\w$]+\.append\s*\(/i.test(revertTKInput);
                 if (isJava) {
-                    result = parseJavaSql(revertTKInput, options);
+                    result = parseJavaSql(revertTKInput, parserConfig);
                 } else {
-                    result = smartFormatSqlDesign(revertTKInput, options);
+                    result = smartFormatSqlDesign(revertTKInput, parserConfig);
                 }
             }
             setRevertTKResult(result);
@@ -1147,10 +1377,19 @@ export const TranslateTab: React.FC = React.memo(() => {
         }
     };
 
+    const lastInputRef = useRef(bulkInput);
+    const lastRevertInputRef = useRef(revertTKInput);
+    const lastTargetLangRef = useRef(targetLang);
+
     // Reset selections when input changes or target language changes
     useEffect(() => {
-        setSelections({});
-    }, [bulkInput, revertTKInput, targetLang]);
+        if (bulkInput !== lastInputRef.current || revertTKInput !== lastRevertInputRef.current || targetLang !== lastTargetLangRef.current) {
+            setSelections({});
+            lastInputRef.current = bulkInput;
+            lastRevertInputRef.current = revertTKInput;
+            lastTargetLangRef.current = targetLang;
+        }
+    }, [bulkInput, revertTKInput, targetLang, setSelections]);
 
     const loadData = async (forceSync = false) => {
         if (!translateFilePath) {
@@ -1362,455 +1601,7 @@ export const TranslateTab: React.FC = React.memo(() => {
 
 
 
-    const splitSqlColumn = (val: string, keywords: string[]): string[] => {
-        if (!val) return [''];
-        let expression = val.trim();
 
-        const sortedKeywords = keywords
-            .map(k => k.trim())
-            .filter(Boolean)
-            .sort((a, b) => b.length - a.length);
-
-        if (sortedKeywords.length === 0) return [expression];
-
-        // Escape keywords and add word boundaries for text-based keywords (CASE, AS, etc.)
-        const escaped = sortedKeywords.map(k => {
-            const pattern = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            // Use \b for keywords that are purely alphanumeric to prevent matching inside other words
-            return /^[a-zA-Z0-9_]+$/.test(k) ? `\\b${pattern}\\b` : pattern;
-        });
-
-        // Build regex with capturing group () to keep the delimiters (keywords) as separate elements
-        const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
-
-        // Split and clean up parts
-        return expression.split(regex)
-            .map(p => p.trim())
-            .filter(p => p !== '');
-    };
-
-    /**
-     * Smart formatter for SQL design documents based on rules in CHANGES.md.
-     */
-    const smartFormatSqlDesign = (input: string, config?: { splitEnabled: boolean, keywords: string[], deleteChars?: string[] }): string => {
-        if (!input.trim()) return input;
-
-        let text = input;
-
-        // STEP 0: Clean up specified characters (e.g. quotes, commas if configured)
-        if (config?.deleteChars && config.deleteChars.length > 0) {
-            const escapedChars = config.deleteChars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-            const deleteRegex = new RegExp(`(${escapedChars.join('|')})`, 'g');
-            text = text.replace(deleteRegex, '');
-        }
-
-        // STEP 0: Basic cleanup of Java/C# append-style SQL (re-use current behavior)
-        // Remove StringBuilder initialization lines
-        text = text.replace(/StringBuilder\s+\w+\s*=\s*new\s+StringBuilder\(\s*\)\s*;/gi, '');
-
-        // Remove ".append(" prefixes (sql.append, sb.append, query.append, etc.) including optional first quote
-        text = text.replace(/[\w$]+\.append\s*\(\s*\"?/gi, '');
-
-        // Clean up common line endings like ");" or ")" with trailing semicolon
-        text = text.replace(/\"?\s*\)\s*;/g, '');
-
-        // Remove quotes and '+' used for string concatenation
-        text = text.replace(/\"/g, '');
-        text = text.replace(/\+/g, '');
-
-        // Normalize tabs to spaces, but keep multiple spaces (needed for columns)
-        let lines = text.split('\n').map(line =>
-            line.replace(/\t/g, ' ').replace(/\s+$/g, '')
-        );
-
-        const SQL_KEYWORDS = ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'GROUP BY', 'HAVING'];
-        const KEYWORD_MAP: Record<string, string> = {
-            'SELECT': revertTKHeaderSelect,
-            'FROM': revertTKHeaderFrom,
-            'WHERE': revertTKHeaderWhere,
-            'ORDER BY': revertTKHeaderOrderby,
-            'GROUP BY': revertTKHeaderGroupby,
-            'HAVING': revertTKHeaderHaving
-        };
-        const LINE_BREAK_MAP: Record<string, boolean> = {
-            'SELECT': revertTKLineBreakSelect,
-            'FROM': revertTKLineBreakFrom,
-            'WHERE': revertTKLineBreakWhere,
-            'ORDER BY': revertTKLineBreakOrderby,
-            'GROUP BY': revertTKLineBreakGroupby,
-            'HAVING': revertTKLineBreakHaving,
-            'AND': revertTKLineBreakAnd
-        };
-
-        // Pre-process: convert raw keywords to configured headers and handle line breaks
-        const preprocessedLines: string[] = [];
-        lines.forEach(line => {
-            const trimmed = line.trim().toUpperCase();
-            if (SQL_KEYWORDS.includes(trimmed)) {
-                if (LINE_BREAK_MAP[trimmed] && preprocessedLines.length > 0) {
-                    preprocessedLines.push('');
-                }
-                preprocessedLines.push(KEYWORD_MAP[trimmed]);
-            } else {
-                preprocessedLines.push(line);
-            }
-        });
-        lines = preprocessedLines;
-
-        // Helper: format SQL info blocks based on config
-        const formatConfiguredBlocks = (src: string[]): string[] => {
-            let result = [...src];
-
-            revertTKMapping.forEach(cfg => {
-                for (let i = 0; i < result.length; i++) {
-                    const line = result[i];
-                    const trimmed = line.trim();
-
-                    if (trimmed.startsWith(cfg.label)) {
-                        const gapToValue1 = "\t".repeat(cfg.offsets[0]);
-
-                        if (cfg.type === 'text') {
-                            if (trimmed.includes('：') || trimmed.includes(':')) {
-                                const splitChar = trimmed.includes('：') ? '：' : ':';
-                                const labelPart = trimmed.substring(0, trimmed.indexOf(splitChar)).trim();
-                                const valuePart = trimmed.substring(trimmed.indexOf(splitChar) + 1).trim();
-                                result[i] = `${labelPart}${splitChar}${gapToValue1}${valuePart}`;
-                            } else {
-                                result[i] = `${trimmed}`;
-                            }
-                        } else if (cfg.type === 'table') {
-                            result[i] = `${trimmed}`;
-                        }
-                    }
-                }
-            });
-
-            return result;
-        };
-
-        // Helper: Insert table headers if missing based on config
-        const formatTableHeaders = (src: string[]): string[] => {
-            const result = [...src];
-
-            revertTKMapping.filter(c => c.type === 'table').forEach(cfg => {
-                for (let i = 0; i < result.length; i++) {
-                    const trimmed = result[i].trim();
-                    if (trimmed === cfg.label || trimmed.startsWith(cfg.label + ' ')) {
-                        const nextIdx = i + 1;
-                        if (nextIdx >= result.length) continue;
-                        const nextLine = result[nextIdx].trim();
-                        if (!nextLine) continue;
-
-                        let header = "";
-                        const gap = "\t".repeat(cfg.offsets[1] || 1);
-                        if (cfg.id === 'ext-items' || cfg.id === 'ins-items') {
-                            if (config?.splitEnabled) {
-                                header = `エイリアス${gap}カラム名${gap}セット内容`;
-                            } else {
-                                header = `カラム名${gap}セット内容`;
-                            }
-                        }
-                        else if (cfg.id === 'log-output') header = `レベル${gap}メッセージ`;
-
-                        if (header && !nextLine.includes(header.split('\t')[0])) {
-                            // Offset to column A
-                            const lead = "\t".repeat(cfg.offsets[0] || 1);
-                            result.splice(nextIdx, 0, lead + header);
-                        }
-                    }
-                }
-            });
-
-            return result;
-        };
-
-        // Helper: format 2-column tables (カラム名 / セット内容, レベル / メッセージ)
-        const formatTwoColumnTables = (src: string[]): string[] => {
-            const result = [...src];
-            const tableHeaderKeywords = [
-                'カラム名',
-                'セット内容',
-                '抽出項目',
-                '挿入項目',
-                'レベル',
-                'メッセージ'
-            ];
-
-            const isHeaderLine = (line: string) =>
-                tableHeaderKeywords.some(k => line.includes(k));
-
-            let i = 0;
-            while (i < result.length) {
-                if (!isHeaderLine(result[i])) {
-                    i++;
-                    continue;
-                }
-
-                const start = i;
-                let end = i;
-
-                // Extend block until blank line or separation
-                for (let j = i + 1; j < result.length; j++) {
-                    const l = result[j];
-                    if (!l.trim()) break;
-                    // Stop if new header or section marker
-                    if (isHeaderLine(l) || l.trim().startsWith('■')) break;
-                    end = j;
-                }
-
-                // Collect rows
-                const rows: { idx: number; col1: string; col2: string }[] = [];
-
-                for (let k = start; k <= end; k++) {
-                    const raw = result[k];
-                    const trimmed = raw.trim();
-                    if (!trimmed) continue;
-
-                    // Đã có tab (header chèn từ formatExtractionBlocks): カラム名\tセット内容
-                    if (trimmed.includes('カラム名') && trimmed.includes('\t')) {
-                        const parts = trimmed.split(/\t/);
-                        rows.push({ idx: k, col1: (parts[0] || '').trim(), col2: (parts[1] || '').trim() });
-                        continue;
-                    }
-
-                    // Generic split: first group of 2+ spaces separates col1 and col2
-                    const m = trimmed.match(/^(\S(?:.*?\S)?)\s{2,}(.*\S.*)$/);
-                    if (m) {
-                        rows.push({ idx: k, col1: m[1], col2: m[2] });
-                        continue;
-                    }
-
-                    // Fallback: 抽出項目/挿入項目 data row (1 space): "法人コード 「退避・法人コード」" → 2 cột
-                    const singleSpace = trimmed.match(/^(\S+)\s+(.+)$/);
-                    if (singleSpace) {
-                        rows.push({ idx: k, col1: singleSpace[1], col2: singleSpace[2] });
-                        continue;
-                    }
-
-                    // Fallback: try to split at single space between known Japanese labels
-                    if (trimmed.includes('カラム名') && trimmed.includes('セット内容')) {
-                        const idxKeyword = trimmed.indexOf('カラム名') + 'カラム名'.length;
-                        const col1 = trimmed.substring(0, idxKeyword).trimEnd();
-                        const col2 = trimmed.substring(idxKeyword).trim();
-                        rows.push({ idx: k, col1, col2 });
-                        continue;
-                    }
-
-                    if (trimmed.includes('レベル') && trimmed.includes('メッセージ')) {
-                        const idxKeyword = trimmed.indexOf('レベル') + 'レベル'.length;
-                        const col1 = trimmed.substring(0, idxKeyword).trimEnd();
-                        const col2 = trimmed.substring(idxKeyword).trim();
-                        rows.push({ idx: k, col1, col2 });
-                        continue;
-                    }
-                }
-
-                if (rows.length > 0) {
-                    // Tab-separated: copy sang Excel → 2 cột vào 2 ô (giữ nguyên table như ảnh)
-                    rows.forEach(({ idx: lineIdx, col1, col2 }) => {
-                        const blockHeader = result[start].toLowerCase();
-                        const isSplittableBlock = blockHeader.includes('セット内容') ||
-                            blockHeader.includes('抽出項目') ||
-                            blockHeader.includes('挿入項目');
-
-                        if (config?.splitEnabled && isSplittableBlock) {
-                            const splitParts = splitSqlColumn(col2, config.keywords);
-                            // col1 stays, then split parts
-                            result[lineIdx] = `${col1}\t` + splitParts.join('\t');
-                        } else {
-                            result[lineIdx] = `${col1}\t${col2}`;
-                        }
-                    });
-                }
-
-                i = end + 1;
-            }
-
-            return result;
-        };
-
-        // Helper: align JOIN conditions (ON / AND / OR)
-        const formatJoinBlocks = (src: string[]): string[] => {
-            const result = [...src];
-            // Split AND/OR if they are inline before processing
-            // Regex to find AND/OR that are NOT at the start of the string (preceded by space)
-            const SPLIT_REGEX = /\s+(AND|OR)\s+/g;
-
-            let i = 0;
-            while (i < result.length) {
-                const line = result[i];
-                // JOIN block starts with bullet like ・商品マスタ RS （INNER JOIN）
-                if (!line.trim().startsWith('・')) {
-                    i++;
-                    continue;
-                }
-
-                // Pre-process subsequent lines to split inline AND/OR
-                // We do this dynamically as we consume lines
-                let offset = 1;
-                while (i + offset < result.length) {
-                    const idx = i + offset;
-                    const nextLine = result[idx];
-                    const trimmedNext = nextLine.trim();
-                    if (!trimmedNext) { offset++; continue; }
-                    if (trimmedNext.startsWith('■') || trimmedNext.startsWith('・')) break;
-
-                    // If line contains multiple keywords, split it
-                    // Ignore if it already starts with one of them, only split subsequent ones
-                    // But even if it starts with ON, it might have AND later: "ON a=b AND c=d"
-                    if (SPLIT_REGEX.test(nextLine)) {
-                        // Protect BETWEEN ... AND ... from splitting
-                        const placeholders: string[] = [];
-                        // Note: simple regex for BETWEEN ... AND. non-nested.
-                        // We use \bAND\b to ensure we match the whole word AND.
-                        const protectedLine = nextLine.replace(/BETWEEN\s+[\s\S]*?\s+AND\b/gi, (m) => {
-                            placeholders.push(m);
-                            return `__BW_PH_${placeholders.length - 1}__`;
-                        });
-
-                        // Careful split preserving delimiters
-                        const parts = protectedLine.replace(SPLIT_REGEX, '\n$1 ').split('\n');
-
-                        if (parts.length > 1) {
-                            const cleanedParts = parts.map(p => {
-                                // Restore
-                                let restored = p.trim();
-                                if (restored) {
-                                    restored = restored.replace(/__BW_PH_(\d+)__/g, (_, idx) => placeholders[parseInt(idx)]);
-                                }
-                                return restored;
-                            }).filter(p => p);
-
-                            // Only replace if we actually split something meaningful
-                            if (cleanedParts.length > 0) {
-                                result.splice(idx, 1, ...cleanedParts);
-                            }
-                        }
-                    }
-                    offset++;
-                }
-
-                const joinStart = i + 1;
-                const joinLines: { idx: number; op: string; rest: string }[] = [];
-                let maxOpLen = 0;
-
-                for (let j = joinStart; j < result.length; j++) {
-                    const raw = result[j];
-                    const trimmed = raw.trim();
-                    if (!trimmed) continue; // Skip blank lines, don't break
-                    if (trimmed.startsWith('■') || trimmed.startsWith('・')) break;
-
-                    const m = trimmed.match(/^(ON|AND|OR)\s+(.*)$/);
-                    if (!m) {
-                        // If it doesn't start with keyword but is part of JOIN block, maybe force it or leave it?
-                        // If we split correctly above, it should match. If not, it might be a weird line.
-                        // Let's assume continuation or unmatched.
-                        // Check if it really should be part of the join logic?
-                        // For now, if it doesn't match ON/AND/OR, we ignore it for alignment but keep it in the block
-                        continue;
-                    }
-
-                    const op = m[1];
-                    const rest = m[2];
-                    joinLines.push({ idx: j, op, rest });
-                    if (op.length > maxOpLen) maxOpLen = op.length;
-                }
-
-                if (joinLines.length > 0) {
-                    const BETWEEN_REGEX = /^(.*?)\s+BETWEEN\s+(.*?)\s+AND\s+(.*?)$/i;
-                    // Regex for comparison operators. Order matters: checked sequentialy.
-                    // Support: <=, >=, <>, !=, =, <, >
-                    const COMPARE_REGEX = /^(.*?)\s*(=|<=|>=|<>|!=|<|>)\s*(.*)$/;
-
-                    const INDENT_JOIN = '\t'; // Indent = 1 column (tab)
-
-                    joinLines.forEach(({ idx: lineIdx, op, rest }) => {
-                        const trimmedRest = rest.trim();
-                        const between = trimmedRest.match(BETWEEN_REGEX);
-                        if (between) {
-                            // 4 columns: Left | BETWEEN | Start | ～ End
-                            // Result: | (Empty) | Op | Left | BETWEEN | Start | ～ End |
-                            // Ensure no newlines break the row.
-                            const left = between[1].trim();
-                            const start = between[2].trim();
-                            const end = between[3].trim();
-                            const displayOp = op.toUpperCase() === 'AND' ? revertTKHeaderAnd : op;
-                            result[lineIdx] = `${INDENT_JOIN}${displayOp}\t${left}\tBETWEEN\t${start}\t～ ${end}`;
-                        } else {
-                            const compare = trimmedRest.match(COMPARE_REGEX);
-                            if (compare) {
-                                // 3 columns for proper content: Left, Op, Right
-                                // Result: | (Empty) | Op | Left | OpSymbol | Right |
-                                const displayOp = op.toUpperCase() === 'AND' ? revertTKHeaderAnd : op;
-                                result[lineIdx] = `${INDENT_JOIN}${displayOp}\t${compare[1].trim()}\t${compare[2]}\t${compare[3].trim()}`;
-                            } else {
-                                // Fallback
-                                const displayOp = op.toUpperCase() === 'AND' ? revertTKHeaderAnd : op;
-                                result[lineIdx] = `${INDENT_JOIN}${displayOp}\t${trimmedRest}`;
-                            }
-                        }
-                    });
-                    const nextIdx = joinLines[joinLines.length - 1].idx + 1;
-                    // Cách 1 dòng giữa block INNER JOIN này và block INNER JOIN tiếp theo; đồng bộ source (chèn row)
-                    if (nextIdx < result.length && result[nextIdx].trim().startsWith('・')) {
-                        result.splice(nextIdx, 0, '');
-                    }
-                    i = nextIdx;
-                } else {
-                    i++;
-                }
-            }
-
-            return result;
-        };
-
-        // Helper: thụt dòng nội dung dưới ■ (rule 2: "Nội dung bên dưới PHẢI thụt vào ít nhất 1 cột")
-        // Dù source không thụt → output vẫn thụt 1 column (\t). Dừng khi gặp ■ mới hoặc block JOIN (・...JOIN).
-        const formatHeaderBlocks = (src: string[]): string[] => {
-            const result = [...src];
-            const JOIN_HEADER_REGEX = /^・.*（.*JOIN.*）/;
-            const INDENT_BLOCK = '\t'; // Use column indent
-
-            for (let i = 0; i < result.length; i++) {
-                const line = result[i];
-                if (!line.trim().startsWith('■')) continue;
-
-                for (let j = i + 1; j < result.length; j++) {
-                    const l = result[j];
-                    if (!l.trim()) break;
-                    if (l.trim().startsWith('■')) break;
-                    if (JOIN_HEADER_REGEX.test(l.trim())) break; // Không thụt tiêu đề JOIN block
-                    if (l.trim().startsWith('【')) break; // Block SQL info (論理名・定義名) không thụt theo ■
-                    if (l.startsWith('\t')) continue; // Đã thụt rồi
-
-                    result[j] = `${INDENT_BLOCK}${l.trimStart()}`;
-                }
-            }
-
-            return result;
-        };
-
-        lines = formatConfiguredBlocks(lines);
-        lines = formatTableHeaders(lines);
-        lines = formatTwoColumnTables(lines);
-        lines = formatJoinBlocks(lines);
-        lines = formatHeaderBlocks(lines);
-
-        // Final pass: if splitEnabled is ON, split any remaining lines that don't have Tabs yet (except headers)
-        if (config?.splitEnabled) {
-            lines = lines.map(line => {
-                if (line.includes('\t')) return line;
-                const trimmed = line.trim();
-                // Don't split section headers or bullet points
-                if (!trimmed || trimmed.startsWith('■') || trimmed.startsWith('・') || trimmed.startsWith('【')) return line;
-
-                const split = splitSqlColumn(line, config.keywords);
-                return split.length > 1 ? split.join('\t') : line;
-            });
-        }
-
-        return lines.join('\n');
-    };
 
     // Memoize the dictionary transformation
     const translationDict = useMemo(() => {
@@ -2015,10 +1806,14 @@ export const TranslateTab: React.FC = React.memo(() => {
     }, [deferredRevertTKInput, translationDict, selections]);
 
     useEffect(() => {
-        if ((activeTab === 'translate' || activeTab === 'revert-tk') && data.length === 0) {
-            loadData();
+        if (activeTab === 'translate' || activeTab === 'revert-tk') {
+            if (data.length === 0 && !loading) {
+                loadData();
+            } else if (data.length > 0 && loading) {
+                setLoading(false);
+            }
         }
-    }, [activeTab]);
+    }, [activeTab, data.length, loading]);
 
 
     const handleSaveEntry = React.useCallback(async (entry: TranslateEntry) => {
@@ -2187,7 +1982,7 @@ export const TranslateTab: React.FC = React.memo(() => {
                         >
                             <span className="text-lg group-hover:scale-110 transition-transform bg-indigo-100 rounded-lg p-1">👈</span>
                             <div className="flex flex-col">
-                                <span>Copy to Expected</span>
+                                <span>Copy to A</span>
                                 <span className="text-[9px] text-gray-400 font-medium group-hover:text-indigo-400">Text Compare (Left Side)</span>
                             </div>
                         </button>
@@ -2204,7 +1999,7 @@ export const TranslateTab: React.FC = React.memo(() => {
                         >
                             <span className="text-lg group-hover:scale-110 transition-transform bg-teal-100 rounded-lg p-1">👉</span>
                             <div className="flex flex-col">
-                                <span>Copy to Current</span>
+                                <span>Copy to B</span>
                                 <span className="text-[9px] text-gray-400 font-medium group-hover:text-indigo-400">Text Compare (Right Side)</span>
                             </div>
                         </button>
@@ -2477,7 +2272,7 @@ export const TranslateTab: React.FC = React.memo(() => {
                                             customWidths={parsedCustomWidths}
                                             translationDict={translationDict}
                                             selections={selections}
-                                            onSelectionChange={(key, val) => setSelections(prev => ({ ...prev, [key]: val }))}
+                                            onSelectionChange={(key, val) => setSelections({ ...selections, [key]: val })}
                                             hoveredUid={hoveredUid}
                                             hoveredKey={hoveredKey}
                                             onHover={(uid, key) => { setHoveredUid(uid); setHoveredKey(key); }}
@@ -2863,7 +2658,7 @@ export const TranslateTab: React.FC = React.memo(() => {
                                 <button
                                     key={i}
                                     onClick={() => {
-                                        setSelections(prev => ({ ...prev, [tooltip.seg.key]: opt }));
+                                        setSelections({ ...selections, [tooltip.seg.key]: opt });
                                         setTooltip(null);
                                     }}
                                     className={`w-full text-left px-4 py-2.5 text-xs font-bold transition-all border-l-4
