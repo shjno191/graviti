@@ -4,31 +4,36 @@ import { useAppStore } from '../store/useAppStore';
 import { useShallow } from 'zustand/react/shallow';
 import { Mermaid } from './Mermaid';
 
-function analyzeAstToMap(sourceCode: string): Map<string, Set<string>> {
-    const callMap = new Map<string, Set<string>>();
+function truncateLabel(str: string, max: number = 20): string {
+    if (!str) return "";
+    let cleanStr = str.replace(/\n|\r/g, " ").trim();
+    if (cleanStr.length > max) {
+        return cleanStr.substring(0, max - 3) + "...";
+    }
+    return cleanStr;
+}
 
-    // Bước 0: Làm sạch source code (Bỏ comment và nội dung chuỗi)
-    // Để tránh regex hoặc đếm ngoặc nhọn bị sai khi gặp code mồi trong comment/string.
+interface CallNode {
+    callee: string;
+    label: string;
+}
+
+function analyzeAstToMap(sourceCode: string): Map<string, CallNode[]> {
+    const callMap = new Map<string, CallNode[]>();
+
+    // 1. Lọc rác (Blacklist Keywords)
+    const blacklistRegex = /^(get|set|is|clear|toString|log|warn|info|error|back|confirm|equals)/i;
+
+    // Bước 0: Làm sạch nội dung comment và chuỗi
     let cleanCode = sourceCode;
-
-    // Xóa block comments /* ... */
-    // Using RegExp with [\s\S] to match across newlines
     cleanCode = cleanCode.replace(/\/\*[\s\S]*?\*\//g, '');
-
-    // Xóa line comments // ...
     cleanCode = cleanCode.replace(/\/\/.*/g, '');
-
-    // Thay thế nội dung chuỗi "..." và char '...' thành chuỗi rỗng tĩnh để không chứa { } 
-    // Regex này bắt chuỗi có xử lý escape character
     cleanCode = cleanCode.replace(/"(?:[^"\\]|\\.)*"/g, '""');
     cleanCode = cleanCode.replace(/'(?:[^'\\]|\\.)*'/g, "''");
 
-    // Bước 1: Tìm các hàm nội bộ trong file
-    // Cải tiến regex để an toàn hơn và xử lý các generic bounds, mảng, etc.
+    // 2. Trích xuất hàm nội bộ (Lấy tên và Body)
     const methodDeclRegex = /(?:(?:public|private|protected|static|final|native|synchronized|abstract|transient)\s+)*(?:[\w<>,\[\]]+\s+)*([a-zA-Z_$][\w$]*)\s*\([^)]*\)\s*(?:throws\s+[a-zA-Z_$,\s]+)?\s*\{/g;
-
-    // Bỏ qua các từ khóa điều khiển luồng bị trùng mẫu
-    const controlFlow = new Set(["if", "for", "while", "catch", "switch", "synchronized", "return", "new", "super", "this", "else", "try", "do"]);
+    const controlKeywords = new Set(["if", "for", "while", "catch", "switch", "synchronized", "return", "new", "super", "this", "else", "try", "do"]);
 
     interface InternalMethod {
         name: string;
@@ -41,10 +46,10 @@ function analyzeAstToMap(sourceCode: string): Map<string, Set<string>> {
 
     while ((match = methodDeclRegex.exec(cleanCode)) !== null) {
         const methodName = match[1];
-        if (controlFlow.has(methodName)) continue;
 
-        // match.index là vị trí bắt đầu
-        // match[0].length là độ dài match (ký tự cuối cùng là '{')
+        // Loại bỏ từ khóa luồng điều khiển và các hàm blacklist
+        if (controlKeywords.has(methodName) || blacklistRegex.test(methodName)) continue;
+
         const openBraceIdx = match.index + match[0].length - 1;
 
         internalMethods.push({
@@ -54,14 +59,13 @@ function analyzeAstToMap(sourceCode: string): Map<string, Set<string>> {
         });
     }
 
-    // Bước 2: Lấy body của hàm thông qua đếm ngoặc nhọn trên cleanCode
+    // Đếm ngoặc nhọn { }
     for (const method of internalMethods) {
         let braceCount = 0;
         let bodyEndIdx = method.bodyStartIdx;
 
         for (let i = method.bodyStartIdx; i < cleanCode.length; i++) {
             const char = cleanCode[i];
-
             if (char === '{') {
                 braceCount++;
             } else if (char === '}') {
@@ -72,68 +76,178 @@ function analyzeAstToMap(sourceCode: string): Map<string, Set<string>> {
                 }
             }
         }
-
         method.bodyContent = cleanCode.substring(method.bodyStartIdx + 1, bodyEndIdx);
     }
 
-    // Lấy tập hợp tên hàm nội bộ để map nhanh
-    const internalMethodNames = new Set(internalMethods.map(m => m.name));
+    const methodNamesSet = new Set(internalMethods.map(m => m.name));
 
-    // Bước 3 & Bước 4: Tìm lời gọi hàm và Map quan hệ
+    // 3. Tìm quan hệ gọi hàm (Caller -> Callee)
     const callRegex = /([a-zA-Z_$][\w$]*)\s*\(/g;
 
     for (const method of internalMethods) {
-        // Tùy chọn: Không vẽ các hàm Getter/Setter lớn làm Root Point rác
         const callerName = method.name;
-        if (callerName.length > 3 && (callerName.startsWith("get") || callerName.startsWith("set"))) continue;
-        if (callerName.length > 2 && callerName.startsWith("is") && callerName.charAt(2) === callerName.charAt(2).toUpperCase()) continue;
+        if (!callMap.has(callerName)) callMap.set(callerName, []);
 
-        if (!callMap.has(callerName)) {
-            callMap.set(callerName, new Set());
-        }
-
-        const body = method.bodyContent;
+        const strBody = method.bodyContent;
         let callMatch;
-        callRegex.lastIndex = 0; // Reset regex
+        callRegex.lastIndex = 0;
+        let order = 1;
 
-        while ((callMatch = callRegex.exec(body)) !== null) {
+        while ((callMatch = callRegex.exec(strBody)) !== null) {
             const calleeName = callMatch[1];
 
-            if (internalMethodNames.has(calleeName) && calleeName !== callerName) {
-                // Lọc bỏ phương thức Getter/Setter mờ nhạt
-                if (calleeName.length > 3 && (calleeName.startsWith("get") || calleeName.startsWith("set"))) continue;
-                if (calleeName.length > 2 && calleeName.startsWith("is") && calleeName.charAt(2) === calleeName.charAt(2).toUpperCase()) continue;
+            // Ràng buộc điều kiện: trong file, không đệ quy, không dính blacklist
+            if (methodNamesSet.has(calleeName) && calleeName !== callerName && !blacklistRegex.test(calleeName)) {
 
-                callMap.get(callerName)!.add(calleeName);
+                // Trích xuất điều kiện rẽ nhánh (if block)
+                let condText = "";
+                let i = callMatch.index - 1;
+                let openB = 0, closeB = 0, stmtEnded = false;
+
+                while (i > 1) {
+                    const char = strBody[i];
+                    if (char === '}') closeB++;
+                    else if (char === '{') openB++;
+                    else if (char === ';' && openB === closeB) stmtEnded = true;
+
+                    if (char === 'f' && strBody[i - 1] === 'i' && /\s|\}/.test(strBody[i - 2])) {
+                        const isInside = (openB > closeB) || (openB === closeB && closeB === 0 && !stmtEnded);
+                        if (isInside) {
+                            let afterIfStart = i + 1;
+                            while (afterIfStart < callMatch.index && strBody[afterIfStart] !== '(') afterIfStart++;
+                            if (afterIfStart < callMatch.index) {
+                                let parenDepth = 0, condEnd = afterIfStart + 1;
+                                while (condEnd < callMatch.index) {
+                                    if (strBody[condEnd] === '(') parenDepth++;
+                                    else if (strBody[condEnd] === ')') {
+                                        if (parenDepth === 0) break;
+                                        parenDepth--;
+                                    }
+                                    condEnd++;
+                                }
+                                condText = strBody.substring(afterIfStart + 1, condEnd);
+                            }
+                        }
+                        break;
+                    }
+                    if (closeB > openB + 1) break;
+                    i--;
+                }
+
+                // Gắn nhãn mũi tên
+                let edgeLabel = `${order++}`;
+                if (condText) {
+                    edgeLabel += `<br/>[${truncateLabel(condText, 25)}]`;
+                }
+
+                callMap.get(callerName)!.push({ callee: calleeName, label: edgeLabel });
             }
         }
 
-        // Dọn dẹp nếu hàm caller không gọi ai thì xóa đi cho đồ thị đỡ rác (ùn cục)
-        // Nếu bạn muốn giữ lại hàm đứng 1 mình (independent node), comment dòng dưới
-        if (callMap.get(callerName)?.size === 0) {
-            callMap.delete(callerName);
-        }
+        // Dọn điểm mù
+        if (callMap.get(callerName)?.length === 0) callMap.delete(callerName);
     }
 
     return callMap;
 }
 
-function generateMermaidSyntax(callMap: Map<string, Set<string>>): string {
-    if (callMap.size === 0) return "graph TD;\n    No_Internal_Calls_Found;";
+function generateMermaidSyntax(callMap: Map<string, CallNode[]>): string {
+    if (callMap.size === 0) return "graph TD;\n    No_Logical_Flow_Found;";
 
-    let syntax = "graph TD;\n";
-    let hasEdges = false;
+    // Cấu hình ELK siêu tối ưu cho sơ đồ lưới (Grid-like Diagram)
+    // - NETWORK_SIMPLEX & BRANDES_KOEPF: Dàn đều các node để giảm chồng chéo line
+    // - ORTHOGONAL: Bẻ góc vuông 90 độ, gọn gàng, không đâm xuyên node
+    // - portAlignment: Dãn đều các điểm nối mũi tên (port) để không chụm lại 1 cục
+    let syntax = `%%{
+  init: {
+    "flowchart": {
+      "defaultRenderer": "elk",
+      "curve": "stepBefore",
+      "nodeSpacing": 60,
+      "rankSpacing": 100
+    },
+    "elk": {
+      "algorithm": "layered",
+      "nodePlacement.strategy": "BRANDES_KOEPF",
+      "edgeRouting": "ORTHOGONAL",
+      "direction": "RIGHT",
+      "spacing.nodeNode": 60,
+      "spacing.edgeNode": 40,
+      "spacing.edgeEdge": 20,
+      "portAlignment.default": "DISTRIBUTED"
+    }
+  }
+}%%\n`;
+    syntax += `graph LR;\n\n`;
 
+    const uiLayer: string[] = [];
+    const actionLayer: string[] = [];
+    const logicLayer: string[] = [];
+
+    // Tự động phân loại Layer cho các hàm 
+    const allUniqueNodes = new Set<string>();
     callMap.forEach((callees, caller) => {
-        callees.forEach(callee => {
-            const safeCallerId = "node_" + caller.replace(/[^a-zA-Z0-9_]/g, "_");
-            const safeCalleeId = "node_" + callee.replace(/[^a-zA-Z0-9_]/g, "_");
-            syntax += `    ${safeCallerId}["${caller}"] --> ${safeCalleeId}["${callee}"];\n`;
-            hasEdges = true;
+        allUniqueNodes.add(caller);
+        callees.forEach(c => allUniqueNodes.add(c.callee));
+    });
+
+    allUniqueNodes.forEach(nodeName => {
+        const lowerName = nodeName.toLowerCase();
+        // Cải thiện thuật toán phân cụm chuẩn hơn
+        if (/^(show|init|hide|display|gamen|view|render|draw)/i.test(lowerName)) {
+            uiLayer.push(nodeName);
+        } else if (/^(exec|do|call|process|handle|click|change|update)/i.test(lowerName)) {
+            actionLayer.push(nodeName);
+        } else {
+            logicLayer.push(nodeName);
+        }
+    });
+
+    // Hàm render Subgraph an toàn
+    const renderSubgraph = (layerName: string, title: string, items: string[], bgColor: string, strokeColor: string) => {
+        if (items.length === 0) return "";
+        let block = `    subgraph ${layerName} ["🛡️ ${title}"]\n`;
+        block += `        direction TB\n`; // Bên trong layer xếp từ trên xuống
+        block += `        style ${layerName} fill:${bgColor},stroke:${strokeColor},stroke-width:2px,stroke-dasharray: 5 5,rx:10,ry:10\n`;
+        items.forEach(node => {
+            const safeId = "node_" + node.replace(/[^a-zA-Z0-9_]/g, "_");
+            block += `        ${safeId}["${node}()"]\n`;
+        });
+        block += `    end\n\n`;
+        return block;
+    };
+
+    syntax += renderSubgraph("UI_Layer", "1. Setup & UI Layer", uiLayer, "#f8fafc", "#cbd5e1");
+    syntax += renderSubgraph("Action_Layer", "2. Action Layer", actionLayer, "#f0fdf4", "#86efac");
+    syntax += renderSubgraph("Logic_Layer", "3. Logic Layer", logicLayer, "#fefce8", "#fde047");
+
+    // Vẽ mũi tên
+    callMap.forEach((callees, caller) => {
+        const safeCallerId = "node_" + caller.replace(/[^a-zA-Z0-9_]/g, "_");
+
+        // Tối ưu UI mũi tên nếu node đó vừa là UI vừa gọi Logic (Cross layer)
+        callees.forEach(node => {
+            const safeCalleeId = "node_" + node.callee.replace(/[^a-zA-Z0-9_]/g, "_");
+
+            if (node.label.trim() === "") {
+                syntax += `    ${safeCallerId} --> ${safeCalleeId};\n`;
+            } else {
+                syntax += `    ${safeCallerId} -->|"${node.label}"| ${safeCalleeId};\n`;
+            }
         });
     });
 
-    if (!hasEdges) return "graph TD;\n    No_Internal_Calls_Found;";
+    syntax += `\n    classDef default fill:#ffffff,stroke:#64748b,stroke-width:2px,color:#0f172a,font-family:ui-sans-serif, system-ui,rx:6,ry:6,shadow:1;\n`;
+
+    // Đổ màu class riêng tuỳ Layer (Optional nhưng tạo highlight tốt)
+    syntax += `    classDef uiNode fill:#f1f5f9,stroke:#94a3b8;\n`;
+    syntax += `    classDef actionNode fill:#dcfce7,stroke:#22c55e;\n`;
+    syntax += `    classDef logicNode fill:#fef3c7,stroke:#eab308;\n\n`;
+
+    if (uiLayer.length > 0) syntax += `    class ${uiLayer.map(n => "node_" + n.replace(/[^a-zA-Z0-9_]/g, "_")).join(",")} uiNode;\n`;
+    if (actionLayer.length > 0) syntax += `    class ${actionLayer.map(n => "node_" + n.replace(/[^a-zA-Z0-9_]/g, "_")).join(",")} actionNode;\n`;
+    if (logicLayer.length > 0) syntax += `    class ${logicLayer.map(n => "node_" + n.replace(/[^a-zA-Z0-9_]/g, "_")).join(",")} logicNode;\n`;
+
     return syntax;
 }
 
@@ -158,6 +272,48 @@ const JavaParserTab: React.FC = React.memo(() => {
     const [notification, setNotification] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<'properties' | 'mermaid'>('properties');
     const [analyzedSourceCode, setAnalyzedSourceCode] = useState(sourceCode);
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+    // Handler: khi click vào node trên đồ thị Mermaid, nhảy tới vị trí hàm trong textarea
+    const handleNodeClick = React.useCallback((nodeName: string) => {
+        const ta = textareaRef.current;
+        if (!ta || !nodeName) return;
+
+        // Tìm vị trí khai báo hàm trong source code (dạng: methodName()
+        const searchPatterns = [
+            new RegExp(`\\b${nodeName}\\s*\\(`),
+            new RegExp(`\\b${nodeName}\\b`),
+        ];
+
+        let matchIdx = -1;
+        for (const pattern of searchPatterns) {
+            const m = pattern.exec(sourceCode);
+            if (m) {
+                matchIdx = m.index;
+                break;
+            }
+        }
+
+        if (matchIdx === -1) {
+            setNotification(`Function "${nodeName}" not found in source`);
+            setTimeout(() => setNotification(null), 2000);
+            return;
+        }
+
+        // Focus textarea và cuộn đến vị trí
+        ta.focus();
+        ta.setSelectionRange(matchIdx, matchIdx + nodeName.length);
+
+        // Tính toán dòng để scroll cho đúng
+        const textBefore = sourceCode.substring(0, matchIdx);
+        const lineNumber = textBefore.split('\n').length;
+        const lineHeight = 20; // Ước lượng
+        const scrollTop = Math.max((lineNumber - 3) * lineHeight, 0);
+        ta.scrollTop = scrollTop;
+
+        setNotification(`Jumped to "${nodeName}"`);
+        setTimeout(() => setNotification(null), 2000);
+    }, [sourceCode]);
 
     const deferredSearch = useDeferredValue(searchTerm);
 
@@ -254,6 +410,7 @@ const JavaParserTab: React.FC = React.memo(() => {
                         <span>JAVA SOURCE CODE <span className="text-indigo-400">INPUT</span></span>
                     </div>
                     <textarea
+                        ref={textareaRef}
                         className="flex-1 p-4 font-mono text-sm outline-none resize-none bg-transparent"
                         placeholder="Paste your Java class source here..."
                         value={sourceCode}
@@ -364,7 +521,7 @@ const JavaParserTab: React.FC = React.memo(() => {
                             <div className="flex-1 overflow-auto pt-12 p-6 flex flex-col bg-gray-50/50">
                                 {mermaidResult ? (
                                     <div className="flex-1 overflow-auto p-4 pt-2 bg-amber-50/10 rounded-2xl border border-amber-100 shadow-inner">
-                                        <Mermaid chart={mermaidResult} />
+                                        <Mermaid chart={mermaidResult} onNodeClick={handleNodeClick} />
                                     </div>
                                 ) : (
                                     <div className="flex-1 flex flex-col items-center justify-center text-center opacity-70">
