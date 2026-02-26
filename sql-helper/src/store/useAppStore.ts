@@ -62,6 +62,14 @@ export interface TableScript {
     tableName?: string;
 }
 
+export interface LabStatement {
+    sql: string;
+    result?: QueryResult;
+    loading: boolean;
+    error?: string;
+    connectionId: string | null;
+}
+
 export interface AppState {
     activeTab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'revert-tk' | 'text-compare' | 'java-parser' | 'compare-suite';
     setActiveTab: (tab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'revert-tk' | 'text-compare' | 'java-parser' | 'compare-suite') => void;
@@ -161,9 +169,23 @@ export interface AppState {
     translateTruncateDuplicate: boolean;
     setTranslateTruncateDuplicate: (val: boolean) => void;
 
-    // Global Search
     globalSearchTerm: string;
     setGlobalSearchTerm: (term: string) => void;
+
+    geminiApiKey: string;
+    setGeminiApiKey: (val: string) => void;
+
+    // LabTab Global Scope
+    labStmt1: LabStatement;
+    setLabStmt1: (val: LabStatement | ((prev: LabStatement) => LabStatement)) => void;
+    labStmt2: LabStatement;
+    setLabStmt2: (val: LabStatement | ((prev: LabStatement) => LabStatement)) => void;
+    labSearchTerm: string;
+    setLabSearchTerm: (val: string) => void;
+    labColSearch: string;
+    setLabColSearch: (val: string) => void;
+    labPriorityCols: string;
+    setLabPriorityCols: (val: string) => void;
 
     // Shared Text Compare Inputs
     textCompareExpectedInput: string;
@@ -199,13 +221,30 @@ export interface AppState {
     setTranslateSubTab: (tab: 'dictionary' | 'quick') => void;
     translateLineHeight: number;
     setTranslateLineHeight: (val: number) => void;
+    translateDictionaryLimit: number;
+    setTranslateDictionaryLimit: (val: number | ((prev: number) => number)) => void;
+
     compareSubTab: 'data' | 'schema' | 'text' | 'generate';
     setCompareSubTab: (tab: 'data' | 'schema' | 'text' | 'generate') => void;
 
+    javaParserSource: string;
+    setJavaParserSource: (val: string) => void;
+    javaParserSearch: string;
+    setJavaParserSearch: (val: string) => void;
+    javaParserMermaid: string;
+    setJavaParserMermaid: (val: string) => void;
+    javaParserIsLoadingAI: boolean;
+    setJavaParserIsLoadingAI: (val: boolean) => void;
+
+    paramsLogPath: string;
+    setParamsLogPath: (val: string) => void;
+    paramsSelectedConnId: string | null;
+    setParamsSelectedConnId: (val: string | null) => void;
+
     updateConnectionSessionStatus: (id: string, status: 'success' | 'error') => void;
 
-    settingsSection: 'database' | 'shortcuts' | 'appearance' | 'translate' | 'revertTK' | 'compare';
-    setSettingsSection: (section: 'database' | 'shortcuts' | 'appearance' | 'translate' | 'revertTK' | 'compare') => void;
+    settingsSection: 'database' | 'shortcuts' | 'appearance' | 'translate' | 'revertTK' | 'compare' | 'javaParser';
+    setSettingsSection: (section: 'database' | 'shortcuts' | 'appearance' | 'translate' | 'revertTK' | 'compare' | 'javaParser') => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -216,8 +255,27 @@ export const useAppStore = create<AppState>((set) => ({
     setTranslateSubTab: (tab) => set({ translateSubTab: tab }),
     translateLineHeight: 1.6,
     setTranslateLineHeight: (val) => set({ translateLineHeight: val }),
+    translateDictionaryLimit: 200,
+    setTranslateDictionaryLimit: (val) => set((state) => ({
+        translateDictionaryLimit: typeof val === 'function' ? val(state.translateDictionaryLimit) : val
+    })),
+
     compareSubTab: 'data',
     setCompareSubTab: (tab) => set({ compareSubTab: tab }),
+
+    javaParserSource: '',
+    setJavaParserSource: (val) => set({ javaParserSource: val }),
+    javaParserSearch: '',
+    setJavaParserSearch: (val) => set({ javaParserSearch: val }),
+    javaParserMermaid: '',
+    setJavaParserMermaid: (val) => set({ javaParserMermaid: val }),
+    javaParserIsLoadingAI: false,
+    setJavaParserIsLoadingAI: (val) => set({ javaParserIsLoadingAI: val }),
+
+    paramsLogPath: '',
+    setParamsLogPath: (val) => set({ paramsLogPath: val }),
+    paramsSelectedConnId: null,
+    setParamsSelectedConnId: (val) => set({ paramsSelectedConnId: val }),
 
     logFileContent: '',
     setLogFileContent: (content) => set({ logFileContent: content }),
@@ -372,6 +430,20 @@ export const useAppStore = create<AppState>((set) => ({
     globalSearchTerm: '',
     setGlobalSearchTerm: (term) => set({ globalSearchTerm: term }),
 
+    geminiApiKey: '',
+    setGeminiApiKey: (val) => set({ geminiApiKey: val }),
+
+    labStmt1: { sql: '', loading: false, connectionId: null },
+    setLabStmt1: (val) => set((state) => ({ labStmt1: typeof val === 'function' ? val(state.labStmt1) : val })),
+    labStmt2: { sql: '', loading: false, connectionId: null },
+    setLabStmt2: (val) => set((state) => ({ labStmt2: typeof val === 'function' ? val(state.labStmt2) : val })),
+    labSearchTerm: '',
+    setLabSearchTerm: (val) => set({ labSearchTerm: val }),
+    labColSearch: '',
+    setLabColSearch: (val) => set({ labColSearch: val }),
+    labPriorityCols: '',
+    setLabPriorityCols: (val) => set({ labPriorityCols: val }),
+
     textCompareExpectedInput: '',
     setTextCompareExpectedInput: (val) => set({ textCompareExpectedInput: val }),
     textCompareCurrentInput: '',
@@ -383,7 +455,7 @@ export const useAppStore = create<AppState>((set) => ({
     setRevertTKResultStore: (val) => set({ revertTKResultStore: val }),
     revertTKModeStore: 'CodetoTK',
     setRevertTKModeStore: (val) => set({ revertTKModeStore: val }),
-    revertTKResultFormatStore: 'table',
+    revertTKResultFormatStore: 'text',
     setRevertTKResultFormatStore: (val) => set({ revertTKResultFormatStore: val }),
 
     translateInputStore: '',

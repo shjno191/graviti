@@ -34,6 +34,12 @@ interface ParserConfig {
     deleteChars?: string[];
     revertRules?: any[];
     revertTKMapping?: any[];
+    headers?: {
+        and?: string;
+    };
+    lineBreaks?: {
+        and?: boolean;
+    };
 }
 
 
@@ -417,10 +423,10 @@ const parseJavaSql = (input: string, config: ParserConfig): string => {
                 const isOr = /^OR\b/i.test(part.trim());
                 const stripped = part.replace(/^(AND|OR)\s+/i, '').trim();
                 if (stripped) {
-                    if (isAnd && config.lineBreaks.and && target.length > 0) {
+                    if (isAnd && config.lineBreaks?.and && target.length > 0) {
                         target.push("");
                     }
-                    const prefix = isAnd ? (config.headers.and || 'AND') : (isOr ? 'OR' : '');
+                    const prefix = isAnd ? (config.headers?.and || 'AND') : (isOr ? 'OR' : '');
                     const lineOutput = parseConditionLine(stripped, condition);
                     target.push(prefix ? (prefix + lineOutput) : lineOutput);
                 }
@@ -1010,7 +1016,7 @@ const DictionaryRow = React.memo(({ item, displayIdx, originalIdx, copyFeedback,
     </tr>
 ));
 
-export const TranslateTab: React.FC = React.memo(() => {
+const TranslateTab: React.FC = React.memo(() => {
     const {
         activeTab, setActiveTab,
         translateFilePath, setTranslateFilePath,
@@ -1040,6 +1046,7 @@ export const TranslateTab: React.FC = React.memo(() => {
         searchTerm, setSearchTerm,
         selections, setSelections,
         data, setData,
+        dictionaryLimit, setDictionaryLimit
     } = useAppStore(useShallow(state => ({
         activeTab: state.activeTab,
         setActiveTab: state.setActiveTab,
@@ -1088,6 +1095,8 @@ export const TranslateTab: React.FC = React.memo(() => {
         setSelections: state.setTranslateSelectionsStore,
         data: state.translateDataStore,
         setData: state.setTranslateDataStore,
+        dictionaryLimit: state.translateDictionaryLimit,
+        setDictionaryLimit: state.setTranslateDictionaryLimit
     })));
 
     const deferredGlobalSearchTerm = React.useDeferredValue(globalSearchTerm);
@@ -1097,14 +1106,12 @@ export const TranslateTab: React.FC = React.memo(() => {
     const [copyFeedback, setCopyFeedback] = useState<{ row: number, col: 'jp' | 'en' | 'vi' } | null>(null);
     const [syncing, setSyncing] = useState(false);
     const [syncProgress, setSyncProgress] = useState(0);
-    const [translatedLines, setTranslatedLines] = useState<TranslatedLine[]>([]);
     const [hoveredUid, setHoveredUid] = useState<string | null>(null);
     const [hoveredKey, setHoveredKey] = useState<string | null>(null);
     const [segmentCopyFeedback, setSegmentCopyFeedback] = useState<string | null>(null);
     const [resultCopyFeedback, setResultCopyFeedback] = useState(false);
     const [tooltip, setTooltip] = useState<{ seg: TranslatedSegment, rect: DOMRect } | null>(null);
     const [isMouseInTooltip, setIsMouseInTooltip] = useState(false);
-    const [dictionaryLimit, setDictionaryLimit] = useState(200);
 
     // Edit modal state
     const [showEditModal, setShowEditModal] = useState(false);
@@ -1117,6 +1124,70 @@ export const TranslateTab: React.FC = React.memo(() => {
     const deferredBulkInput = useDeferredValue(bulkInput);
     const deferredRevertTKInput = useDeferredValue(revertTKInput);
     const deferredSearchTerm = useDeferredValue(searchTerm);
+    const deferredRevertTKResult = useDeferredValue(revertTKResult);
+
+    // Memoize the dictionary transformation
+    const translationDict = useMemo(() => {
+        if (data.length === 0) return [];
+
+        const targetKey: keyof TranslateEntry = targetLang === 'en' ? 'english' : targetLang === 'vi' ? 'vietnamese' : 'japanese';
+        const sourceKeys: (keyof TranslateEntry)[] = (['japanese', 'english', 'vietnamese'] as (keyof TranslateEntry)[]).filter(k => k !== targetKey);
+
+        const dictMap = new Map<string, Set<string>>();
+
+        data.forEach(entry => {
+            const replacement = String(entry[targetKey] || "").trim();
+            if (!replacement) return;
+
+            sourceKeys.forEach(sKey => {
+                const rawPhrase = String(entry[sKey] || "").trim();
+                if (rawPhrase && rawPhrase !== replacement) {
+                    const phrase = normalizeText(rawPhrase);
+                    if (phrase) {
+                        const lowPhrase = phrase.toLowerCase();
+                        if (!dictMap.has(lowPhrase)) {
+                            dictMap.set(lowPhrase, new Set());
+                        }
+                        dictMap.get(lowPhrase)!.add(replacement);
+                    }
+                }
+            });
+        });
+
+        const sorted = Array.from(dictMap.entries())
+            .map(([phrase, replacements]) => {
+                const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                return {
+                    phrase,
+                    regex: new RegExp(escaped, 'gi'),
+                    replacements: Array.from(replacements)
+                };
+            })
+            .sort((a, b) => b.phrase.length - a.phrase.length);
+
+        return sorted;
+    }, [data, targetLang]);
+
+    const translatedLines = useMemo(() => {
+        if (!deferredBulkInput) return [];
+        return deferredBulkInput.split('\n').map((line, lIdx) => ({
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 't')
+        }));
+    }, [deferredBulkInput, translationDict, selections]);
+
+    const revertTKTranslatedLines = useMemo(() => {
+        if (!deferredRevertTKInput) return [];
+        return deferredRevertTKInput.split('\n').map((line, lIdx) => ({
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rt')
+        }));
+    }, [deferredRevertTKInput, translationDict, selections]);
+
+    const revertTKResultTranslatedLines = useMemo(() => {
+        if (!deferredRevertTKResult) return [];
+        return deferredRevertTKResult.split('\n').map((line, lIdx) => ({
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rr')
+        }));
+    }, [deferredRevertTKResult, translationDict, selections]);
     const defaultColWidth = 100;
     const parsedCustomWidths = useMemo<Record<number, number>>(() => {
         const widths: Record<number, number> = {};
@@ -1143,10 +1214,6 @@ export const TranslateTab: React.FC = React.memo(() => {
     const outputRef = useRef<HTMLDivElement>(null);
     const highlighterRef = useRef<HTMLDivElement>(null);
     const revertTKInputRef = useRef<HTMLTextAreaElement>(null);
-    const [revertTKTranslatedLines, setRevertTKTranslatedLines] = useState<TranslatedLine[]>([]);
-    const [revertTKResultTranslatedLines, setRevertTKResultTranslatedLines] = useState<TranslatedLine[]>([]);
-    const deferredRevertTKResult = useDeferredValue(revertTKResult);
-
     const scrollSourceRef = useRef<HTMLElement | null>(null);
 
     const handleInputScroll = React.useCallback(() => {
@@ -1340,7 +1407,7 @@ export const TranslateTab: React.FC = React.memo(() => {
 
 
 
-    const handleRevertTK = () => {
+    const handleRevertTK = async () => {
         if (!revertTKInput.trim()) return;
         try {
             let result = '';
@@ -1602,54 +1669,6 @@ export const TranslateTab: React.FC = React.memo(() => {
 
 
 
-    // Memoize the dictionary transformation
-    const translationDict = useMemo(() => {
-        if (data.length === 0) return [];
-
-        const targetKey: keyof TranslateEntry = targetLang === 'en' ? 'english' : targetLang === 'vi' ? 'vietnamese' : 'japanese';
-        const sourceKeys: (keyof TranslateEntry)[] = (['japanese', 'english', 'vietnamese'] as (keyof TranslateEntry)[]).filter(k => k !== targetKey);
-
-        const dictMap = new Map<string, Set<string>>();
-
-        data.forEach(entry => {
-            const replacement = String(entry[targetKey] || "").trim();
-            if (!replacement) return;
-
-            sourceKeys.forEach(sKey => {
-                const rawPhrase = String(entry[sKey] || "").trim();
-                if (rawPhrase && rawPhrase !== replacement) {
-                    // Normalize the dictionary phrase too
-                    const phrase = normalizeText(rawPhrase);
-                    if (phrase) {
-                        const lowPhrase = phrase.toLowerCase();
-                        if (!dictMap.has(lowPhrase)) {
-                            dictMap.set(lowPhrase, new Set());
-                        }
-                        dictMap.get(lowPhrase)!.add(replacement);
-                    }
-                }
-            });
-        });
-
-        const sorted = Array.from(dictMap.entries())
-            .map(([phrase, replacements]) => {
-                const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                // If strict search and latin characters, use word boundaries
-                const pattern = (searchStrict && /^[a-zA-Z0-9_ ]+$/.test(phrase))
-                    ? `\\b${escaped}\\b`
-                    : escaped;
-
-                return {
-                    phrase,
-                    replacements: Array.from(replacements),
-                    regex: new RegExp(pattern, 'gi')
-                };
-            })
-            .sort((a, b) => b.phrase.length - a.phrase.length);
-
-        return sorted;
-    }, [data, targetLang, searchStrict]);
-
     const handleCopyResult = () => {
         if (translatedLines.length === 0) return;
 
@@ -1662,164 +1681,6 @@ export const TranslateTab: React.FC = React.memo(() => {
         setTimeout(() => setResultCopyFeedback(false), 2000);
     };
 
-    useEffect(() => {
-        if (!deferredBulkInput) {
-            setTranslatedLines([]);
-            return;
-        }
-
-        const timer = setTimeout(() => {
-            const lines = deferredBulkInput.split('\n');
-
-            const newTranslatedLines: TranslatedLine[] = lines.map((line, lIdx) => {
-                const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string }[] = [];
-                const normLine = normalizeText(line);
-                const lowerNormLine = normLine.toLowerCase();
-
-                for (const item of translationDict) {
-                    // Performance optimization: fast fail if phrase not in line
-                    if (!lowerNormLine.includes(item.phrase)) continue;
-
-                    item.regex.lastIndex = 0;
-                    let match;
-                    while ((match = item.regex.exec(normLine)) !== null) {
-                        const start = match.index;
-                        const end = start + item.phrase.length;
-                        if (!matches.some(m => (start < m.end && end > m.start))) {
-                            matches.push({
-                                start,
-                                end,
-                                replacements: item.replacements,
-                                phrase: line.substring(start, end),
-                                dictKey: item.phrase
-                            });
-                        }
-                        if (item.phrase.length === 0) break;
-                    }
-                }
-
-                matches.sort((a, b) => a.start - b.start);
-                const segments: TranslatedSegment[] = [];
-                let lastIndex = 0;
-
-                matches.forEach((match) => {
-                    if (match.start > lastIndex) {
-                        const txt = line.substring(lastIndex, match.start);
-                        const posKey = `t-${lIdx}-${lastIndex}`;
-                        segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
-                    }
-                    const selectionKey = `vkey-${encodeURIComponent(match.dictKey || match.phrase)}`;
-                    const posKey = `p-${lIdx}-${match.start}`;
-                    segments.push({ type: 'phrase', text: selections[selectionKey] || match.replacements[0], original: match.phrase, key: selectionKey, uid: posKey, isMultiple: match.replacements.length > 1, options: match.replacements });
-                    lastIndex = match.end;
-                });
-
-                if (lastIndex < line.length) {
-                    const txt = line.substring(lastIndex);
-                    const posKey = `t-${lIdx}-${lastIndex}`;
-                    segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
-                }
-                return { segments };
-            });
-            setTranslatedLines(newTranslatedLines);
-        }, 100); // Debounce can be shorter now with deferredValue
-
-        return () => clearTimeout(timer);
-    }, [deferredBulkInput, translationDict, selections]);
-
-    useEffect(() => {
-        if (!deferredRevertTKInput) {
-            setRevertTKTranslatedLines([]);
-            return;
-        }
-
-        const timer = setTimeout(() => {
-            const lines = deferredRevertTKInput.split('\n');
-
-            const newTranslatedLines: TranslatedLine[] = lines.map((line, lIdx) => {
-                const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string }[] = [];
-                const normLine = normalizeText(line);
-                const lowerNormLine = normLine.toLowerCase();
-
-                for (const item of translationDict) {
-                    // Performance optimization: fast fail if phrase not in line
-                    if (!lowerNormLine.includes(item.phrase)) continue;
-
-                    item.regex.lastIndex = 0;
-                    let match;
-                    while ((match = item.regex.exec(normLine)) !== null) {
-                        const start = match.index;
-                        const end = start + item.phrase.length;
-                        if (!matches.some(m => (start < m.end && end > m.start))) {
-                            matches.push({
-                                start,
-                                end,
-                                replacements: item.replacements,
-                                phrase: line.substring(start, end),
-                                dictKey: item.phrase
-                            });
-                        }
-                        if (item.phrase.length === 0) break;
-                    }
-                }
-
-                matches.sort((a, b) => a.start - b.start);
-
-                const segments: TranslatedSegment[] = [];
-                let lastIndex = 0;
-
-                matches.forEach((m) => {
-                    if (m.start > lastIndex) {
-                        const txt = line.substring(lastIndex, m.start);
-                        const posKey = `rt-${lIdx}-${lastIndex}`;
-                        segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
-                    }
-
-                    const selectionKey = `vkey-${encodeURIComponent(m.dictKey || m.phrase)}`;
-                    const currentSelection = selections[selectionKey] || m.replacements[0];
-                    const posKey = `rs-${lIdx}-${m.start}`;
-
-                    segments.push({
-                        type: 'phrase',
-                        text: currentSelection,
-                        original: m.phrase,
-                        key: selectionKey,
-                        uid: posKey,
-                        isMultiple: m.replacements.length > 1,
-                        options: m.replacements
-                    });
-                    lastIndex = m.end;
-                });
-
-                if (lastIndex < line.length) {
-                    const txt = line.substring(lastIndex);
-                    const posKey = `rt-${lIdx}-${lastIndex}`;
-                    segments.push({ type: 'text', text: txt, original: txt, key: posKey, uid: posKey, isMultiple: false, options: [] });
-                }
-                return { segments };
-            });
-            setRevertTKTranslatedLines(newTranslatedLines);
-        }, 150);
-
-        return () => clearTimeout(timer);
-    }, [deferredRevertTKInput, translationDict, selections]);
-
-    useEffect(() => {
-        if (!deferredRevertTKResult) {
-            setRevertTKResultTranslatedLines([]);
-            return;
-        }
-
-        const timer = setTimeout(() => {
-            const lines = deferredRevertTKResult.split('\n');
-            const newTranslatedLines: TranslatedLine[] = lines.map((line, lIdx) => ({
-                segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rr')
-            }));
-            setRevertTKResultTranslatedLines(newTranslatedLines);
-        }, 150);
-
-        return () => clearTimeout(timer);
-    }, [deferredRevertTKResult, translationDict, selections]);
 
     useEffect(() => {
         if (activeTab === 'translate' || activeTab === 'revert-tk') {
@@ -2136,13 +1997,13 @@ export const TranslateTab: React.FC = React.memo(() => {
                                                 onClick={() => setRevertTKMode('CodetoTK')}
                                                 className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${revertTKMode === 'CodetoTK' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-400 hover:text-amber-600'}`}
                                             >
-                                                CODE
+                                                CODE → TK
                                             </button>
                                             <button
                                                 onClick={() => setRevertTKMode('TKtoCode')}
                                                 className={`px-3 py-1 rounded-md text-[9px] font-black transition-all ${revertTKMode === 'TKtoCode' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-400 hover:text-amber-600'}`}
                                             >
-                                                TK/SPEC
+                                                TK → CODE
                                             </button>
                                         </div>
                                     </div>
@@ -2441,7 +2302,7 @@ export const TranslateTab: React.FC = React.memo(() => {
                                                 Showing {dictionaryLimit} of {filteredData.length} entries
                                             </p>
                                             <button
-                                                onClick={() => setDictionaryLimit(prev => prev + 500)}
+                                                onClick={() => setDictionaryLimit((prev: number) => prev + 500)}
                                                 className="px-8 py-3 bg-white border border-indigo-200 text-indigo-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 hover:shadow-md transition-all active:scale-95 shadow-sm"
                                             >
                                                 📂 LOAD MORE ENTRIES (+500)
@@ -2700,3 +2561,5 @@ export const TranslateTab: React.FC = React.memo(() => {
         </div>
     );
 });
+
+export default TranslateTab;

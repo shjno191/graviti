@@ -1,17 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useAppStore, QueryResult } from '../store/useAppStore';
+import { useAppStore, QueryResult, LabStatement } from '../store/useAppStore';
 import { invoke } from '@tauri-apps/api/tauri';
 import { checkDangerousSql } from '../utils/sqlGuard';
 import { HighlightText } from '../utils/uiHelpers';
-
-interface LabStatement {
-    sql: string;
-    result?: QueryResult;
-    loading: boolean;
-    error?: string;
-    connectionId: string | null;
-}
 
 interface LabTableProps {
     idx: 1 | 2;
@@ -123,21 +115,33 @@ const LabTable: React.FC<LabTableProps> = React.memo(({
 });
 
 export const LabTab: React.FC = React.memo(() => {
-    const { connections, excelHeaderColor, runShortcut, updateConnectionSessionStatus, globalSearchTerm } = useAppStore(useShallow(state => ({
+    const {
+        connections, excelHeaderColor, runShortcut, updateConnectionSessionStatus, globalSearchTerm,
+        labStmt1: stmt1, setLabStmt1: setStmt1,
+        labStmt2: stmt2, setLabStmt2: setStmt2,
+        labSearchTerm: searchTerm, setLabSearchTerm: setSearchTerm,
+        labColSearch: colSearch, setLabColSearch: setColSearch,
+        labPriorityCols: priorityCols, setLabPriorityCols: setPriorityCols
+    } = useAppStore(useShallow(state => ({
         connections: state.connections,
         excelHeaderColor: state.excelHeaderColor,
         runShortcut: state.runShortcut,
         updateConnectionSessionStatus: state.updateConnectionSessionStatus,
-        globalSearchTerm: state.globalSearchTerm
+        globalSearchTerm: state.globalSearchTerm,
+        labStmt1: state.labStmt1,
+        setLabStmt1: state.setLabStmt1,
+        labStmt2: state.labStmt2,
+        setLabStmt2: state.setLabStmt2,
+        labSearchTerm: state.labSearchTerm,
+        setLabSearchTerm: state.setLabSearchTerm,
+        labColSearch: state.labColSearch,
+        setLabColSearch: state.setLabColSearch,
+        labPriorityCols: state.labPriorityCols,
+        setLabPriorityCols: state.setLabPriorityCols
     })));
 
-    const [searchTerm, setSearchTerm] = useState('');
     const [showExecPicker, setShowExecPicker] = useState(false);
-    const [stmt1, setStmt1] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
-    const [stmt2, setStmt2] = useState<LabStatement>({ sql: '', loading: false, connectionId: connections[0]?.id || null });
-    const [debouncedSearch, setDebouncedSearch] = useState('');
-    const [colSearch, setColSearch] = useState('');
-    const [priorityCols, setPriorityCols] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
     const [menuPos, setMenuPos] = useState<{ x: number, y: number, type: 'col' | 'row', content?: string, rowIndex?: number, idx?: 1 | 2 } | null>(null);
     const [copyStatus, setCopyStatus] = useState<{ [key: string]: boolean }>({});
 
@@ -298,7 +302,7 @@ export const LabTab: React.FC = React.memo(() => {
     const handleAddPriority = (col: string) => {
         const parts = priorityCols.split(',').map(p => p.trim().toUpperCase()).filter(Boolean);
         if (!parts.includes(col.toUpperCase())) {
-            setPriorityCols(prev => prev ? `${prev}, ${col}` : col);
+            setPriorityCols(priorityCols ? `${priorityCols}, ${col}` : col);
         }
         setMenuPos(null);
     };

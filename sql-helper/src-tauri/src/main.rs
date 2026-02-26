@@ -80,6 +80,7 @@ pub struct AppSettings {
     pub format_sql_append: Option<bool>,
     pub search_strict: Option<bool>,
     pub ui_highlight_copied: Option<bool>,
+    pub gemini_api_key: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -215,49 +216,64 @@ async fn execute_query(config: DbConfig, query: String) -> Result<QueryResult, S
 
         let mut client = Client::connect(tiberius_config, tcp.compat_write()).await.map_err(|e: tiberius::error::Error| format!("Lỗi đăng nhập Database: {}", e))?;
         
-        // Execute query
-        let mut results = client.query(query, &[]).await.map_err(|e: tiberius::error::Error| e.to_string())?;
+        // Execute query using simple_query which handles multiple statements well
+        let results = client.simple_query(query).await.map_err(|e: tiberius::error::Error| e.to_string())?;
+        
+        let result_sets = results.into_results().await.map_err(|e: tiberius::error::Error| e.to_string())?;
         
         let mut columns = Vec::new();
         let mut rows = Vec::new();
-        let mut first_row = true;
 
-        while let Some(item) = results.next().await {
-            match item.map_err(|e: tiberius::error::Error| e.to_string())? {
-                QueryItem::Row(row) => {
-                    if first_row {
-                        for col in row.columns() {
-                            columns.push(col.name().to_string());
-                        }
-                        first_row = false;
-                    }
+        if let Some(first_set) = result_sets.into_iter().find(|rs| !rs.is_empty()) {
+            if let Some(first_row) = first_set.first() {
+                for col in first_row.columns() {
+                    columns.push(col.name().to_string());
+                }
+            }
 
-                    let mut row_data = Vec::new();
-                    for i in 0..columns.len() {
-                        let val: String = match row.try_get::<&str, usize>(i) {
-                            Ok(Some(s)) => s.trim_end().to_string(),
-                            _ => match row.try_get::<i64, usize>(i) {
+            for row in first_set {
+                let mut row_data = Vec::new();
+                for i in 0..columns.len() {
+                    let val: String = match row.try_get::<&str, usize>(i) {
+                        Ok(Some(s)) => s.trim_end().to_string(),
+                        _ => match row.try_get::<i64, usize>(i) {
+                            Ok(Some(n)) => n.to_string(),
+                            _ => match row.try_get::<i32, usize>(i) {
                                 Ok(Some(n)) => n.to_string(),
-                                _ => match row.try_get::<i32, usize>(i) {
+                                _ => match row.try_get::<i16, usize>(i) {
                                     Ok(Some(n)) => n.to_string(),
-                                    _ => match row.try_get::<f64, usize>(i) {
-                                        Ok(Some(f)) => f.to_string(),
-                                        _ => match row.try_get::<bool, usize>(i) {
-                                            Ok(Some(b)) => b.to_string(),
-                                            _ => match row.try_get::<chrono::NaiveDateTime, usize>(i) {
-                                                Ok(Some(dt)) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
-                                                _ => "[NULL]".to_string()
+                                    _ => match row.try_get::<u8, usize>(i) {
+                                        Ok(Some(n)) => n.to_string(),
+                                        _ => match row.try_get::<f64, usize>(i) {
+                                            Ok(Some(f)) => f.to_string(),
+                                            _ => match row.try_get::<f32, usize>(i) {
+                                                Ok(Some(f)) => f.to_string(),
+                                                _ => match row.try_get::<bool, usize>(i) {
+                                                    Ok(Some(b)) => b.to_string(),
+                                                    _ => match row.try_get::<chrono::NaiveDateTime, usize>(i) {
+                                                        Ok(Some(dt)) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+                                                        _ => match row.try_get::<chrono::NaiveDate, usize>(i) {
+                                                            Ok(Some(d)) => d.format("%Y-%m-%d").to_string(),
+                                                            _ => match row.try_get::<chrono::NaiveTime, usize>(i) {
+                                                                Ok(Some(t)) => t.format("%H:%M:%S").to_string(),
+                                                                _ => match row.try_get::<&[u8], usize>(i) {
+                                                                    Ok(Some(_)) => "[BINARY]".to_string(),
+                                                                    _ => "[NULL/UNSUPPORTED]".to_string()
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
-                        };
-                        row_data.push(val);
-                    }
-                    rows.push(row_data);
-                },
-                _ => {}
+                        }
+                    };
+                    row_data.push(val);
+                }
+                rows.push(row_data);
             }
         }
 
@@ -405,6 +421,7 @@ fn load_db_settings() -> Result<AppSettings, String> {
         format_sql_append: None,
         search_strict: None,
         ui_highlight_copied: None,
+        gemini_api_key: None,
     };
 
     if !config_path.exists() {

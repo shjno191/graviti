@@ -275,7 +275,7 @@ impl<'a> FlowGenerator<'a> {
         self.output.push_str("    direction TB\n");
         
         let start_id = self.next_id();
-        self.output.push_str(&format!("    {}([\"{}\"]):::public\n", start_id, method_name));
+        self.output.push_str(&format!("    {}(((\"Bắt đầu hàm {}\"))):::public\n", start_id, method_name));
 
         if let Some(body) = method_node.child_by_field_name("body") {
             let end_nodes = self.traverse_block(body, vec![start_id]);
@@ -283,7 +283,7 @@ impl<'a> FlowGenerator<'a> {
             for prev in end_nodes {
                 self.output.push_str(&format!("    {} --> {}\n", prev, end_id));
             }
-            self.output.push_str(&format!("    {}(End)\n", end_id));
+            self.output.push_str(&format!("    {}(((\"Kết thúc hàm {}\")))\n", end_id, method_name));
         }
         
         self.output.push_str("  end\n");
@@ -340,6 +340,15 @@ impl<'a> FlowGenerator<'a> {
              },
              "if_statement" => {
                  self.process_if_with_label(node, prev_ids, label)
+             },
+             "while_statement" | "do_statement" => {
+                 self.process_while_with_label(node, prev_ids, label)
+             },
+             "for_statement" | "enhanced_for_statement" => {
+                 self.process_for_with_label(node, prev_ids, label)
+             },
+             "try_statement" => {
+                 self.process_try_with_label(node, prev_ids, label)
              },
               _ => {
                   self.process_generic_recursive_with_label(node, prev_ids, label)
@@ -452,18 +461,172 @@ impl<'a> FlowGenerator<'a> {
 
         let consequence = node.child_by_field_name("consequence").unwrap();
         let then_prevs = vec![cond_id.clone()];
-        let ended_then = self.traverse_node_with_label(consequence, then_prevs, Some("Yes".to_string()));
+        let ended_then = self.traverse_node_with_label(consequence, then_prevs, Some("Đúng".to_string()));
 
         let mut ended_else = vec![cond_id.clone()];
         if let Some(alternative) = node.child_by_field_name("alternative") {
              let else_prevs = vec![cond_id.clone()];
-             let else_res = self.traverse_node_with_label(alternative, else_prevs, Some("No".to_string()));
+             let else_res = self.traverse_node_with_label(alternative, else_prevs, Some("Sai".to_string()));
              ended_else = else_res;
         }
         
         let mut result = ended_then;
         result.extend(ended_else);
         result
+    }
+
+    fn process_while_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
+        let condition_node = node.child_by_field_name("condition").unwrap();
+        let cond_calls = self.find_calls_in_node(condition_node);
+        let mut current_prevs = prev_ids;
+        let mut pending_label = label;
+
+        for (name, is_external, raw_text, offset) in cond_calls {
+             let node_id = self.next_id();
+             let text_label = if is_external { format!("External: {}", raw_text) } else { name.clone() };
+             let style = if is_external { "external" } else { "internal" };
+             let safe_label = text_label.replace('"', "'");
+             self.output.push_str(&format!("    {}[\"{}\"]:::{}\n", node_id, safe_label, style));
+             self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", node_id, offset));
+
+             for prev in &current_prevs {
+                 let arrow = match &pending_label {
+                     Some(l) => format!("-->|{}|", l),
+                     None => "-->".to_string()
+                 };
+                 self.output.push_str(&format!("    {} {} {}\n", prev, arrow, node_id));
+             }
+             pending_label = None; 
+             current_prevs = vec![node_id];
+        }
+
+        let cond_text = &self.source[condition_node.byte_range().start..condition_node.byte_range().end];
+        let clean_cond = cond_text.replace('\n', " ").replace('"', "'");
+        
+        let cond_id = self.next_id();
+        self.output.push_str(&format!("    {}{{\"{}\"}}:::decision\n", cond_id, clean_cond));
+        let offset = condition_node.byte_range().start;
+        self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", cond_id, offset));
+
+        for prev in &current_prevs {
+             let arrow = match &pending_label {
+                 Some(l) => format!("-->|{}|", l),
+                 None => "-->".to_string()
+             };
+            self.output.push_str(&format!("    {} {} {}\n", prev, arrow, cond_id));
+        }
+
+        let body = node.child_by_field_name("body").unwrap();
+        let body_prevs = vec![cond_id.clone()];
+        let ended_body = self.traverse_node_with_label(body, body_prevs, Some("Đúng".to_string()));
+
+        // Loop back
+        for prev in ended_body {
+            self.output.push_str(&format!("    {} --> {}\n", prev, cond_id));
+        }
+
+        // Let's create an empty node to safely exit the loop, or just return cond_id and let the caller add "Sai" edge.
+        // Returning cond_id allows the caller's label logic to fail, so we should create an explicit exit point or just rely on standard flow.
+        
+        let loop_exit_id = self.next_id();
+        self.output.push_str(&format!("    {} -->|Sai| {}\n", cond_id, loop_exit_id));
+        self.output.push_str(&format!("    {}( ):::internal\n", loop_exit_id));
+        self.output.push_str(&format!("    style {} fill:none,stroke:none\n", loop_exit_id));
+        
+        vec![loop_exit_id]
+    }
+
+    fn process_for_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
+        // Similar to while, generate decision for the condition/iterable
+        let cond_id = self.next_id();
+        
+        let clean_cond = if node.kind() == "enhanced_for_statement" {
+             let modifiers = node.child_by_field_name("modifiers");
+             let type_node = node.child_by_field_name("type");
+             let name = node.child_by_field_name("name");
+             let value = node.child_by_field_name("value");
+             if let (Some(n), Some(v)) = (name, value) {
+                 format!("{}: {}", &self.source[n.byte_range().start..n.byte_range().end].replace('\n', " "), &self.source[v.byte_range().start..v.byte_range().end].replace('\n', " ").replace('"', "'"))
+             } else {
+                 "ForEach".to_string()
+             }
+        } else {
+             if let Some(cond) = node.child_by_field_name("condition") {
+                 self.source[cond.byte_range().start..cond.byte_range().end].replace('\n', " ").replace('"', "'")
+             } else {
+                 "ForLoop".to_string()
+             }
+        };
+
+        self.output.push_str(&format!("    {}{{\"{}\"}}:::decision\n", cond_id, clean_cond));
+        let offset = node.byte_range().start;
+        self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", cond_id, offset));
+
+        for prev in &prev_ids {
+             let arrow = match &label {
+                 Some(l) => format!("-->|{}|", l),
+                 None => "-->".to_string()
+             };
+            self.output.push_str(&format!("    {} {} {}\n", prev, arrow, cond_id));
+        }
+
+        let body = node.child_by_field_name("body").unwrap();
+        let body_prevs = vec![cond_id.clone()];
+        let ended_body = self.traverse_node_with_label(body, body_prevs, Some("Lặp".to_string()));
+
+        // Loop back
+        for prev in ended_body {
+            self.output.push_str(&format!("    {} --> {}\n", prev, cond_id));
+        }
+
+        let loop_exit_id = self.next_id();
+        self.output.push_str(&format!("    {} -->|Hết| {}\n", cond_id, loop_exit_id));
+        self.output.push_str(&format!("    {}( ):::internal\n", loop_exit_id));
+        self.output.push_str(&format!("    style {} fill:none,stroke:none\n", loop_exit_id));
+        
+        vec![loop_exit_id]
+    }
+
+    fn process_try_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
+        let body = node.child_by_field_name("body").unwrap();
+        let ended_try = self.traverse_node_with_label(body, prev_ids, label);
+
+        let mut all_ends = ended_try;
+
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+             if child.kind() == "catch_clause" {
+                 if let Some(catch_body) = child.child_by_field_name("body") {
+                     // The catch block conceptually jumps from anywhere inside the try block.
+                     // Rendering it purely structurally: we can link it as an alternative branch from the last valid state before try,
+                     // but to look correct, we usually just render it isolated or connected by a dashed error line.
+                     // For simplicity, let's connect the catch block from the try's starting prev_ids (or an explicit Catch node).
+                     let catch_entry_id = self.next_id();
+                     self.output.push_str(&format!("    {}[Catch Exception]:::decision\n", catch_entry_id));
+                     let offset = child.byte_range().start;
+                     self.output.push_str(&format!("    click {} call onNodeClick(\"offset-{}\") \"Scroll to source\"\n", catch_entry_id, offset));
+
+                     // Try block throws -> Error branch: We can't know which node threw, so we branch from the last known state or let it float.
+                     // Drawing a dashed line from the end of the try? Not semantically correct but visually connects it.
+                     // Alternatively, just put it next to it without links.
+                     for prev in &all_ends {
+                         self.output.push_str(&format!("    {} -.->|Bắt Exception| {}\n", prev, catch_entry_id));
+                     }
+
+                     let catch_prevs = vec![catch_entry_id];
+                     let ended_catch = self.traverse_node_with_label(catch_body, catch_prevs, None);
+                     all_ends.extend(ended_catch);
+                 }
+             } else if child.kind() == "finally_clause" {
+                 // Finally merges all paths.
+                 let finally_prevs = all_ends.clone();
+                 all_ends.clear();
+                 let ended_finally = self.traverse_node_with_label(child, finally_prevs, None);
+                 all_ends.extend(ended_finally);
+             }
+        }
+        
+        all_ends
     }
     
     fn process_generic_recursive_with_label(&mut self, node: Node, prev_ids: Vec<String>, label: Option<String>) -> Vec<String> {
@@ -561,7 +724,7 @@ mod tests {
         assert_eq!(calls[2], "homework2");
         
         let mermaid = JavaParser::generate_mermaid(&graph, source, None);
-        assert!(mermaid.contains("([\"study\"]):::public"));
+        assert!(mermaid.contains("(((\"Bắt đầu hàm study\"))):::public"));
         assert!(mermaid.contains("lesson1"));
         
         // println!("{}", mermaid);
@@ -583,7 +746,7 @@ mod tests {
         let mermaid = JavaParser::generate_mermaid(&graph, source, None);
         println!("{}", mermaid);
         
-        assert!(mermaid.contains("([\"study\"]):::public"));
+        assert!(mermaid.contains("(((\"Bắt đầu hàm study\"))):::public"));
         assert!(mermaid.contains("lesson1"));
         assert!(mermaid.contains("External: teacher.ask"));
     }
@@ -629,8 +792,8 @@ mod tests {
         println!("Decision Flow:\n{}", mermaid);
 
         assert!(mermaid.contains("x > 0"));
-        assert!(mermaid.contains("-->|Yes|"));
-        assert!(mermaid.contains("-->|No|"));
+        assert!(mermaid.contains("-->|Đúng|"));
+        assert!(mermaid.contains("-->|Sai|"));
         assert!(mermaid.contains("positive"));
         assert!(mermaid.contains("negative"));
         assert!(mermaid.contains("done"));
@@ -698,14 +861,14 @@ mod tests {
         
         // 1. Default (None) -> Should contain public and protected ONLY
         let mermaid_default = JavaParser::generate_mermaid(&graph, source, None);
-        assert!(mermaid_default.contains("([\"publicMethod\"])"));
-        assert!(mermaid_default.contains("([\"protectedMethod\"])"));
-        assert!(!mermaid_default.contains("([\"privateMethod\"])")); 
-        assert!(!mermaid_default.contains("([\"packagePrivateMethod\"])"));
+        assert!(mermaid_default.contains("(((\"Bắt đầu hàm publicMethod\")))"));
+        assert!(mermaid_default.contains("(((\"Bắt đầu hàm protectedMethod\")))"));
+        assert!(!mermaid_default.contains("(((\"Bắt đầu hàm privateMethod\")))")); 
+        assert!(!mermaid_default.contains("(((\"Bắt đầu hàm packagePrivateMethod\")))"));
         
         // 2. Specific Private Method -> Should generate graph for it
         let mermaid_private = JavaParser::generate_mermaid(&graph, source, Some("privateMethod".to_string()));
-        assert!(mermaid_private.contains("([\"privateMethod\"])"));
-        assert!(!mermaid_private.contains("([\"publicMethod\"])"));
+        assert!(mermaid_private.contains("(((\"Bắt đầu hàm privateMethod\")))"));
+        assert!(!mermaid_private.contains("(((\"Bắt đầu hàm publicMethod\")))"));
     }
 }

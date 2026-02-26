@@ -7,7 +7,7 @@ import { SchemaTab } from './SchemaTab';
 import { TextCompareTab } from './TextCompareTab';
 import { GenerateTab } from './GenerateTab';
 
-export const CompareSuiteTab = React.memo(() => {
+const CompareSuiteTab = React.memo(() => {
     const { activeTab, activeSubTab, setActiveSubTab } = useAppStore(useShallow(state => ({
         activeTab: state.activeTab,
         activeSubTab: state.compareSubTab,
@@ -60,3 +60,5 @@ export const CompareSuiteTab = React.memo(() => {
         </div>
     );
 });
+
+export default CompareSuiteTab;

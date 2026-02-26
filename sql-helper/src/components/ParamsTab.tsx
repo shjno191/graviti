@@ -7,11 +7,13 @@ import { invoke } from '@tauri-apps/api/tauri';
 import { ResultSetTable } from './ResultSetTable';
 import { checkDangerousSql } from '../utils/sqlGuard';
 
-export const ParamsTab: React.FC = React.memo(() => {
+const ParamsTab: React.FC = React.memo(() => {
     const {
         queryGroups, addQueryGroup, updateQueryGroup, removeQueryGroup,
         autoClipboard, setAutoClipboard, connections,
-        runShortcut, updateConnectionSessionStatus
+        runShortcut, updateConnectionSessionStatus,
+        globalLogPath, setGlobalLogPath,
+        selectedConnId, setSelectedConnId
     } = useAppStore(useShallow(state => ({
         queryGroups: state.queryGroups,
         addQueryGroup: state.addQueryGroup,
@@ -21,12 +23,13 @@ export const ParamsTab: React.FC = React.memo(() => {
         setAutoClipboard: state.setAutoClipboard,
         connections: state.connections,
         runShortcut: state.runShortcut,
-        updateConnectionSessionStatus: state.updateConnectionSessionStatus
+        updateConnectionSessionStatus: state.updateConnectionSessionStatus,
+        globalLogPath: state.paramsLogPath,
+        setGlobalLogPath: state.setParamsLogPath,
+        selectedConnId: state.paramsSelectedConnId,
+        setSelectedConnId: state.setParamsSelectedConnId
     })));
 
-    const [globalLogPath, setGlobalLogPath] = React.useState<string>('');
-
-    const [selectedConnId, setSelectedConnId] = React.useState<string | null>(null);
     const [showExecPicker, setShowExecPicker] = React.useState(false);
 
     const activeConn = connections.find(c => c.id === (selectedConnId || connections[0]?.id)) || connections[0];
@@ -474,3 +477,5 @@ export const ParamsTab: React.FC = React.memo(() => {
         </div>
     );
 });
+
+export default ParamsTab;

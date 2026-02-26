@@ -20,18 +20,31 @@ export const Mermaid = ({ chart }: MermaidProps) => {
             setSvg('');
             return;
         }
-        
+
         const renderChart = async () => {
+            const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+
+            // Create a temporary hidden container to trap any bomb SVG inserted by mermaid on error
+            const trap = document.createElement('div');
+            trap.style.display = 'none';
+            trap.id = id;
+            document.body.appendChild(trap);
+
             try {
-                // Unique ID for each render to avoid conflicts
-                const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-                // mermaid.render returns an object with svg property
                 const { svg } = await mermaid.render(id, chart);
                 setSvg(svg);
                 setError(null);
             } catch (err: any) {
                 console.error("Mermaid Render Error:", err);
                 setError(err.message || 'Failed to render diagram');
+            } finally {
+                // Remove the trap in both success and error cases so no bombs or fragments leak into the DOM
+                if (trap.parentNode) {
+                    trap.parentNode.removeChild(trap);
+                }
+                // Mermaid might have inserted elements directly into the body if it couldn't find the ID (failsafe)
+                const leakedBombs = document.querySelectorAll(`[id^="d${id}"], #${id}`);
+                leakedBombs.forEach(bomb => bomb.remove());
             }
         };
 
@@ -50,7 +63,7 @@ export const Mermaid = ({ chart }: MermaidProps) => {
     if (!svg) return null;
 
     return (
-        <div 
+        <div
             className="mermaid-container overflow-auto p-4 bg-white rounded border border-gray-200 flex justify-center min-h-[200px]"
             dangerouslySetInnerHTML={{ __html: svg }}
         />

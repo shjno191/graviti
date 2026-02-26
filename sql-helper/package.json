@@ -11,6 +11,7 @@
         "build:tauri": "$env:TAURI_BUNDLE_WINDOWS_NSIS_ONE_CLICK='false'; $env:TAURI_BUNDLE_WINDOWS_NSIS_ALLOW_TO_CHANGE_INSTALLATION_DIRECTORY='true'; tauri build"
     },
     "dependencies": {
+        "@google/generative-ai": "^0.24.1",
         "@tauri-apps/api": "^1.6.0",
         "@types/react-window": "^1.8.8",
         "clsx": "^2.1.0",

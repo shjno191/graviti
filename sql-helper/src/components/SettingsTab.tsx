@@ -42,7 +42,7 @@ const ShortcutRecorder: React.FC<{ onRecord: (s: string) => void, current: strin
     );
 };
 
-export const SettingsTab: React.FC = React.memo(() => {
+const SettingsTab: React.FC = React.memo(() => {
     const {
         connections, setConnections,
         translateFilePath, setTranslateFilePath,
@@ -71,7 +71,8 @@ export const SettingsTab: React.FC = React.memo(() => {
         columnSplitApplyToText, setColumnSplitApplyToText,
         columnSplitApplyToTable, setColumnSplitApplyToTable,
         uiHighlightCopied, setUiHighlightCopied,
-        revertRules, setRevertRules, addRevertRule, updateRevertRule, removeRevertRule, resetRevertRule
+        geminiApiKey, setGeminiApiKey,
+        revertRules, addRevertRule, updateRevertRule, removeRevertRule, resetRevertRule
     } = useAppStore(useShallow(state => ({
         connections: state.connections,
         setConnections: state.setConnections,
@@ -127,6 +128,8 @@ export const SettingsTab: React.FC = React.memo(() => {
         setColumnSplitApplyToTable: state.setColumnSplitApplyToTable,
         uiHighlightCopied: state.uiHighlightCopied,
         setUiHighlightCopied: state.setUiHighlightCopied,
+        geminiApiKey: state.geminiApiKey,
+        setGeminiApiKey: state.setGeminiApiKey,
         revertRules: state.revertRules,
         setRevertRules: state.setRevertRules,
         addRevertRule: state.addRevertRule,
@@ -180,6 +183,11 @@ export const SettingsTab: React.FC = React.memo(() => {
                 if (settings.format_sql_append !== undefined) store.setFormatSqlAppend(settings.format_sql_append);
                 if (settings.search_strict !== undefined) store.setSearchStrict(settings.search_strict);
                 if (settings.ui_highlight_copied !== undefined) store.setUiHighlightCopied(settings.ui_highlight_copied);
+                if (settings.gemini_api_key !== undefined) store.setGeminiApiKey(settings.gemini_api_key);
+
+                // Load cached inputs
+                if (settings.translate_input) store.setTranslateInputStore(settings.translate_input);
+                if (settings.revert_tk_input) store.setRevertTKInputStore(settings.revert_tk_input);
             }
         } catch (err) {
             console.error('Failed to load DB settings:', err);
@@ -244,7 +252,10 @@ export const SettingsTab: React.FC = React.memo(() => {
                 format_remove_spaces: state.formatRemoveSpaces,
                 format_sql_append: state.formatSqlAppend,
                 search_strict: state.searchStrict,
-                ui_highlight_copied: state.uiHighlightCopied
+                ui_highlight_copied: state.uiHighlightCopied,
+                gemini_api_key: geminiApiKey,
+                translate_input: state.translateInputStore,
+                revert_tk_input: state.revertTKInputStore
             }
         });
     };
@@ -386,6 +397,7 @@ export const SettingsTab: React.FC = React.memo(() => {
                         <SidebarItem id="translate" label="Translate Tab" icon="🇯🇵" />
                         <SidebarItem id="revertTK" label="Revert TK" icon="🧩" />
                         <SidebarItem id="compare" label="Compare" icon="🔍" />
+                        <SidebarItem id="javaParser" label="Java Parser" icon="☕" />
                     </SidebarGroup>
                 </div>
 
@@ -676,6 +688,31 @@ export const SettingsTab: React.FC = React.memo(() => {
                                         <div className="px-3 py-1.5 text-[8px] font-black text-white text-center border-b border-white/10 uppercase tracking-widest" style={{ backgroundColor: excelHeaderColor }}>TABLE_HEADER</div>
                                         <div className="px-3 py-3 text-[8px] bg-white text-center font-black text-gray-900 border-b border-gray-50">RECORD</div>
                                         <div className="px-3 py-3 text-[8px] bg-gray-50 text-center font-bold text-gray-200">...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* JAVA PARSER */}
+                    {activeSection === 'javaParser' && (
+                        <div className="flex flex-col animate-in fade-in slide-in-from-bottom-2">
+                            <SectionHeader title="Java Parser Config" subtitle="Cài đặt cho tính năng phân tích và vẽ sơ đồ Java" icon="☕" />
+
+                            <div className="flex flex-col gap-8 max-w-4xl">
+                                <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col gap-4">
+                                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Generative AI Configuration</label>
+                                    <div className="flex flex-col gap-2">
+                                        <label className="text-[10px] font-bold text-gray-700">Gemini API Key</label>
+                                        <input
+                                            type="password"
+                                            value={geminiApiKey}
+                                            onChange={e => setGeminiApiKey(e.target.value)}
+                                            onBlur={handleGlobalSave}
+                                            placeholder="Enter your Google Gemini API Key"
+                                            className="w-full bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 font-mono text-sm font-black tracking-widest outline-none focus:ring-2 focus:ring-primary transition-all"
+                                        />
+                                        <span className="text-[10px] text-gray-400 font-bold mt-1">Sử dụng để tự động vẽ sơ đồ Mermaid từ source code Java thông qua AI.</span>
                                     </div>
                                 </div>
                             </div>
@@ -1071,3 +1108,5 @@ export const SettingsTab: React.FC = React.memo(() => {
         </div >
     );
 });
+
+export default SettingsTab;

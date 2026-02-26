@@ -7,11 +7,11 @@ import { useRef, Suspense, lazy, useDeferredValue } from 'react';
 import { HighlightText } from './utils/uiHelpers';
 
 // Lazy load heavy components for faster initial load
-const ParamsTab = lazy(() => import('./components/ParamsTab').then(m => ({ default: m.ParamsTab })));
-const JavaParserTab = lazy(() => import('./components/JavaParserTab').then(m => ({ default: m.JavaParserTab })));
-const SettingsTab = lazy(() => import('./components/SettingsTab').then(m => ({ default: m.SettingsTab })));
-const CompareSuiteTab = lazy(() => import('./components/CompareSuiteTab').then(m => ({ default: m.CompareSuiteTab })));
-const TranslateTab = lazy(() => import('./components/TranslateTab').then(m => ({ default: m.TranslateTab })));
+const ParamsTab = lazy(() => import('./components/ParamsTab'));
+const JavaParserTab = lazy(() => import('./components/JavaParserTab'));
+const SettingsTab = lazy(() => import('./components/SettingsTab'));
+const CompareSuiteTab = lazy(() => import('./components/CompareSuiteTab'));
+const TranslateTab = lazy(() => import('./components/TranslateTab'));
 
 const TABS_CONFIG = [
     // Main Tabs
@@ -125,6 +125,9 @@ function App() {
                     if (settings.text_compare_ignore_case !== undefined) store.setTextCompareIgnoreCase(settings.text_compare_ignore_case);
                     if (settings.text_compare_trim_whitespace !== undefined) store.setTextCompareTrimWhitespace(settings.text_compare_trim_whitespace);
                     if (settings.text_compare_auto_compare !== undefined) store.setTextCompareAutoCompare(settings.text_compare_auto_compare);
+
+                    if (settings.translate_input) store.setTranslateInputStore(settings.translate_input);
+                    if (settings.revert_tk_input) store.setRevertTKInputStore(settings.revert_tk_input);
                 }
             } catch (err) {
                 console.error('Failed to load DB settings:', err);

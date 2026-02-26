@@ -1,193 +1,117 @@
-
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { parseJavaClass } from '../utils/javaParser';
-import { invoke } from '@tauri-apps/api/tauri';
+import { useAppStore } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mermaid } from './Mermaid';
-import { SourceCodeViewer } from './SourceCodeViewer';
-import { useEffect } from 'react';
 
-interface MethodNode {
-    name: string;
-    range: [number, number];
-    modifiers: string[];
-    returnType: string;
-}
-
-interface CallGraph {
-    nodes: Record<string, MethodNode>;
-    calls: Record<string, string[]>;
-}
-
-// Recursive component to display the tree
-const CallGraphNode = ({
-    method,
-    graph,
-    path,
-    indent = 0
-}: {
-    method: string,
-    graph: CallGraph,
-    path: Set<string>,
-    indent?: number
-}) => {
-    const isRecursive = path.has(method);
-    const children = graph.calls[method] || [];
-    const hasChildren = children.length > 0;
-
-    // Create a new path for children to track their own recursion stack
-    const newPath = new Set(path);
-    newPath.add(method);
-
-    return (
-        <div style={{ marginLeft: indent * 20 }} className="font-mono text-sm">
-            <div className={`flex items-center gap-1 ${isRecursive ? 'text-red-500 font-bold' : 'text-gray-800'}`}>
-                <span>{method}</span>
-                {isRecursive && <span className="text-xs italic">(recursive)</span>}
-            </div>
-            {!isRecursive && hasChildren && (
-                <div className="border-l border-gray-300 ml-1 pl-1">
-                    {children.map((child, idx) => (
-                        <CallGraphNode
-                            key={`${method}-${child}-${idx}`}
-                            method={child}
-                            graph={graph}
-                            path={newPath}
-                        />
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
-
-export function JavaParserTab() {
-    const [searchTerm, setSearchTerm] = useState('');
-    const [mode, setMode] = useState<'properties' | 'graph'>('properties');
-    const [sourceCode, setSourceCode] = useState('');
+const JavaParserTab: React.FC = React.memo(() => {
+    const {
+        sourceCode, setSourceCode,
+        searchTerm, setSearchTerm,
+        mermaidResult, setMermaidResult,
+        isLoadingAI, setIsLoadingAI,
+        geminiApiKey
+    } = useAppStore(useShallow(state => ({
+        sourceCode: state.javaParserSource,
+        setSourceCode: state.setJavaParserSource,
+        searchTerm: state.javaParserSearch,
+        setSearchTerm: state.setJavaParserSearch,
+        mermaidResult: state.javaParserMermaid,
+        setMermaidResult: state.setJavaParserMermaid,
+        isLoadingAI: state.javaParserIsLoadingAI,
+        setIsLoadingAI: state.setJavaParserIsLoadingAI,
+        geminiApiKey: state.geminiApiKey
+    })));
     const [notification, setNotification] = useState<string | null>(null);
+
+    const deferredSearch = useDeferredValue(searchTerm);
 
     // Existing Property logic
     const parsedFields = useMemo(() => {
-        if (mode === 'properties') {
-            return parseJavaClass(sourceCode);
-        }
-        return [];
-    }, [sourceCode, mode]);
+        return parseJavaClass(sourceCode);
+    }, [sourceCode]);
 
     const filteredFields = useMemo(() => {
-        if (!searchTerm) return parsedFields;
-        const term = searchTerm.toLowerCase();
-        return parsedFields.filter(f =>
+        if (!deferredSearch) return parsedFields;
+        const term = deferredSearch.toLowerCase();
+        return parsedFields.filter((f: any) =>
             (f.name || '').toLowerCase().includes(term) ||
             (f.type || '').toLowerCase().includes(term) ||
             (f.description || '').toLowerCase().includes(term)
         );
-    }, [parsedFields, searchTerm]);
-
-    // New Graph logic
-    const [graphData, setGraphData] = useState<CallGraph | null>(null);
-    const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
-    const [mermaidGraph, setMermaidGraph] = useState<string>('');
-    const [graphError, setGraphError] = useState<string | null>(null);
-    const [loadingGraph, setLoadingGraph] = useState(false);
-    const [loadingMermaid, setLoadingMermaid] = useState(false);
-    const [zoom, setZoom] = useState(1);
-
-    const filteredMethods = useMemo(() => {
-        if (!graphData) return [];
-        const methods = Object.values(graphData.nodes)
-            .filter(node => node.modifiers.includes('public') || node.modifiers.includes('protected'));
-
-        if (!searchTerm) return methods.sort((a, b) => a.name.localeCompare(b.name));
-
-        const term = searchTerm.toLowerCase();
-        return methods.filter(node =>
-            node.name.toLowerCase().includes(term) ||
-            node.returnType.toLowerCase().includes(term) ||
-            node.modifiers.some(m => m.toLowerCase().includes(term))
-        ).sort((a, b) => a.name.localeCompare(b.name));
-    }, [graphData, searchTerm]);
-    const [showModal, setShowModal] = useState(false);
-    const [highlightOffset, setHighlightOffset] = useState<number | null>(null);
-
-    // Setup global click handler for Mermaid
-    useEffect(() => {
-        (window as any).onNodeClick = (id: string) => {
-            console.log('Node clicked:', id);
-            if (id.startsWith('offset-')) {
-                const offset = parseInt(id.split('-')[1]);
-                if (!isNaN(offset)) {
-                    setHighlightOffset(null); // Reset to trigger effect if same offset clicked twice
-                    setTimeout(() => setHighlightOffset(offset), 0);
-                }
-            }
-        };
-        return () => {
-            delete (window as any).onNodeClick;
-        };
-    }, []);
-
-    const generateGraph = async () => {
-        if (!sourceCode.trim()) return;
-        setLoadingGraph(true);
-        setGraphError(null);
-        setGraphData(null);
-        setSelectedMethod(null);
-        setMermaidGraph('');
-        setZoom(1);
-        try {
-            const result = await invoke<CallGraph>('parse_java_graph', { source: sourceCode });
-            setGraphData(result);
-        } catch (err: any) {
-            console.error(err);
-            setGraphError(typeof err === 'string' ? err : 'Failed to parse graph structure');
-        } finally {
-            setLoadingGraph(false);
-        }
-    };
-
-    const selectMethod = async (methodName: string) => {
-        setSelectedMethod(methodName);
-        setLoadingMermaid(true);
-        setMermaidGraph('');
-        setZoom(1);
-        try {
-            const mermaid = await invoke<string>('generate_mermaid_graph', {
-                source: sourceCode,
-                methodName: methodName
-            });
-            setMermaidGraph(mermaid);
-        } catch (err: any) {
-            console.error(err);
-            setNotification(`Failed to generate diagram for ${methodName}`);
-        } finally {
-            setLoadingMermaid(false);
-        }
-    };
+    }, [parsedFields, deferredSearch]);
 
     const copyColumn = (key: 'description' | 'name' | 'type', label: string) => {
         if (parsedFields.length === 0) return;
-        const text = parsedFields.map(f => f[key]).join('\n');
+        const text = parsedFields.map((f: any) => f[key]).join('\n');
         navigator.clipboard.writeText(text);
         setNotification(`Copied ${label} to clipboard!`);
         setTimeout(() => setNotification(null), 2000);
     };
 
-    const copyMermaid = () => {
-        if (!mermaidGraph) return;
-        navigator.clipboard.writeText(mermaidGraph);
-        setNotification('Copied Mermaid syntax to clipboard!');
-        setTimeout(() => setNotification(null), 2000);
-    };
-
-    const openModal = () => {
-        if (!selectedMethod || !mermaidGraph) {
-            setNotification('Please select a method first');
-            setTimeout(() => setNotification(null), 2000);
+    const handleGenerateMermaid = async () => {
+        if (!sourceCode.trim()) return;
+        if (!geminiApiKey) {
+            setNotification('Please set Gemini API Key in Settings');
+            setTimeout(() => setNotification(null), 3000);
             return;
         }
-        setShowModal(true);
-        setZoom(1);
+
+        setIsLoadingAI(true);
+        try {
+            const genAI = new GoogleGenerativeAI(geminiApiKey);
+            const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+            const prompt = `Bạn là một Kiến trúc sư Phần mềm (Software Architect) xuất sắc. Nhiệm vụ của bạn là đọc đoạn mã nguồn Java tôi cung cấp và chuyển đổi logic của nó thành mã sơ đồ Mermaid (Mermaid.js). Tôi không cần bạn giải thích dài dòng, chỉ cần trả về mã Mermaid nằm trong khối code \\\`\`\`mermaid ... \\\`\`\`.
+
+            Hãy tuân thủ nghiêm ngặt các quy tắc phân tích và trình bày sau đây:
+            1. ĐỊNH DẠNG SƠ ĐỒ (Sử dụng Flowchart hoặc Sequence Diagram):
+            - Ưu tiên sử dụng Flowchart (\\\`graph TD\\\`) để mô tả luồng logic tổng thể.
+            - Nếu source code có quá nhiều class gọi qua lại, hãy dùng Sequence Diagram.
+
+            2. XỬ LÝ NHIỀU HÀM (Multiple Functions):
+            - Mỗi hàm \\\`public\\\` (điểm đầu vào) nên được bắt đầu bằng một node riêng.
+            - Nếu các hàm hoạt động hoàn toàn độc lập, hãy tách chúng thành các \\\`subgraph\\\` riêng biệt trong cùng một Flowchart.
+
+            3. XỬ LÝ HÀM LỒNG NHAU (Nested Functions / Call Stack):
+            - Khi Hàm A (hàm lớn) gọi Hàm B (hàm nhỏ), node gọi hàm trong Hàm A phải trỏ đến một \\\`subgraph\\\` hoặc luồng nhánh đại diện cho Hàm B.
+
+            4. XỬ LÝ LOGIC (If/Else, Loop, Try/Catch):
+            - Điều kiện (\\\`if/else\\\`, \\\`switch\\\`): Phải sử dụng node hình thoi \\\`{ }\\\`.
+            - Vòng lặp (\\\`for\\\`, \\\`while\\\`): Phải có đường mũi tên quay ngược lại node bắt đầu.
+            - Ngoại lệ (\\\`try/catch\\\`): Tạo một nhánh riêng cho lỗi với đường nét đứt.
+
+            5. QUY TẮC CÚ PHÁP MERMAID:
+            - Tuyệt đối KHÔNG dùng các ký tự đặc biệt như ngoặc kép (\\\`"\\\`), ngoặc nhọn (\\\`{\\\`, \\\`}\\\`) bên trong text của node mà không có cách ly, vì sẽ làm gãy mã Mermaid. Tránh dùng cặp dấu ngoặc tròn ( ) bên trong text vì đôi khi xung đột cú pháp shape của Mermaid.
+
+            Đây là source code:
+            ${sourceCode}`;
+
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+
+            let mermaidCode = text;
+            const match = text.match(new RegExp('```mermaid([\\s\\S]*?)```'));
+            if (match && match[1]) {
+                mermaidCode = match[1].trim();
+            } else {
+                mermaidCode = text.replace(new RegExp('^```[\\s\\S]*?\\n'), '').replace(new RegExp('```$'), '').trim();
+            }
+
+            if (!mermaidCode.includes('graph ') && !mermaidCode.includes('sequenceDiagram')) {
+                throw new Error("AI did not return a valid Mermaid diagram syntax.");
+            }
+
+            setMermaidResult(mermaidCode);
+        } catch (error) {
+            console.error('Error generating mermaid:', error);
+            setNotification('Error generating mermaid diagram');
+            setTimeout(() => setNotification(null), 3000);
+        } finally {
+            setIsLoadingAI(false);
+        }
     };
 
     return (
@@ -198,378 +122,137 @@ export function JavaParserTab() {
                 </div>
             )}
 
-            <div className="flex justify-between items-center bg-gray-100 p-1 rounded-lg w-full">
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setMode('properties')}
-                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'properties' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                            }`}
-                    >
-                        Property Extractor
-                    </button>
-                    <button
-                        onClick={() => setMode('graph')}
-                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'graph' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                            }`}
-                    >
-                        Call Graph Analyzer
-                    </button>
-                </div>
-                <div className="relative group mr-2">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-wrap items-center gap-4">
+                <div className="flex-1 flex items-center relative group">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-hover:text-indigo-500 transition-colors">🔍</span>
                     <input
                         type="text"
-                        placeholder="Search Java..."
+                        placeholder="Search Properties..."
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
-                        onFocus={(e) => e.target.select()}
-                        className="app-local-search w-48 focus:w-64 transition-all bg-white border border-gray-200 rounded-lg pl-8 pr-4 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary shadow-sm"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 shadow-inner font-bold text-gray-800 transition-all focus:bg-white"
                     />
+                </div>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => copyColumn('description', 'Descriptions')}
+                        className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-black hover:bg-indigo-100 border border-indigo-200 transition-all active:scale-95 shadow-sm"
+                    >
+                        📋 COLS: DESC
+                    </button>
+                    <button
+                        onClick={() => copyColumn('name', 'Names')}
+                        className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-black hover:bg-indigo-100 border border-indigo-200 transition-all active:scale-95 shadow-sm"
+                    >
+                        📋 COLS: NAME
+                    </button>
+                    <button
+                        onClick={() => copyColumn('type', 'Types')}
+                        className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-black hover:bg-indigo-100 border border-indigo-200 transition-all active:scale-95 shadow-sm"
+                    >
+                        📋 COLS: TYPE
+                    </button>
+                    <button
+                        onClick={() => { setSourceCode(''); setSearchTerm(''); setMermaidResult(''); }}
+                        className="px-4 py-2 bg-red-50 text-red-500 rounded-xl text-xs font-black hover:bg-red-100 border border-red-200 transition-all active:scale-95 shadow-sm"
+                    >
+                        🗑️ CLEAR ALL
+                    </button>
+                    <button
+                        onClick={handleGenerateMermaid}
+                        disabled={isLoadingAI}
+                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all active:scale-95 shadow-lg flex items-center gap-2 ${isLoadingAI ? 'bg-amber-100 text-amber-400' : 'bg-amber-600 text-white hover:bg-amber-700'}`}
+                    >
+                        {isLoadingAI ? (
+                            <><div className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></div> GENERATING...</>
+                        ) : (
+                            <>🪄 AI MERMAID</>
+                        )}
+                    </button>
                 </div>
             </div>
 
-            <div className="flex-1 flex gap-4 min-h-0">
-                {/* Input Area (Shared) */}
-                <div className="w-1/2 flex flex-col">
-                    <label className="font-bold mb-2 text-gray-700">Java Class Source</label>
+            <div className="flex-1 flex gap-4 overflow-hidden">
+                <div className="flex-1 flex flex-col bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 flex justify-between items-center">
+                        <span>JAVA SOURCE CODE</span>
+                        <span className="text-indigo-400">INPUT AREA</span>
+                    </div>
                     <textarea
-                        className="flex-1 p-3 border border-gray-300 rounded resize-none focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm whitespace-pre"
+                        className="flex-1 p-4 font-mono text-sm outline-none resize-none bg-transparent"
+                        placeholder="Paste your Java class source here (DTO/Entity)..."
                         value={sourceCode}
-                        onChange={(e) => setSourceCode(e.target.value)}
-                        placeholder="Paste Java class here..."
+                        onChange={e => setSourceCode(e.target.value)}
                     />
-                    {mode === 'graph' && (
-                        <button
-                            onClick={generateGraph}
-                            disabled={loadingGraph || !sourceCode}
-                            className="mt-2 bg-primary text-white py-2 px-4 rounded hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                        >
-                            {loadingGraph ? 'Analyzing...' : 'Generate Call Graph'}
-                        </button>
-                    )}
                 </div>
 
-                {/* Output Area */}
-                <div className="w-1/2 flex flex-col">
-                    {mode === 'properties' ? (
-                        <>
-                            <div className="flex justify-between items-center mb-2">
-                                <label className="font-bold text-gray-700">Extracted Properties</label>
-                                <span className="text-gray-500 text-sm">{filteredFields.length} fields found</span>
-                            </div>
-                            <div className="flex-1 border border-gray-300 rounded bg-white overflow-auto">
-                                <table className="w-full text-sm text-left text-gray-700">
-                                    <thead className="text-xs text-gray-700 uppercase bg-gray-50 sticky top-0 z-10">
-                                        <tr>
-                                            <th scope="col" className="px-4 py-3 border-b border-gray-200 group cursor-pointer hover:bg-gray-100" onClick={() => copyColumn('description', 'Descriptions')}>
-                                                <div className="flex items-center gap-2">
-                                                    Description
-                                                    <span className="opacity-0 group-hover:opacity-100 text-gray-400" title="Copy column">📋</span>
-                                                </div>
-                                            </th>
-                                            <th scope="col" className="px-4 py-3 border-b border-gray-200 group cursor-pointer hover:bg-gray-100" onClick={() => copyColumn('name', 'Properties')}>
-                                                <div className="flex items-center gap-2">
-                                                    Property
-                                                    <span className="opacity-0 group-hover:opacity-100 text-gray-400" title="Copy column">📋</span>
-                                                </div>
-                                            </th>
-                                            <th scope="col" className="px-4 py-3 border-b border-gray-200 w-24 group cursor-pointer hover:bg-gray-100" onClick={() => copyColumn('type', 'Types')}>
-                                                <div className="flex items-center gap-2">
-                                                    Type
-                                                    <span className="opacity-0 group-hover:opacity-100 text-gray-400" title="Copy column">📋</span>
-                                                </div>
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {filteredFields.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={3} className="px-4 py-8 text-center text-gray-400">
-                                                    No fields matches.
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            filteredFields.map((field, index) => (
-                                                <tr key={index} className="bg-white border-b border-gray-100 hover:bg-gray-50">
-                                                    <td className="px-4 py-2 font-medium break-words max-w-[200px]">
-                                                        {field.description || <span className="text-gray-300 italic">No description</span>}
-                                                    </td>
-                                                    <td className="px-4 py-2 font-mono text-primary">
-                                                        {field.name}
-                                                    </td>
-                                                    <td className="px-4 py-2 font-mono text-gray-500 text-xs">
-                                                        {field.type}
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <div className="flex justify-between items-center mb-2">
-                                <label className="font-bold text-gray-700">Call Graph Analyzer</label>
-                                {graphData && (
-                                    <span className="text-gray-500 text-sm">
-                                        {Object.keys(graphData.nodes).length} methods parsed
-                                    </span>
-                                )}
-                            </div>
-                            <div className="flex-1 border border-gray-300 rounded bg-white overflow-hidden flex min-h-0">
-                                {graphData ? (
-                                    <>
-                                        {/* Left Sidebar: Method List */}
-                                        <div className="w-1/3 border-r border-gray-200 flex flex-col min-h-0">
-                                            <div className="p-2 bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                                                Public & Protected Methods
-                                            </div>
-                                            <div className="flex-1 overflow-auto p-1">
-                                                {filteredMethods.map(node => (
-                                                    <button
-                                                        key={node.name}
-                                                        onClick={() => selectMethod(node.name)}
-                                                        className={`w-full text-left p-2 rounded text-sm mb-1 transition-all flex flex-col gap-1 border ${selectedMethod === node.name
-                                                            ? 'bg-primary/10 text-primary border-primary/20 shadow-sm'
-                                                            : 'hover:bg-gray-100 text-gray-700 border-transparent hover:border-gray-200'
-                                                            }`}
-                                                    >
-                                                        <div className="flex justify-between items-start w-full">
-                                                            <div className="font-mono font-bold truncate pr-2" title={node.name}>
-                                                                {node.name}
-                                                            </div>
-                                                            <span className="text-[10px] text-gray-400 font-mono shrink-0">
-                                                                {node.returnType || 'void'}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex gap-1 items-center">
-                                                            {node.modifiers.map(m => (
-                                                                <span key={m} className={`text-[9px] px-1 rounded-sm uppercase font-bold tracking-tighter ${m === 'public' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                                                                    }`}>
-                                                                    {m}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Right Content: Graph View */}
-                                        <div className="flex-1 flex flex-col min-h-0 bg-gray-50/30">
-                                            {selectedMethod ? (
-                                                <div className="flex-1 flex flex-col p-4 overflow-auto min-h-0 gap-4">
-                                                    <div className="flex justify-between items-center border-b border-gray-200 pb-2">
-                                                        <div className="flex flex-col">
-                                                            <h3 className="font-bold text-gray-800">Flow: {selectedMethod}</h3>
-                                                            {loadingMermaid && <div className="text-[10px] text-primary animate-pulse">Generating...</div>}
-                                                        </div>
-                                                        <div className="flex gap-2 items-center">
-                                                            {/* Zoom Controls */}
-                                                            <div className="flex items-center gap-1 bg-white border border-gray-200 rounded p-0.5 shadow-sm mr-2">
-                                                                <button
-                                                                    onClick={() => setZoom(z => Math.max(0.2, z - 0.1))}
-                                                                    className="p-1 hover:bg-gray-100 rounded text-gray-500"
-                                                                    title="Zoom Out"
-                                                                >
-                                                                    ➖
-                                                                </button>
-                                                                <span className="text-[10px] font-mono min-w-[40px] text-center">
-                                                                    {Math.round(zoom * 100)}%
-                                                                </span>
-                                                                <button
-                                                                    onClick={() => setZoom(z => Math.min(3, z + 0.1))}
-                                                                    className="p-1 hover:bg-gray-100 rounded text-gray-500"
-                                                                    title="Zoom In"
-                                                                >
-                                                                    ➕
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => setZoom(1)}
-                                                                    className="p-1 hover:bg-gray-100 rounded text-xs text-gray-400"
-                                                                    title="Reset Zoom"
-                                                                >
-                                                                    ↺
-                                                                </button>
-                                                            </div>
-                                                            <button
-                                                                onClick={openModal}
-                                                                disabled={!mermaidGraph}
-                                                                className="text-xs bg-primary/10 border border-primary/20 hover:bg-primary/20 px-2 py-1 rounded text-primary transition-colors shadow-sm disabled:opacity-50 flex items-center gap-1"
-                                                            >
-                                                                <span>🔍</span> Enlarge
-                                                            </button>
-                                                            <button
-                                                                onClick={copyMermaid}
-                                                                disabled={!mermaidGraph}
-                                                                className="text-xs bg-white border border-gray-200 hover:bg-gray-50 px-2 py-1 rounded text-gray-600 transition-colors shadow-sm disabled:opacity-50"
-                                                            >
-                                                                Copy Mermaid
-                                                            </button>
-                                                        </div>
-                                                    </div>
-
-                                                    {loadingMermaid ? (
-                                                        <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-2">
-                                                            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                                                            <span className="text-sm">Generating Flow Diagram...</span>
-                                                        </div>
-                                                    ) : mermaidGraph ? (
-                                                        <div className="flex flex-col gap-6 h-full min-h-0">
-                                                            <div className="flex-1 flex gap-4 min-h-0">
-                                                                {/* Graph Panel */}
-                                                                <div className="flex-[2] bg-white rounded border border-gray-200 shadow-inner overflow-auto relative flex flex-col">
-                                                                    <div
-                                                                        style={{
-                                                                            transform: `scale(${zoom})`,
-                                                                            transformOrigin: 'top left',
-                                                                            transition: 'transform 0.1s ease-out'
-                                                                        }}
-                                                                        className="p-4"
-                                                                    >
-                                                                        <Mermaid chart={mermaidGraph} />
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* Source View Panel */}
-                                                                <div className="flex-1 flex flex-col min-h-0">
-                                                                    <div className="text-[10px] font-bold text-gray-400 uppercase mb-1 flex justify-between items-center">
-                                                                        <span>Source Context</span>
-                                                                        <span className="text-primary italic normal-case">Click nodes to scroll</span>
-                                                                    </div>
-                                                                    <SourceCodeViewer
-                                                                        source={sourceCode}
-                                                                        highlightOffset={highlightOffset}
-                                                                    />
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="shrink-0">
-                                                                <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Mermaid Syntax</h4>
-                                                                <pre className="bg-gray-900 text-gray-100 p-3 rounded text-[10px] font-mono overflow-auto max-h-[100px]">
-                                                                    {mermaidGraph}
-                                                                </pre>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex-1 flex items-center justify-center text-gray-400 italic text-sm">
-                                                            No diagram available for this method.
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-3">
-                                                    <div className="text-4xl">📊</div>
-                                                    <div className="text-sm">Select a method from the list to view its flow diagram.</div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </>
+                <div className="flex-1 flex flex-col bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 flex justify-between items-center">
+                        <span>EXTRACTED PROPERTIES</span>
+                        <span className="text-indigo-600 font-black">{filteredFields.length} ITEMS</span>
+                    </div>
+                    <div className="flex-1 overflow-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead className="sticky top-0 bg-white/80 backdrop-blur-md shadow-sm z-10">
+                                <tr>
+                                    <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Description</th>
+                                    <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Name</th>
+                                    <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Type</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredFields.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={3} className="px-4 py-20 text-center text-xs text-gray-300 font-bold italic uppercase tracking-widest">
+                                            No fields extracted
+                                        </td>
+                                    </tr>
                                 ) : (
-                                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-4">
-                                        {graphError ? (
-                                            <div className="text-red-500 bg-red-50 p-4 rounded border border-red-100 max-w-md text-center">
-                                                <div className="font-bold mb-1">Error Parsing Logic</div>
-                                                <div className="text-xs">{graphError}</div>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <div className="text-5xl opacity-20">📂</div>
-                                                <div className="text-sm">
-                                                    {loadingGraph ? 'Analyzing Class Structure...' : 'Paste source code and click "Generate Call Graph"'}
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
+                                    filteredFields.map((field: any, idx: number) => (
+                                        <tr key={idx} className="hover:bg-indigo-50/30 transition-colors group">
+                                            <td className="px-4 py-2 text-xs font-bold text-gray-600 border-b border-gray-50">
+                                                {field.description}
+                                            </td>
+                                            <td className="px-4 py-2 font-mono text-indigo-600 font-black text-xs border-b border-gray-50">
+                                                {field.name}
+                                            </td>
+                                            <td className="px-4 py-2 font-mono text-gray-500 text-xs border-b border-gray-50">
+                                                {field.type}
+                                            </td>
+                                        </tr>
+                                    ))
                                 )}
-                            </div>
-                        </>
-                    )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-            {/* Modal Dialog */}
-            {showModal && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-8">
-                    <div className="bg-white w-full h-full rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
-                        <header className="bg-gray-800 text-white p-4 flex justify-between items-center shrink-0">
-                            <div className="flex flex-col">
-                                <h1 className="text-lg font-bold">Flow: {selectedMethod}</h1>
-                                <span className="text-xs text-gray-400">Modal Viewer</span>
-                            </div>
 
-                            <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-1 bg-gray-700 rounded p-1 shadow-inner">
-                                    <button
-                                        onClick={() => setZoom(z => Math.max(0.1, z - 0.1))}
-                                        className="p-1 hover:bg-gray-600 rounded text-gray-100"
-                                        title="Zoom Out"
-                                    >
-                                        ➖
-                                    </button>
-                                    <span className="text-xs font-mono min-w-[50px] text-center text-gray-100">
-                                        {Math.round(zoom * 100)}%
-                                    </span>
-                                    <button
-                                        onClick={() => setZoom(z => Math.min(5, z + 0.1))}
-                                        className="p-1 hover:bg-gray-600 rounded text-gray-100"
-                                        title="Zoom In"
-                                    >
-                                        ➕
-                                    </button>
-                                    <button
-                                        onClick={() => setZoom(1)}
-                                        className="p-1 hover:bg-gray-600 rounded text-xs text-gray-400"
-                                        title="Reset Zoom"
-                                    >
-                                        ↺
-                                    </button>
-                                </div>
-                                <button
-                                    onClick={() => setShowModal(false)}
-                                    className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm font-bold transition-colors"
-                                >
-                                    Close
-                                </button>
-                            </div>
-                        </header>
-
-                        <main className="flex-1 overflow-hidden bg-gray-50 flex min-h-0">
-                            <div className="flex-1 flex gap-4 p-6 min-h-0">
-                                {/* Graph Panel */}
-                                <div className="flex-[2] bg-white rounded border border-gray-200 shadow-inner overflow-auto relative flex flex-col">
-                                    <div
-                                        style={{
-                                            transform: `scale(${zoom})`,
-                                            transformOrigin: 'top left',
-                                            transition: 'transform 0.1s ease-out'
-                                        }}
-                                        className="p-4"
-                                    >
-                                        <Mermaid chart={mermaidGraph} />
-                                    </div>
-                                </div>
-
-                                {/* Source View Panel */}
-                                <div className="flex-1 flex flex-col min-h-0">
-                                    <div className="text-[10px] font-bold text-gray-500 uppercase mb-2 flex justify-between items-center px-1">
-                                        <span>Source Reference</span>
-                                        <span className="text-primary animate-pulse normal-case">Linked to diagram</span>
-                                    </div>
-                                    <SourceCodeViewer
-                                        source={sourceCode}
-                                        highlightOffset={highlightOffset}
-                                    />
-                                </div>
-                            </div>
-                        </main>
-
-                        <footer className="bg-gray-50 border-t border-gray-200 p-3 text-xs text-gray-400 text-center shrink-0">
-                            Use the controls in the top right to zoom. Press ESC or click Close to return.
-                        </footer>
+            {mermaidResult && (
+                <div className="flex-1 flex flex-col bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden mt-4 min-h-[400px]">
+                    <div className="bg-amber-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-600 border-b border-amber-100 flex justify-between items-center">
+                        <span>AI GENERATED MERMAID DIAGRAM</span>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => {
+                                    navigator.clipboard.writeText(mermaidResult);
+                                    setNotification('Copied Mermaid syntax!');
+                                    setTimeout(() => setNotification(null), 2000);
+                                }}
+                                className="bg-white px-2 py-1 rounded border border-amber-200 hover:bg-amber-100 transition-colors"
+                            >
+                                📋 COPY SYNTAX
+                            </button>
+                            <button onClick={() => setMermaidResult('')} className="text-amber-400 hover:text-amber-600">✕ CLOSE</button>
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-auto bg-gray-50/30 p-4">
+                        <Mermaid chart={mermaidResult} />
                     </div>
                 </div>
             )}
         </div>
     );
-}
+});
+
+export default JavaParserTab;
