@@ -7,12 +7,30 @@ import { Mermaid } from './Mermaid';
 function analyzeAstToMap(sourceCode: string): Map<string, Set<string>> {
     const callMap = new Map<string, Set<string>>();
 
+    // Bước 0: Làm sạch source code (Bỏ comment và nội dung chuỗi)
+    // Để tránh regex hoặc đếm ngoặc nhọn bị sai khi gặp code mồi trong comment/string.
+    let cleanCode = sourceCode;
+
+    // Xóa block comments /* ... */
+    // Using RegExp with [\s\S] to match across newlines
+    cleanCode = cleanCode.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    // Xóa line comments // ...
+    cleanCode = cleanCode.replace(/\/\/.*/g, '');
+
+    // Thay thế nội dung chuỗi "..." và char '...' thành chuỗi rỗng tĩnh để không chứa { } 
+    // Regex này bắt chuỗi có xử lý escape character
+    cleanCode = cleanCode.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+    cleanCode = cleanCode.replace(/'(?:[^'\\]|\\.)*'/g, "''");
+
     // Bước 1: Tìm các hàm nội bộ trong file
-    // Regex lấy các hàm có format:  [public|private|...] [static...] [type...] methodName(...) {
-    const methodDeclRegex = /(?:public|private|protected)\s+(?:static\s+)?(?:[\w<>,\[\]]+\s+)+(\w+)\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\s*\{/g;
+    // Cải tiến regex để an toàn hơn và xử lý các generic bounds, mảng, etc.
+    const methodDeclRegex = /(?:(?:public|private|protected|static|final|native|synchronized|abstract|transient)\s+)*(?:[\w<>,\[\]]+\s+)*([a-zA-Z_$][\w$]*)\s*\([^)]*\)\s*(?:throws\s+[a-zA-Z_$,\s]+)?\s*\{/g;
+
+    // Bỏ qua các từ khóa điều khiển luồng bị trùng mẫu
+    const controlFlow = new Set(["if", "for", "while", "catch", "switch", "synchronized", "return", "new", "super", "this", "else", "try", "do"]);
 
     interface InternalMethod {
-
         name: string;
         bodyStartIdx: number;
         bodyContent: string;
@@ -21,11 +39,12 @@ function analyzeAstToMap(sourceCode: string): Map<string, Set<string>> {
     const internalMethods: InternalMethod[] = [];
     let match;
 
-    while ((match = methodDeclRegex.exec(sourceCode)) !== null) {
+    while ((match = methodDeclRegex.exec(cleanCode)) !== null) {
         const methodName = match[1];
-        // match.index là vị trí bắt đầu chuỗi match
-        // match[0].length là độ dài chuỗi bắt được
-        // => openBraceIdx trỏ đến dấu { (ký tự cuối cùng của chuỗi match do Regex kết thúc bằng \{)
+        if (controlFlow.has(methodName)) continue;
+
+        // match.index là vị trí bắt đầu
+        // match[0].length là độ dài match (ký tự cuối cùng là '{')
         const openBraceIdx = match.index + match[0].length - 1;
 
         internalMethods.push({
@@ -35,68 +54,64 @@ function analyzeAstToMap(sourceCode: string): Map<string, Set<string>> {
         });
     }
 
-    // Bước 2: Lấy block body của hàm thông qua đếm ngoặc nhọn
+    // Bước 2: Lấy body của hàm thông qua đếm ngoặc nhọn trên cleanCode
     for (const method of internalMethods) {
         let braceCount = 0;
         let bodyEndIdx = method.bodyStartIdx;
-        let inQuotes = false;
-        let quoteChar = null;
 
-        for (let i = method.bodyStartIdx; i < sourceCode.length; i++) {
-            const char = sourceCode[i];
+        for (let i = method.bodyStartIdx; i < cleanCode.length; i++) {
+            const char = cleanCode[i];
 
-            // Xử lý chuỗi (string/char literal) để tránh đếm các ngoặc { } ảo nằm trong chuỗi
-            if ((char === '"' || char === "'") && sourceCode[i - 1] !== '\\') {
-                if (!inQuotes) {
-                    inQuotes = true;
-                    quoteChar = char;
-                } else if (char === quoteChar) {
-                    inQuotes = false;
-                    quoteChar = null;
-                }
-            }
-
-            if (!inQuotes) {
-                if (char === '{') {
-                    braceCount++;
-                } else if (char === '}') {
-                    braceCount--;
-                    if (braceCount === 0) {
-                        bodyEndIdx = i;
-                        break;
-                    }
+            if (char === '{') {
+                braceCount++;
+            } else if (char === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                    bodyEndIdx = i;
+                    break;
                 }
             }
         }
 
-        // Cắt lấy nội dung bên trong cặp dấu ngoặc {}
-        method.bodyContent = sourceCode.substring(method.bodyStartIdx + 1, bodyEndIdx);
+        method.bodyContent = cleanCode.substring(method.bodyStartIdx + 1, bodyEndIdx);
     }
 
-    // Nạp sẵn tập hợp các tên hàm nội bộ để filter O(1)
+    // Lấy tập hợp tên hàm nội bộ để map nhanh
     const internalMethodNames = new Set(internalMethods.map(m => m.name));
 
     // Bước 3 & Bước 4: Tìm lời gọi hàm và Map quan hệ
-    // Tên bất kỳ theo sau là khoảng trắng và dấu (
-    const callRegex = /([a-zA-Z_]\w*)\s*\(/g;
+    const callRegex = /([a-zA-Z_$][\w$]*)\s*\(/g;
 
     for (const method of internalMethods) {
-        if (!callMap.has(method.name)) {
-            callMap.set(method.name, new Set());
+        // Tùy chọn: Không vẽ các hàm Getter/Setter lớn làm Root Point rác
+        const callerName = method.name;
+        if (callerName.length > 3 && (callerName.startsWith("get") || callerName.startsWith("set"))) continue;
+        if (callerName.length > 2 && callerName.startsWith("is") && callerName.charAt(2) === callerName.charAt(2).toUpperCase()) continue;
+
+        if (!callMap.has(callerName)) {
+            callMap.set(callerName, new Set());
         }
 
         const body = method.bodyContent;
         let callMatch;
-        callRegex.lastIndex = 0; // Reset lại state của regex cho vòng lặp exec mới
+        callRegex.lastIndex = 0; // Reset regex
 
         while ((callMatch = callRegex.exec(body)) !== null) {
             const calleeName = callMatch[1];
 
-            // Nếu calleeName nằm trong danh sách các hàm nội bộ của class này
-            // và không phải gọi đệ quy chính mình (tùy vào rule, nếu muốn vẽ đệ quy thì bỏ điều kiện khác name)
-            if (internalMethodNames.has(calleeName) && calleeName !== method.name) {
-                callMap.get(method.name)!.add(calleeName);
+            if (internalMethodNames.has(calleeName) && calleeName !== callerName) {
+                // Lọc bỏ phương thức Getter/Setter mờ nhạt
+                if (calleeName.length > 3 && (calleeName.startsWith("get") || calleeName.startsWith("set"))) continue;
+                if (calleeName.length > 2 && calleeName.startsWith("is") && calleeName.charAt(2) === calleeName.charAt(2).toUpperCase()) continue;
+
+                callMap.get(callerName)!.add(calleeName);
             }
+        }
+
+        // Dọn dẹp nếu hàm caller không gọi ai thì xóa đi cho đồ thị đỡ rác (ùn cục)
+        // Nếu bạn muốn giữ lại hàm đứng 1 mình (independent node), comment dòng dưới
+        if (callMap.get(callerName)?.size === 0) {
+            callMap.delete(callerName);
         }
     }
 
