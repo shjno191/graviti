@@ -190,7 +190,8 @@ const getSegmentsFromText = (
     lIdx: number | string,
     translationDict: any[],
     selections: Record<string, string>,
-    prefix: string = 't'
+    prefix: string = 't',
+    strict: boolean = false
 ): TranslatedSegment[] => {
     if (!line) return [];
 
@@ -200,6 +201,7 @@ const getSegmentsFromText = (
 
     for (const item of translationDict) {
         if (!lowerNormLine.includes(item.phrase)) continue;
+        if (strict && lowerNormLine !== item.phrase) continue;
 
         item.regex.lastIndex = 0;
         let match;
@@ -1046,7 +1048,8 @@ const TranslateTab: React.FC = React.memo(() => {
         searchTerm, setSearchTerm,
         selections, setSelections,
         data, setData,
-        dictionaryLimit, setDictionaryLimit
+        dictionaryLimit, setDictionaryLimit,
+        translateStrict
     } = useAppStore(useShallow(state => ({
         activeTab: state.activeTab,
         setActiveTab: state.setActiveTab,
@@ -1066,6 +1069,7 @@ const TranslateTab: React.FC = React.memo(() => {
         revertTKMapping: state.revertTKMapping,
         translateDeleteChars: state.translateDeleteChars,
         translateTruncateDuplicate: state.translateTruncateDuplicate,
+        translateStrict: state.translateStrict,
         textCompareExpectedInput: state.textCompareExpectedInput,
         setTextCompareExpectedInput: state.setTextCompareExpectedInput,
         textCompareCurrentInput: state.textCompareCurrentInput,
@@ -1171,23 +1175,23 @@ const TranslateTab: React.FC = React.memo(() => {
     const translatedLines = useMemo(() => {
         if (!deferredBulkInput) return [];
         return deferredBulkInput.split('\n').map((line, lIdx) => ({
-            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 't')
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 't', translateStrict)
         }));
-    }, [deferredBulkInput, translationDict, selections]);
+    }, [deferredBulkInput, translationDict, selections, translateStrict]);
 
     const revertTKTranslatedLines = useMemo(() => {
         if (!deferredRevertTKInput) return [];
         return deferredRevertTKInput.split('\n').map((line, lIdx) => ({
-            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rt')
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rt', translateStrict)
         }));
-    }, [deferredRevertTKInput, translationDict, selections]);
+    }, [deferredRevertTKInput, translationDict, selections, translateStrict]);
 
     const revertTKResultTranslatedLines = useMemo(() => {
         if (!deferredRevertTKResult) return [];
         return deferredRevertTKResult.split('\n').map((line, lIdx) => ({
-            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rr')
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rr', translateStrict)
         }));
-    }, [deferredRevertTKResult, translationDict, selections]);
+    }, [deferredRevertTKResult, translationDict, selections, translateStrict]);
     const defaultColWidth = 100;
     const parsedCustomWidths = useMemo<Record<number, number>>(() => {
         const widths: Record<number, number> = {};

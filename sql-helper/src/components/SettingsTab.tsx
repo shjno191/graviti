@@ -66,6 +66,7 @@ const SettingsTab: React.FC = React.memo(() => {
         searchStrict, setSearchStrict,
         translateDeleteChars, setTranslateDeleteChars,
         translateTruncateDuplicate, setTranslateTruncateDuplicate,
+        translateStrict, setTranslateStrict,
         translateLineHeight, setTranslateLineHeight,
         revertTKDeleteChars, setRevertTKDeleteChars,
         columnSplitApplyToText, setColumnSplitApplyToText,
@@ -118,6 +119,8 @@ const SettingsTab: React.FC = React.memo(() => {
         setTranslateDeleteChars: state.setTranslateDeleteChars,
         translateTruncateDuplicate: state.translateTruncateDuplicate,
         setTranslateTruncateDuplicate: state.setTranslateTruncateDuplicate,
+        translateStrict: state.translateStrict,
+        setTranslateStrict: state.setTranslateStrict,
         translateLineHeight: state.translateLineHeight,
         setTranslateLineHeight: state.setTranslateLineHeight,
         revertTKDeleteChars: state.revertTKDeleteChars,
@@ -173,6 +176,7 @@ const SettingsTab: React.FC = React.memo(() => {
 
                 if (settings.translate_delete_chars) store.setTranslateDeleteChars(settings.translate_delete_chars);
                 if (settings.translate_truncate_duplicate !== undefined) store.setTranslateTruncateDuplicate(settings.translate_truncate_duplicate);
+                if (settings.translate_strict !== undefined) store.setTranslateStrict(settings.translate_strict);
 
                 if (settings.excel_header_color) store.setExcelHeaderColor(settings.excel_header_color);
                 if (settings.run_shortcut) store.setRunShortcut(settings.run_shortcut);
@@ -246,6 +250,7 @@ const SettingsTab: React.FC = React.memo(() => {
                 text_compare_auto_compare: state.textCompareAutoCompare,
                 translate_delete_chars: state.translateDeleteChars,
                 translate_truncate_duplicate: state.translateTruncateDuplicate,
+                translate_strict: state.translateStrict,
                 excel_header_color: excelHeaderColor,
                 run_shortcut: runShortcut,
                 focus_search_shortcut: state.focusSearchShortcut,
@@ -807,7 +812,7 @@ const SettingsTab: React.FC = React.memo(() => {
                                             </div>
 
                                             {/* Item 4 */}
-                                            <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
+                                            <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors border-b border-gray-50/50">
                                                 <SettingToggle
                                                     label="De-duplicate"
                                                     desc="Remove identical rows"
@@ -817,6 +822,20 @@ const SettingsTab: React.FC = React.memo(() => {
                                                 />
                                                 <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
                                                     Xóa các dòng kết quả bị trùng lặp.
+                                                </div>
+                                            </div>
+
+                                            {/* Item 4b */}
+                                            <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
+                                                <SettingToggle
+                                                    label="Strict Translate"
+                                                    desc="Exact phrase matching only"
+                                                    tooltip="Khi bật, hệ thống chỉ dịch những cụm từ khớp chính xác hoàn toàn, không gợi ý cắt từ nhỏ hơn."
+                                                    checked={translateStrict}
+                                                    onChange={setTranslateStrict}
+                                                />
+                                                <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
+                                                    Chỉ dịch nếu tìm thấy chính xác 100%, không break từ.
                                                 </div>
                                             </div>
 

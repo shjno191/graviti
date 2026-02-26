@@ -168,6 +168,8 @@ export interface AppState {
     setTranslateDeleteChars: (val: string) => void;
     translateTruncateDuplicate: boolean;
     setTranslateTruncateDuplicate: (val: boolean) => void;
+    translateStrict: boolean;
+    setTranslateStrict: (val: boolean) => void;
 
     globalSearchTerm: string;
     setGlobalSearchTerm: (term: string) => void;
@@ -426,6 +428,8 @@ export const useAppStore = create<AppState>((set) => ({
     setTranslateDeleteChars: (val) => set({ translateDeleteChars: val }),
     translateTruncateDuplicate: false,
     setTranslateTruncateDuplicate: (val) => set({ translateTruncateDuplicate: val }),
+    translateStrict: false,
+    setTranslateStrict: (val) => set({ translateStrict: val }),
 
     globalSearchTerm: '',
     setGlobalSearchTerm: (term) => set({ globalSearchTerm: term }),

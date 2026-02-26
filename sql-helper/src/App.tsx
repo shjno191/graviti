@@ -126,6 +126,7 @@ function App() {
                     if (settings.text_compare_trim_whitespace !== undefined) store.setTextCompareTrimWhitespace(settings.text_compare_trim_whitespace);
                     if (settings.text_compare_auto_compare !== undefined) store.setTextCompareAutoCompare(settings.text_compare_auto_compare);
 
+                    if (settings.translate_strict !== undefined) store.setTranslateStrict(settings.translate_strict);
                     if (settings.translate_input) store.setTranslateInputStore(settings.translate_input);
                     if (settings.revert_tk_input) store.setRevertTKInputStore(settings.revert_tk_input);
                 }
@@ -405,11 +406,21 @@ function App() {
 
             <main className="flex-1 container mx-auto max-w-full px-5 overflow-hidden flex flex-col">
                 <Suspense fallback={<div className="flex-1 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-200 border-b-indigo-600"></div></div>}>
-                    {activeTab === 'params' && <ParamsTab />}
-                    {(activeTab === 'compare-suite' || activeTab === 'lab' || activeTab === 'compare' || activeTab === 'text-compare' || activeTab === 'generate') && <CompareSuiteTab />}
-                    {(activeTab === 'translate' || activeTab === 'revert-tk') && <TranslateTab />}
-                    {activeTab === 'java-parser' && <JavaParserTab />}
-                    {activeTab === 'settings' && <SettingsTab />}
+                    <div className={`flex-1 flex flex-col h-full ${activeTab === 'params' ? '' : 'hidden'}`}>
+                        <ParamsTab />
+                    </div>
+                    <div className={`flex-1 flex flex-col h-full ${(activeTab === 'compare-suite' || activeTab === 'lab' || activeTab === 'compare' || activeTab === 'text-compare' || activeTab === 'generate') ? '' : 'hidden'}`}>
+                        <CompareSuiteTab />
+                    </div>
+                    <div className={`flex-1 flex flex-col h-full ${(activeTab === 'translate' || activeTab === 'revert-tk') ? '' : 'hidden'}`}>
+                        <TranslateTab />
+                    </div>
+                    <div className={`flex-1 flex flex-col h-full ${activeTab === 'java-parser' ? '' : 'hidden'}`}>
+                        <JavaParserTab />
+                    </div>
+                    <div className={`flex-1 flex flex-col h-full ${activeTab === 'settings' ? '' : 'hidden'}`}>
+                        <SettingsTab />
+                    </div>
                 </Suspense>
             </main>
         </div>
