@@ -129,6 +129,7 @@ function App() {
                     if (settings.translate_strict !== undefined) store.setTranslateStrict(settings.translate_strict);
                     if (settings.translate_input) store.setTranslateInputStore(settings.translate_input);
                     if (settings.revert_tk_input) store.setRevertTKInputStore(settings.revert_tk_input);
+                    if (settings.java_parser_auto_analyze !== undefined) store.setJavaParserAutoAnalyze(settings.java_parser_auto_analyze);
                 }
             } catch (err) {
                 console.error('Failed to load DB settings:', err);

@@ -237,6 +237,8 @@ export interface AppState {
     setJavaParserMermaid: (val: string) => void;
     javaParserIsLoadingAI: boolean;
     setJavaParserIsLoadingAI: (val: boolean) => void;
+    javaParserAutoAnalyze: boolean;
+    setJavaParserAutoAnalyze: (val: boolean) => void;
 
     paramsLogPath: string;
     setParamsLogPath: (val: string) => void;
@@ -273,6 +275,8 @@ export const useAppStore = create<AppState>((set) => ({
     setJavaParserMermaid: (val) => set({ javaParserMermaid: val }),
     javaParserIsLoadingAI: false,
     setJavaParserIsLoadingAI: (val) => set({ javaParserIsLoadingAI: val }),
+    javaParserAutoAnalyze: true,
+    setJavaParserAutoAnalyze: (val) => set({ javaParserAutoAnalyze: val }),
 
     paramsLogPath: '',
     setParamsLogPath: (val) => set({ paramsLogPath: val }),

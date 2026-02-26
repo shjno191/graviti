@@ -2,8 +2,125 @@ import React, { useState, useMemo, useDeferredValue } from 'react';
 import { parseJavaClass } from '../utils/javaParser';
 import { useAppStore } from '../store/useAppStore';
 import { useShallow } from 'zustand/react/shallow';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mermaid } from './Mermaid';
+
+function analyzeAstToMap(sourceCode: string): Map<string, Set<string>> {
+    const callMap = new Map<string, Set<string>>();
+
+    // Bước 1: Tìm các hàm nội bộ trong file
+    // Regex lấy các hàm có format:  [public|private|...] [static...] [type...] methodName(...) {
+    const methodDeclRegex = /(?:public|private|protected)\s+(?:static\s+)?(?:[\w<>,\[\]]+\s+)+(\w+)\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\s*\{/g;
+
+    interface InternalMethod {
+
+        name: string;
+        bodyStartIdx: number;
+        bodyContent: string;
+    }
+
+    const internalMethods: InternalMethod[] = [];
+    let match;
+
+    while ((match = methodDeclRegex.exec(sourceCode)) !== null) {
+        const methodName = match[1];
+        // match.index là vị trí bắt đầu chuỗi match
+        // match[0].length là độ dài chuỗi bắt được
+        // => openBraceIdx trỏ đến dấu { (ký tự cuối cùng của chuỗi match do Regex kết thúc bằng \{)
+        const openBraceIdx = match.index + match[0].length - 1;
+
+        internalMethods.push({
+            name: methodName,
+            bodyStartIdx: openBraceIdx,
+            bodyContent: ''
+        });
+    }
+
+    // Bước 2: Lấy block body của hàm thông qua đếm ngoặc nhọn
+    for (const method of internalMethods) {
+        let braceCount = 0;
+        let bodyEndIdx = method.bodyStartIdx;
+        let inQuotes = false;
+        let quoteChar = null;
+
+        for (let i = method.bodyStartIdx; i < sourceCode.length; i++) {
+            const char = sourceCode[i];
+
+            // Xử lý chuỗi (string/char literal) để tránh đếm các ngoặc { } ảo nằm trong chuỗi
+            if ((char === '"' || char === "'") && sourceCode[i - 1] !== '\\') {
+                if (!inQuotes) {
+                    inQuotes = true;
+                    quoteChar = char;
+                } else if (char === quoteChar) {
+                    inQuotes = false;
+                    quoteChar = null;
+                }
+            }
+
+            if (!inQuotes) {
+                if (char === '{') {
+                    braceCount++;
+                } else if (char === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                        bodyEndIdx = i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Cắt lấy nội dung bên trong cặp dấu ngoặc {}
+        method.bodyContent = sourceCode.substring(method.bodyStartIdx + 1, bodyEndIdx);
+    }
+
+    // Nạp sẵn tập hợp các tên hàm nội bộ để filter O(1)
+    const internalMethodNames = new Set(internalMethods.map(m => m.name));
+
+    // Bước 3 & Bước 4: Tìm lời gọi hàm và Map quan hệ
+    // Tên bất kỳ theo sau là khoảng trắng và dấu (
+    const callRegex = /([a-zA-Z_]\w*)\s*\(/g;
+
+    for (const method of internalMethods) {
+        if (!callMap.has(method.name)) {
+            callMap.set(method.name, new Set());
+        }
+
+        const body = method.bodyContent;
+        let callMatch;
+        callRegex.lastIndex = 0; // Reset lại state của regex cho vòng lặp exec mới
+
+        while ((callMatch = callRegex.exec(body)) !== null) {
+            const calleeName = callMatch[1];
+
+            // Nếu calleeName nằm trong danh sách các hàm nội bộ của class này
+            // và không phải gọi đệ quy chính mình (tùy vào rule, nếu muốn vẽ đệ quy thì bỏ điều kiện khác name)
+            if (internalMethodNames.has(calleeName) && calleeName !== method.name) {
+                callMap.get(method.name)!.add(calleeName);
+            }
+        }
+    }
+
+    return callMap;
+}
+
+function generateMermaidSyntax(callMap: Map<string, Set<string>>): string {
+    if (callMap.size === 0) return "graph TD;\n    No_Internal_Calls_Found;";
+
+    let syntax = "graph TD;\n";
+    let hasEdges = false;
+
+    callMap.forEach((callees, caller) => {
+        callees.forEach(callee => {
+            const safeCallerId = "node_" + caller.replace(/[^a-zA-Z0-9_]/g, "_");
+            const safeCalleeId = "node_" + callee.replace(/[^a-zA-Z0-9_]/g, "_");
+            syntax += `    ${safeCallerId}["${caller}"] --> ${safeCalleeId}["${callee}"];\n`;
+            hasEdges = true;
+        });
+    });
+
+    if (!hasEdges) return "graph TD;\n    No_Internal_Calls_Found;";
+    return syntax;
+}
 
 const JavaParserTab: React.FC = React.memo(() => {
     const {
@@ -11,7 +128,7 @@ const JavaParserTab: React.FC = React.memo(() => {
         searchTerm, setSearchTerm,
         mermaidResult, setMermaidResult,
         isLoadingAI, setIsLoadingAI,
-        geminiApiKey
+        javaParserAutoAnalyze
     } = useAppStore(useShallow(state => ({
         sourceCode: state.javaParserSource,
         setSourceCode: state.setJavaParserSource,
@@ -21,16 +138,24 @@ const JavaParserTab: React.FC = React.memo(() => {
         setMermaidResult: state.setJavaParserMermaid,
         isLoadingAI: state.javaParserIsLoadingAI,
         setIsLoadingAI: state.setJavaParserIsLoadingAI,
-        geminiApiKey: state.geminiApiKey
+        javaParserAutoAnalyze: state.javaParserAutoAnalyze
     })));
     const [notification, setNotification] = useState<string | null>(null);
+    const [viewMode, setViewMode] = useState<'properties' | 'mermaid'>('properties');
+    const [analyzedSourceCode, setAnalyzedSourceCode] = useState(sourceCode);
 
     const deferredSearch = useDeferredValue(searchTerm);
 
+    React.useEffect(() => {
+        if (javaParserAutoAnalyze) {
+            setAnalyzedSourceCode(sourceCode);
+        }
+    }, [sourceCode, javaParserAutoAnalyze]);
+
     // Existing Property logic
     const parsedFields = useMemo(() => {
-        return parseJavaClass(sourceCode);
-    }, [sourceCode]);
+        return parseJavaClass(analyzedSourceCode);
+    }, [analyzedSourceCode]);
 
     const filteredFields = useMemo(() => {
         if (!deferredSearch) return parsedFields;
@@ -42,75 +167,34 @@ const JavaParserTab: React.FC = React.memo(() => {
         );
     }, [parsedFields, deferredSearch]);
 
-    const copyColumn = (key: 'description' | 'name' | 'type', label: string) => {
-        if (parsedFields.length === 0) return;
-        const text = parsedFields.map((f: any) => f[key]).join('\n');
-        navigator.clipboard.writeText(text);
-        setNotification(`Copied ${label} to clipboard!`);
+    const handleAnalyze = () => {
+        setAnalyzedSourceCode(sourceCode);
+        setViewMode('properties');
+        setNotification('Parsed properties from code.');
         setTimeout(() => setNotification(null), 2000);
     };
 
     const handleGenerateMermaid = async () => {
         if (!sourceCode.trim()) return;
-        if (!geminiApiKey) {
-            setNotification('Please set Gemini API Key in Settings');
-            setTimeout(() => setNotification(null), 3000);
-            return;
-        }
 
         setIsLoadingAI(true);
         try {
-            const genAI = new GoogleGenerativeAI(geminiApiKey);
-            const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+            // Wait slightly so the UI shows 'Loading...' before acorn blocks thread
+            await new Promise(resolve => setTimeout(resolve, 50));
 
-            const prompt = `Bạn là một Kiến trúc sư Phần mềm (Software Architect) xuất sắc. Nhiệm vụ của bạn là đọc đoạn mã nguồn Java tôi cung cấp và chuyển đổi logic của nó thành mã sơ đồ Mermaid (Mermaid.js). Tôi không cần bạn giải thích dài dòng, chỉ cần trả về mã Mermaid nằm trong khối code \\\`\`\`mermaid ... \\\`\`\`.
+            const callMap = analyzeAstToMap(sourceCode);
+            const mermaidScript = generateMermaidSyntax(callMap);
+            setMermaidResult(mermaidScript);
 
-            Hãy tuân thủ nghiêm ngặt các quy tắc phân tích và trình bày sau đây:
-            1. ĐỊNH DẠNG SƠ ĐỒ (Sử dụng Flowchart hoặc Sequence Diagram):
-            - Ưu tiên sử dụng Flowchart (\\\`graph TD\\\`) để mô tả luồng logic tổng thể.
-            - Nếu source code có quá nhiều class gọi qua lại, hãy dùng Sequence Diagram.
-
-            2. XỬ LÝ NHIỀU HÀM (Multiple Functions):
-            - Mỗi hàm \\\`public\\\` (điểm đầu vào) nên được bắt đầu bằng một node riêng.
-            - Nếu các hàm hoạt động hoàn toàn độc lập, hãy tách chúng thành các \\\`subgraph\\\` riêng biệt trong cùng một Flowchart.
-
-            3. XỬ LÝ HÀM LỒNG NHAU (Nested Functions / Call Stack):
-            - Khi Hàm A (hàm lớn) gọi Hàm B (hàm nhỏ), node gọi hàm trong Hàm A phải trỏ đến một \\\`subgraph\\\` hoặc luồng nhánh đại diện cho Hàm B.
-
-            4. XỬ LÝ LOGIC (If/Else, Loop, Try/Catch):
-            - Điều kiện (\\\`if/else\\\`, \\\`switch\\\`): Phải sử dụng node hình thoi \\\`{ }\\\`.
-            - Vòng lặp (\\\`for\\\`, \\\`while\\\`): Phải có đường mũi tên quay ngược lại node bắt đầu.
-            - Ngoại lệ (\\\`try/catch\\\`): Tạo một nhánh riêng cho lỗi với đường nét đứt.
-
-            5. QUY TẮC CÚ PHÁP MERMAID:
-            - Tuyệt đối KHÔNG dùng các ký tự đặc biệt như ngoặc kép (\\\`"\\\`), ngoặc nhọn (\\\`{\\\`, \\\`}\\\`) bên trong text của node mà không có cách ly, vì sẽ làm gãy mã Mermaid. Tránh dùng cặp dấu ngoặc tròn ( ) bên trong text vì đôi khi xung đột cú pháp shape của Mermaid.
-
-            Đây là source code:
-            ${sourceCode}`;
-
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            const text = response.text();
-
-            let mermaidCode = text;
-            const match = text.match(new RegExp('```mermaid([\\s\\S]*?)```'));
-            if (match && match[1]) {
-                mermaidCode = match[1].trim();
-            } else {
-                mermaidCode = text.replace(new RegExp('^```[\\s\\S]*?\\n'), '').replace(new RegExp('```$'), '').trim();
-            }
-
-            if (!mermaidCode.includes('graph ') && !mermaidCode.includes('sequenceDiagram')) {
-                throw new Error("AI did not return a valid Mermaid diagram syntax.");
-            }
-
-            setMermaidResult(mermaidCode);
-        } catch (error) {
-            console.error('Error generating mermaid:', error);
-            setNotification('Error generating mermaid diagram');
+            setNotification('Graph generated successfully!');
+            setTimeout(() => setNotification(null), 3000);
+        } catch (error: any) {
+            console.error('Error parsing AST:', error);
+            setNotification('Syntax Error: Make sure your JS/TS code is valid.');
             setTimeout(() => setNotification(null), 3000);
         } finally {
             setIsLoadingAI(false);
+            setViewMode('mermaid');
         }
     };
 
@@ -135,122 +219,154 @@ const JavaParserTab: React.FC = React.memo(() => {
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={() => copyColumn('description', 'Descriptions')}
-                        className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-black hover:bg-indigo-100 border border-indigo-200 transition-all active:scale-95 shadow-sm"
-                    >
-                        📋 COLS: DESC
-                    </button>
-                    <button
-                        onClick={() => copyColumn('name', 'Names')}
-                        className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-black hover:bg-indigo-100 border border-indigo-200 transition-all active:scale-95 shadow-sm"
-                    >
-                        📋 COLS: NAME
-                    </button>
-                    <button
-                        onClick={() => copyColumn('type', 'Types')}
-                        className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-black hover:bg-indigo-100 border border-indigo-200 transition-all active:scale-95 shadow-sm"
-                    >
-                        📋 COLS: TYPE
-                    </button>
-                    <button
-                        onClick={() => { setSourceCode(''); setSearchTerm(''); setMermaidResult(''); }}
-                        className="px-4 py-2 bg-red-50 text-red-500 rounded-xl text-xs font-black hover:bg-red-100 border border-red-200 transition-all active:scale-95 shadow-sm"
+                        onClick={() => {
+                            setSourceCode('');
+                            setAnalyzedSourceCode('');
+                            setSearchTerm('');
+                            setMermaidResult('');
+                        }}
+                        className="px-4 py-2 bg-red-50 text-red-500 rounded-xl text-xs font-black hover:bg-red-100 border border-red-200 transition-all active:scale-95 shadow-sm flex items-center gap-1"
                     >
                         🗑️ CLEAR ALL
-                    </button>
-                    <button
-                        onClick={handleGenerateMermaid}
-                        disabled={isLoadingAI}
-                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all active:scale-95 shadow-lg flex items-center gap-2 ${isLoadingAI ? 'bg-amber-100 text-amber-400' : 'bg-amber-600 text-white hover:bg-amber-700'}`}
-                    >
-                        {isLoadingAI ? (
-                            <><div className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></div> GENERATING...</>
-                        ) : (
-                            <>🪄 AI MERMAID</>
-                        )}
                     </button>
                 </div>
             </div>
 
             <div className="flex-1 flex gap-4 overflow-hidden">
-                <div className="flex-1 flex flex-col bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                    <div className="bg-gray-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 flex justify-between items-center">
-                        <span>JAVA SOURCE CODE</span>
-                        <span className="text-indigo-400">INPUT AREA</span>
+                {/* LLEFT PANE: INPUT */}
+                <div className="w-1/3 flex flex-col bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 flex justify-between items-center">
+                        <span>JAVA SOURCE CODE <span className="text-indigo-400">INPUT</span></span>
                     </div>
                     <textarea
                         className="flex-1 p-4 font-mono text-sm outline-none resize-none bg-transparent"
-                        placeholder="Paste your Java class source here (DTO/Entity)..."
+                        placeholder="Paste your Java class source here..."
                         value={sourceCode}
                         onChange={e => setSourceCode(e.target.value)}
                     />
                 </div>
 
+                {/* RIGHT PANE: RESULT TABS */}
                 <div className="flex-1 flex flex-col bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                    <div className="bg-gray-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 flex justify-between items-center">
-                        <span>EXTRACTED PROPERTIES</span>
-                        <span className="text-indigo-600 font-black">{filteredFields.length} ITEMS</span>
+                    {/* TABS HEADER */}
+                    <div className="flex items-center bg-gray-50 border-b border-gray-100">
+                        <button
+                            onClick={() => setViewMode('properties')}
+                            className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-colors ${viewMode === 'properties' ? 'text-indigo-600 bg-white border-b-2 border-indigo-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+                        >
+                            EXTRACTED PROPERTIES
+                        </button>
+                        <button
+                            onClick={() => setViewMode('mermaid')}
+                            className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-colors ${viewMode === 'mermaid' ? 'text-amber-600 bg-white border-b-2 border-amber-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+                        >
+                            FUNCTION LOGIC (MERMAID)
+                        </button>
                     </div>
-                    <div className="flex-1 overflow-auto">
-                        <table className="w-full text-left border-collapse">
-                            <thead className="sticky top-0 bg-white/80 backdrop-blur-md shadow-sm z-10">
-                                <tr>
-                                    <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Description</th>
-                                    <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Name</th>
-                                    <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Type</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredFields.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={3} className="px-4 py-20 text-center text-xs text-gray-300 font-bold italic uppercase tracking-widest">
-                                            No fields extracted
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    filteredFields.map((field: any, idx: number) => (
-                                        <tr key={idx} className="hover:bg-indigo-50/30 transition-colors group">
-                                            <td className="px-4 py-2 text-xs font-bold text-gray-600 border-b border-gray-50">
-                                                {field.description}
-                                            </td>
-                                            <td className="px-4 py-2 font-mono text-indigo-600 font-black text-xs border-b border-gray-50">
-                                                {field.name}
-                                            </td>
-                                            <td className="px-4 py-2 font-mono text-gray-500 text-xs border-b border-gray-50">
-                                                {field.type}
-                                            </td>
+
+                    {/* TAB CONTENT: PROPERTIES */}
+                    {viewMode === 'properties' && (
+                        <div className="flex-1 flex flex-col overflow-hidden relative">
+                            <div className="absolute top-0 left-0 right-0 bg-white/80 backdrop-blur-md px-4 py-2 flex justify-between items-center border-b border-gray-50 z-10 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Variables & Types</span>
+                                    {!javaParserAutoAnalyze && (
+                                        <button
+                                            onClick={handleAnalyze}
+                                            className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-md text-[9px] font-black tracking-widest uppercase hover:bg-indigo-100 border border-indigo-200 transition-all active:scale-95"
+                                        >
+                                            ⚡ ANALYZE
+                                        </button>
+                                    )}
+                                </div>
+                                <span className="text-indigo-500 font-bold text-xs bg-indigo-50 px-2 py-1 rounded-md">{filteredFields.length} MATCHES</span>
+                            </div>
+                            <div className="flex-1 overflow-auto pt-10">
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="sticky top-0 bg-white z-10 hidden">
+                                        <tr>
+                                            <th>Description</th>
+                                            <th>Name</th>
+                                            <th>Type</th>
                                         </tr>
-                                    ))
+                                    </thead>
+                                    <tbody>
+                                        {filteredFields.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={3} className="px-4 py-20 text-center text-xs text-gray-300 font-bold italic uppercase tracking-widest">
+                                                    No fields extracted
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            filteredFields.map((field: any, idx: number) => (
+                                                <tr key={idx} className="hover:bg-indigo-50/30 transition-colors group">
+                                                    <td className="px-5 py-3 text-xs font-bold text-gray-600 border-b border-gray-50">
+                                                        {field.description}
+                                                    </td>
+                                                    <td className="px-5 py-3 font-mono text-indigo-600 font-black text-[13px] border-b border-gray-50">
+                                                        {field.name}
+                                                    </td>
+                                                    <td className="px-5 py-3 font-mono text-gray-500 text-xs border-b border-gray-50">
+                                                        {field.type}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* TAB CONTENT: MERMAID */}
+                    {viewMode === 'mermaid' && (
+                        <div className="flex-1 flex flex-col overflow-hidden relative">
+                            <div className="absolute top-0 left-0 right-0 bg-white/80 backdrop-blur-md px-4 py-2 flex justify-between items-center border-b border-gray-50 z-10 shadow-sm">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">AI Logic Diagram</span>
+                                <div className="flex items-center gap-2">
+                                    {mermaidResult && (
+                                        <button
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(mermaidResult);
+                                                setNotification('Copied Mermaid syntax!');
+                                                setTimeout(() => setNotification(null), 2000);
+                                            }}
+                                            className="px-3 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-[9px] font-black tracking-widest uppercase hover:bg-amber-100 border border-amber-200 transition-colors shadow-sm"
+                                        >
+                                            📋 COPY M-SYNTAX
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={handleGenerateMermaid}
+                                        disabled={isLoadingAI}
+                                        className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all shadow-md ${isLoadingAI ? 'bg-amber-100 text-amber-400' : 'bg-amber-600 text-white hover:bg-amber-700 active:scale-95'}`}
+                                    >
+                                        {isLoadingAI ? 'ANALYZING...' : '🪄 GENERATE DIAGRAM'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-auto pt-12 p-6 flex flex-col bg-gray-50/50">
+                                {mermaidResult ? (
+                                    <div className="flex-1 overflow-auto p-4 pt-2 bg-amber-50/10 rounded-2xl border border-amber-100 shadow-inner">
+                                        <Mermaid chart={mermaidResult} />
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 flex flex-col items-center justify-center text-center opacity-70">
+                                        <div className="w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">
+                                            🪄
+                                        </div>
+                                        <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest mb-2">No Diagram Generated</h3>
+                                        <p className="text-xs text-gray-500 font-semibold max-w-sm leading-relaxed">
+                                            Click the <strong>GENERATE DIAGRAM</strong> button in the header to run Regex parser and trace internal function relationships locally.
+                                        </p>
+                                    </div>
                                 )}
-                            </tbody>
-                        </table>
-                    </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
-
-            {mermaidResult && (
-                <div className="flex-1 flex flex-col bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden mt-4 min-h-[400px]">
-                    <div className="bg-amber-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-600 border-b border-amber-100 flex justify-between items-center">
-                        <span>AI GENERATED MERMAID DIAGRAM</span>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => {
-                                    navigator.clipboard.writeText(mermaidResult);
-                                    setNotification('Copied Mermaid syntax!');
-                                    setTimeout(() => setNotification(null), 2000);
-                                }}
-                                className="bg-white px-2 py-1 rounded border border-amber-200 hover:bg-amber-100 transition-colors"
-                            >
-                                📋 COPY SYNTAX
-                            </button>
-                            <button onClick={() => setMermaidResult('')} className="text-amber-400 hover:text-amber-600">✕ CLOSE</button>
-                        </div>
-                    </div>
-                    <div className="flex-1 overflow-auto bg-gray-50/30 p-4">
-                        <Mermaid chart={mermaidResult} />
-                    </div>
-                </div>
-            )}
         </div>
     );
 });

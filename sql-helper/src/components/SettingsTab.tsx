@@ -64,6 +64,7 @@ const SettingsTab: React.FC = React.memo(() => {
         formatRemoveSpaces, setFormatRemoveSpaces,
         formatSqlAppend, setFormatSqlAppend,
         searchStrict, setSearchStrict,
+        javaParserAutoAnalyze, setJavaParserAutoAnalyze,
         translateDeleteChars, setTranslateDeleteChars,
         translateTruncateDuplicate, setTranslateTruncateDuplicate,
         translateStrict, setTranslateStrict,
@@ -115,6 +116,8 @@ const SettingsTab: React.FC = React.memo(() => {
         setFormatSqlAppend: state.setFormatSqlAppend,
         searchStrict: state.searchStrict,
         setSearchStrict: state.setSearchStrict,
+        javaParserAutoAnalyze: state.javaParserAutoAnalyze,
+        setJavaParserAutoAnalyze: state.setJavaParserAutoAnalyze,
         translateDeleteChars: state.translateDeleteChars,
         setTranslateDeleteChars: state.setTranslateDeleteChars,
         translateTruncateDuplicate: state.translateTruncateDuplicate,
@@ -177,6 +180,7 @@ const SettingsTab: React.FC = React.memo(() => {
                 if (settings.translate_delete_chars) store.setTranslateDeleteChars(settings.translate_delete_chars);
                 if (settings.translate_truncate_duplicate !== undefined) store.setTranslateTruncateDuplicate(settings.translate_truncate_duplicate);
                 if (settings.translate_strict !== undefined) store.setTranslateStrict(settings.translate_strict);
+                if (settings.java_parser_auto_analyze !== undefined) store.setJavaParserAutoAnalyze(settings.java_parser_auto_analyze);
 
                 if (settings.excel_header_color) store.setExcelHeaderColor(settings.excel_header_color);
                 if (settings.run_shortcut) store.setRunShortcut(settings.run_shortcut);
@@ -257,6 +261,7 @@ const SettingsTab: React.FC = React.memo(() => {
                 format_remove_spaces: state.formatRemoveSpaces,
                 format_sql_append: state.formatSqlAppend,
                 search_strict: state.searchStrict,
+                java_parser_auto_analyze: state.javaParserAutoAnalyze,
                 ui_highlight_copied: state.uiHighlightCopied,
                 gemini_api_key: geminiApiKey,
                 translate_input: state.translateInputStore,
@@ -840,7 +845,7 @@ const SettingsTab: React.FC = React.memo(() => {
                                             </div>
 
                                             {/* Item 5: Line Height */}
-                                            <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
+                                            <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors border-b border-gray-50/50">
                                                 <div className="flex flex-col gap-1">
                                                     <span className="text-[11px] font-black text-gray-800 uppercase tracking-tight leading-none">Line Height</span>
                                                     <span className="text-[8px] text-gray-400 font-bold uppercase mt-1 leading-tight">Khoảng cách dòng (Quick Translate)</span>
@@ -1122,9 +1127,34 @@ const SettingsTab: React.FC = React.memo(() => {
                             </div>
                         </div>
                     )}
+
+                    {/* JAVA PARSER FEATURE CONFIG */}
+                    {activeSection === 'javaParser' && (
+                        <div className="flex flex-col animate-in fade-in slide-in-from-bottom-2 max-w-5xl">
+                            <SectionHeader title="Java Parser" subtitle="Cài đặt tự động phân tích mã nguồn" icon="☕" />
+
+                            <div className="flex flex-col gap-10">
+                                <div className="flex flex-col gap-4">
+                                    <div className="flex items-center gap-3 ml-2">
+                                        <span className="w-6 h-6 bg-emerald-500 text-white rounded-lg flex items-center justify-center text-[10px] shadow-sm">⚡</span>
+                                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest">Tùy chọn trích xuất (Extraction)</h3>
+                                    </div>
+
+                                    <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm p-5">
+                                        <SettingToggle
+                                            label="Auto Analyze"
+                                            desc="Ngay lập tức hiển thị Extracted Properties mỗi khi nội dung mã nguồn được cập nhật."
+                                            checked={javaParserAutoAnalyze}
+                                            onChange={setJavaParserAutoAnalyze}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
-        </div >
+        </div>
     );
 });
 
