@@ -91,7 +91,9 @@ function analyzeAstToMap(sourceCode: string): Map<string, CallNode[]> {
         const strBody = method.bodyContent;
         let callMatch;
         callRegex.lastIndex = 0;
-        let order = 1;
+
+        // Gộp các lời gọi trùng lặp: Caller gọi strConver() 45 lần → chỉ 1 mũi tên "×45"
+        const calleeTracker = new Map<string, { count: number; firstCond: string }>();
 
         while ((callMatch = callRegex.exec(strBody)) !== null) {
             const calleeName = callMatch[1];
@@ -134,19 +136,66 @@ function analyzeAstToMap(sourceCode: string): Map<string, CallNode[]> {
                     i--;
                 }
 
-                // Gắn nhãn mũi tên
-                let edgeLabel = `${order++}`;
-                if (condText) {
-                    edgeLabel += `<br/>[${truncateLabel(condText, 25)}]`;
+                // Gom vào tracker: chỉ giữ lần đầu tiên có điều kiện
+                if (!calleeTracker.has(calleeName)) {
+                    calleeTracker.set(calleeName, { count: 1, firstCond: condText });
+                } else {
+                    const existing = calleeTracker.get(calleeName)!;
+                    existing.count++;
+                    if (!existing.firstCond && condText) {
+                        existing.firstCond = condText;
+                    }
                 }
-
-                callMap.get(callerName)!.push({ callee: calleeName, label: edgeLabel });
             }
         }
+
+        // Sinh edge đã gộp nhóm
+        let order = 1;
+        calleeTracker.forEach(({ count, firstCond }, calleeName) => {
+            let edgeLabel = `${order++}`;
+            if (firstCond) {
+                edgeLabel += `<br/>[${truncateLabel(firstCond, 25)}]`;
+            }
+            if (count > 1) {
+                edgeLabel += ` ×${count}`;
+            }
+            callMap.get(callerName)!.push({ callee: calleeName, label: edgeLabel });
+        });
 
         // Dọn điểm mù
         if (callMap.get(callerName)?.length === 0) callMap.delete(callerName);
     }
+
+    // === BỘ LỌC LUỒNG CHÍNH (Flow-only filter) ===
+    // Bước 1: Xác định các hàm "lá" (leaf) = hàm KHÔNG gọi bất kỳ hàm nội bộ nào khác
+    // Ví dụ: strConver, decConver, cutword, intConver, changeDecimal...
+    // Những hàm này chỉ là utility nhỏ, không mang ý nghĩa luồng nghiệp vụ
+    const callerSet = new Set(callMap.keys());
+
+    // Bước 2: Đếm xem leaf node bị gọi bởi bao nhiêu caller khác nhau
+    const calleeRefCount = new Map<string, number>();
+    callMap.forEach((edges) => {
+        edges.forEach(edge => {
+            calleeRefCount.set(edge.callee, (calleeRefCount.get(edge.callee) || 0) + 1);
+        });
+    });
+
+    // Bước 3: Lọc bỏ leaf node ra khỏi edges
+    // Giữ lại leaf node CHỈ KHI nó được gọi bởi <= 1 caller (có thể là hàm quan trọng)
+    // Nếu bị gọi bởi >= 2 callers → chắc chắn là utility chung → loại bỏ
+    callMap.forEach((edges, caller) => {
+        const filtered = edges.filter(edge => {
+            const isLeaf = !callerSet.has(edge.callee);
+            if (!isLeaf) return true; // Giữ lại nếu callee cũng là caller (có sub-flow)
+            const refCount = calleeRefCount.get(edge.callee) || 0;
+            return refCount <= 1; // Giữ lại leaf chỉ khi nó unique (gọi bởi 1 hàm duy nhất)
+        });
+        if (filtered.length === 0) {
+            callMap.delete(caller);
+        } else {
+            callMap.set(caller, filtered);
+        }
+    });
 
     return callMap;
 }
