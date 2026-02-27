@@ -74,7 +74,15 @@ const SettingsTab: React.FC = React.memo(() => {
         columnSplitApplyToTable, setColumnSplitApplyToTable,
         uiHighlightCopied, setUiHighlightCopied,
         geminiApiKey, setGeminiApiKey,
-        revertRules, addRevertRule, updateRevertRule, removeRevertRule, resetRevertRule
+        translateIgnoreWords, setTranslateIgnoreWords,
+        revertRules, addRevertRule, updateRevertRule, removeRevertRule, resetRevertRule,
+        focusSearchShortcut, setFocusSearchShortcut,
+        globalSearchShortcut, setGlobalSearchShortcut,
+        quickSettingsShortcut, setQuickSettingsShortcut,
+        navPrevShortcut, setNavPrevShortcut,
+        navNextShortcut, setNavNextShortcut,
+        textCompareSideAName, setTextCompareSideAName,
+        textCompareSideBName, setTextCompareSideBName
     } = useAppStore(useShallow(state => ({
         connections: state.connections,
         setConnections: state.setConnections,
@@ -110,6 +118,10 @@ const SettingsTab: React.FC = React.memo(() => {
         setTextCompareTrimWhitespace: state.setTextCompareTrimWhitespace,
         textCompareAutoCompare: state.textCompareAutoCompare,
         setTextCompareAutoCompare: state.setTextCompareAutoCompare,
+        textCompareSideAName: state.textCompareSideAName,
+        setTextCompareSideAName: state.setTextCompareSideAName,
+        textCompareSideBName: state.textCompareSideBName,
+        setTextCompareSideBName: state.setTextCompareSideBName,
         formatRemoveSpaces: state.formatRemoveSpaces,
         setFormatRemoveSpaces: state.setFormatRemoveSpaces,
         formatSqlAppend: state.formatSqlAppend,
@@ -136,12 +148,24 @@ const SettingsTab: React.FC = React.memo(() => {
         setUiHighlightCopied: state.setUiHighlightCopied,
         geminiApiKey: state.geminiApiKey,
         setGeminiApiKey: state.setGeminiApiKey,
+        translateIgnoreWords: state.translateIgnoreWords,
+        setTranslateIgnoreWords: state.setTranslateIgnoreWords,
+        focusSearchShortcut: state.focusSearchShortcut,
+        setFocusSearchShortcut: state.setFocusSearchShortcut,
+        globalSearchShortcut: state.globalSearchShortcut,
+        setGlobalSearchShortcut: state.setGlobalSearchShortcut,
+        quickSettingsShortcut: state.quickSettingsShortcut,
+        setQuickSettingsShortcut: state.setQuickSettingsShortcut,
+        navPrevShortcut: state.navPrevShortcut,
+        setNavPrevShortcut: state.setNavPrevShortcut,
+        navNextShortcut: state.navNextShortcut,
+        setNavNextShortcut: state.setNavNextShortcut,
         revertRules: state.revertRules,
         setRevertRules: state.setRevertRules,
         addRevertRule: state.addRevertRule,
         updateRevertRule: state.updateRevertRule,
         removeRevertRule: state.removeRevertRule,
-        resetRevertRule: state.resetRevertRule,
+        resetRevertRule: state.resetRevertRule
     })));
 
 
@@ -180,6 +204,7 @@ const SettingsTab: React.FC = React.memo(() => {
                 if (settings.translate_delete_chars) store.setTranslateDeleteChars(settings.translate_delete_chars);
                 if (settings.translate_truncate_duplicate !== undefined) store.setTranslateTruncateDuplicate(settings.translate_truncate_duplicate);
                 if (settings.translate_strict !== undefined) store.setTranslateStrict(settings.translate_strict);
+                if (settings.translate_ignore_words) store.setTranslateIgnoreWords(settings.translate_ignore_words);
                 if (settings.java_parser_auto_analyze !== undefined) store.setJavaParserAutoAnalyze(settings.java_parser_auto_analyze);
 
                 if (settings.excel_header_color) store.setExcelHeaderColor(settings.excel_header_color);
@@ -258,6 +283,10 @@ const SettingsTab: React.FC = React.memo(() => {
                 excel_header_color: excelHeaderColor,
                 run_shortcut: runShortcut,
                 focus_search_shortcut: state.focusSearchShortcut,
+                global_search_shortcut: state.globalSearchShortcut,
+                quick_settings_shortcut: state.quickSettingsShortcut,
+                nav_prev_shortcut: state.navPrevShortcut,
+                nav_next_shortcut: state.navNextShortcut,
                 format_remove_spaces: state.formatRemoveSpaces,
                 format_sql_append: state.formatSqlAppend,
                 search_strict: state.searchStrict,
@@ -265,7 +294,10 @@ const SettingsTab: React.FC = React.memo(() => {
                 ui_highlight_copied: state.uiHighlightCopied,
                 gemini_api_key: geminiApiKey,
                 translate_input: state.translateInputStore,
-                revert_tk_input: state.revertTKInputStore
+                revert_tk_input: state.revertTKInputStore,
+                translate_ignore_words: state.translateIgnoreWords,
+                text_compare_side_a_name: state.textCompareSideAName,
+                text_compare_side_b_name: state.textCompareSideBName
             }
         });
     };
@@ -398,7 +430,7 @@ const SettingsTab: React.FC = React.memo(() => {
 
                 <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar flex flex-col gap-2">
                     <SidebarGroup label="Global / General">
-                        <SidebarItem id="database" label="Connections" icon="🛡️" />
+                        <SidebarItem id="database" label="Database" icon="🛡️" />
                         <SidebarItem id="shortcuts" label="Shortcuts" icon="⚡" />
                         <SidebarItem id="appearance" label="Aesthetics" icon="🎨" />
                     </SidebarGroup>
@@ -406,7 +438,7 @@ const SettingsTab: React.FC = React.memo(() => {
                     <SidebarGroup label="Feature Config">
                         <SidebarItem id="translate" label="Translate Tab" icon="🇯🇵" />
                         <SidebarItem id="revertTK" label="Revert TK" icon="🧩" />
-                        <SidebarItem id="compare" label="Compare" icon="🔍" />
+                        <SidebarItem id="compare" label="Text Compare" icon="🔍" />
                         <SidebarItem id="javaParser" label="Java Parser" icon="☕" />
                     </SidebarGroup>
                 </div>
@@ -592,7 +624,10 @@ const SettingsTab: React.FC = React.memo(() => {
                                                 <span className="text-[11px] font-black text-gray-800 uppercase leading-none">Tab Search Focus</span>
                                                 <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Tìm kiếm nội bộ</span>
                                             </div>
-                                            <div className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-[10px] font-black text-gray-400 shadow-inner">CTRL+F</div>
+                                            <div className="flex items-center gap-3">
+                                                <div className="min-w-[80px] bg-white border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-sm font-black text-primary shadow-inner text-center">{focusSearchShortcut}</div>
+                                                <ShortcutRecorder onRecord={setFocusSearchShortcut} current={focusSearchShortcut} onSave={handleGlobalSave} />
+                                            </div>
                                         </div>
                                         <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
                                             Ưu tiên nhảy vào thanh tìm kiếm của Tab hiện tại (nếu có).
@@ -606,14 +641,17 @@ const SettingsTab: React.FC = React.memo(() => {
                                                 <span className="text-[11px] font-black text-gray-800 uppercase leading-none">Global Search Focus</span>
                                                 <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Tìm kiếm tổng thể</span>
                                             </div>
-                                            <div className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-[10px] font-black text-gray-400 shadow-inner">CTRL+F+F</div>
+                                            <div className="flex items-center gap-3">
+                                                <div className="min-w-[80px] bg-white border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-sm font-black text-primary shadow-inner text-center">{globalSearchShortcut}</div>
+                                                <ShortcutRecorder onRecord={setGlobalSearchShortcut} current={globalSearchShortcut} onSave={handleGlobalSave} />
+                                            </div>
                                         </div>
                                         <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
-                                            Nhấn F hai lần liên tiếp nhảy thẳng lên thanh Global Search.
+                                            Nhấn phím tắt liên tiếp nhảy thẳng lên thanh Global Search.
                                         </div>
                                     </div>
 
-                                    {/* Action 3: Quick Settings */}
+                                    {/* Action 4: Quick Settings */}
                                     <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
                                         <div className="flex items-center justify-between pr-8">
                                             <div className="flex flex-col">
@@ -621,7 +659,8 @@ const SettingsTab: React.FC = React.memo(() => {
                                                 <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Cài đặt nhanh</span>
                                             </div>
                                             <div className="flex items-center gap-3">
-                                                <div className="min-w-[80px] bg-gray-100 border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-sm font-black text-gray-500 shadow-inner text-center">CTRL+SHIFT+S</div>
+                                                <div className="min-w-[80px] bg-white border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-sm font-black text-primary shadow-inner text-center">{quickSettingsShortcut}</div>
+                                                <ShortcutRecorder onRecord={setQuickSettingsShortcut} current={quickSettingsShortcut} onSave={handleGlobalSave} />
                                             </div>
                                         </div>
                                         <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
@@ -629,20 +668,37 @@ const SettingsTab: React.FC = React.memo(() => {
                                         </div>
                                     </div>
 
-                                    {/* Action 4: Tab Navigation */}
+                                    {/* Action 5: Tab Navigation (Prev) */}
                                     <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
                                         <div className="flex items-center justify-between pr-8">
                                             <div className="flex flex-col">
-                                                <span className="text-[11px] font-black text-gray-800 uppercase leading-none">Tab Navigation</span>
-                                                <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Chuyển Tab nhanh</span>
+                                                <span className="text-[11px] font-black text-gray-800 uppercase leading-none">Tab Prev</span>
+                                                <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Quay lại Tab trước</span>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                <div className="bg-gray-100 border border-gray-200 rounded-lg px-2 py-1.5 font-mono text-[10px] font-black text-gray-400 shadow-inner">CTRL+←</div>
-                                                <div className="bg-gray-100 border border-gray-200 rounded-lg px-2 py-1.5 font-mono text-[10px] font-black text-gray-400 shadow-inner">CTRL+→</div>
+                                            <div className="flex items-center gap-3">
+                                                <div className="min-w-[80px] bg-white border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-sm font-black text-primary shadow-inner text-center">{navPrevShortcut}</div>
+                                                <ShortcutRecorder onRecord={setNavPrevShortcut} current={navPrevShortcut} onSave={handleGlobalSave} />
                                             </div>
                                         </div>
                                         <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
-                                            Di chuyển qua lại giữa các Tab chính.
+                                            Chuyển sang Tab bên trái.
+                                        </div>
+                                    </div>
+
+                                    {/* Action 6: Tab Navigation (Next) */}
+                                    <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors">
+                                        <div className="flex items-center justify-between pr-8">
+                                            <div className="flex flex-col">
+                                                <span className="text-[11px] font-black text-gray-800 uppercase leading-none">Tab Next</span>
+                                                <span className="text-[8px] text-gray-400 font-bold uppercase mt-1">Tới Tab tiếp theo</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <div className="min-w-[80px] bg-white border border-gray-200 rounded-lg px-3 py-1.5 font-mono text-sm font-black text-primary shadow-inner text-center">{navNextShortcut}</div>
+                                                <ShortcutRecorder onRecord={setNavNextShortcut} current={navNextShortcut} onSave={handleGlobalSave} />
+                                            </div>
+                                        </div>
+                                        <div className="pl-8 text-[11px] font-bold text-gray-500 leading-relaxed border-l border-gray-100 h-full flex items-center">
+                                            Chuyển sang Tab bên phải.
                                         </div>
                                     </div>
 
@@ -819,8 +875,8 @@ const SettingsTab: React.FC = React.memo(() => {
                                             {/* Item 4 */}
                                             <div className="grid grid-cols-[1fr_1fr] items-center px-6 py-4 hover:bg-gray-50/50 transition-colors border-b border-gray-50/50">
                                                 <SettingToggle
-                                                    label="De-duplicate"
-                                                    desc="Remove identical rows"
+                                                    label="Remove Duplicate"
+                                                    desc="Xóa dòng trùng lặp"
                                                     tooltip="Tự động loại bỏ các dòng kết quả giống hệt nhau để danh sách gọn gàng hơn."
                                                     checked={translateTruncateDuplicate}
                                                     onChange={setTranslateTruncateDuplicate}
@@ -875,7 +931,7 @@ const SettingsTab: React.FC = React.memo(() => {
                                     </div>
 
                                     {/* Sanitize Box */}
-                                    <div className="bg-amber-50/50 p-6 rounded-3xl border border-amber-100">
+                                    <div className="bg-amber-50/50 p-6 rounded-3xl border border-amber-100 mb-6">
                                         <div className="flex items-center gap-3 mb-4">
                                             <div className="w-8 h-8 bg-amber-500 text-white rounded-xl flex items-center justify-center text-sm shadow-lg">✂️</div>
                                             <div>
@@ -894,6 +950,30 @@ const SettingsTab: React.FC = React.memo(() => {
                                             />
                                             <div className="text-[11px] font-bold text-amber-700/60 leading-relaxed flex items-center italic">
                                                 Xóa các ký tự thừa trong input khi bấm Format (Dùng dấu | để ngăn cách).
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Ignore Words Box */}
+                                    <div className="bg-rose-50/50 p-6 rounded-3xl border border-rose-100">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <div className="w-8 h-8 bg-rose-500 text-white rounded-xl flex items-center justify-center text-sm shadow-lg">🚫</div>
+                                            <div>
+                                                <h4 className="text-xs font-black text-rose-900 uppercase tracking-wider">Bỏ qua từ không dịch (Ignore)</h4>
+                                                <p className="text-[9px] text-rose-500 font-bold uppercase">Giữ nguyên các từ này khi dịch nhanh</p>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-[1fr_1fr] gap-8">
+                                            <textarea
+                                                value={translateIgnoreWords}
+                                                onChange={e => setTranslateIgnoreWords(e.target.value)}
+                                                onBlur={handleGlobalSave}
+                                                rows={3}
+                                                className="w-full bg-white border border-rose-200 rounded-2xl px-5 py-3 font-mono text-[10px] shadow-sm outline-none resize-none focus:ring-2 focus:ring-rose-500"
+                                                placeholder="vd: USER_ID, ORDER_DATE hoặc viết mỗi dòng một từ..."
+                                            />
+                                            <div className="text-[11px] font-bold text-rose-700/60 leading-relaxed flex items-center italic">
+                                                Các từ trong danh sách này sẽ không được highlight và dịch (Phân cách bằng dấu phẩy hoặc xuống dòng).
                                             </div>
                                         </div>
                                     </div>
@@ -1052,7 +1132,7 @@ const SettingsTab: React.FC = React.memo(() => {
                     {/* COMPARE FEATURE CONFIG */}
                     {activeSection === 'compare' && (
                         <div className="flex flex-col animate-in fade-in slide-in-from-bottom-2 max-w-5xl">
-                            <SectionHeader title="Compare" subtitle="Cài đặt cho Tab Lab, Schema và Text Compare" icon="🔍" />
+                            <SectionHeader title="Text Compare" subtitle="Cài đặt cho tính năng So sánh văn bản" icon="🔍" />
 
                             <div className="flex flex-col gap-10">
                                 {/* SECTION 1: DATABASE / LAB */}
@@ -1101,12 +1181,36 @@ const SettingsTab: React.FC = React.memo(() => {
                                                 <SettingToggle label="Trim Whitespace" desc="Xóa khoảng trắng đầu cuối" tooltip="Tự động cắt bỏ các ký tự khoảng trắng ở đầu và cuối mỗi dòng trước khi so sánh." checked={textCompareTrimWhitespace} onChange={setTextCompareTrimWhitespace} />
                                                 <SettingToggle label="Auto-Compare" desc="Tự động so sánh khi nhập" tooltip="Tự động thực hiện so sánh ngay khi bạn đang nhập hoặc dán văn bản vào." checked={textCompareAutoCompare} onChange={setTextCompareAutoCompare} />
                                                 <SettingToggle label="Sort Text" desc="Ưu tiên sắp xếp dòng giống nhau" tooltip="Sắp xếp lại văn bản ở cả hai bên để các dòng giống nhau nằm cạnh nhau, giúp dễ so sánh hơn." checked={textCompareSort} onChange={setTextCompareSort} />
+                                                <div className="flex flex-col gap-2 pt-2 border-t border-gray-100 italic">
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="text-[9px] font-black text-rose-900 uppercase tracking-widest">Tên đại diện Side A</label>
+                                                        <input
+                                                            type="text"
+                                                            value={textCompareSideAName}
+                                                            onChange={e => setTextCompareSideAName(e.target.value)}
+                                                            onBlur={handleGlobalSave}
+                                                            className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-mono outline-none focus:ring-2 focus:ring-rose-500"
+                                                            placeholder="Mặc định: Side A"
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="text-[9px] font-black text-rose-900 uppercase tracking-widest">Tên đại diện Side B</label>
+                                                        <input
+                                                            type="text"
+                                                            value={textCompareSideBName}
+                                                            onChange={e => setTextCompareSideBName(e.target.value)}
+                                                            onBlur={handleGlobalSave}
+                                                            className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-mono outline-none focus:ring-2 focus:ring-rose-500"
+                                                            placeholder="Mặc định: Side B"
+                                                        />
+                                                    </div>
+                                                </div>
                                             </div>
 
                                             {/* Pre-processing Settings */}
                                             <div className="p-4 flex flex-col gap-4 bg-gray-50/30">
                                                 <SettingToggle label="SQL.append format" desc="Loại bỏ sql.append" tooltip="Tương tự Translate tab, bóc tách SQL từ code Java/C#." checked={textCompareRemoveAppend} onChange={setTextCompareRemoveAppend} />
-                                                <SettingToggle label="Consolidation" desc="Gộp dòng trùng lặp" tooltip="Loại bỏ các dòng bị lặp lại trong cùng một bên dữ liệu." checked={textCompareTruncateDuplicate} onChange={setTextCompareTruncateDuplicate} />
+                                                <SettingToggle label="Remove Duplicate" desc="Gộp dòng trùng lặp" tooltip="Loại bỏ các dòng bị lặp lại trong cùng một bên dữ liệu." checked={textCompareTruncateDuplicate} onChange={setTextCompareTruncateDuplicate} />
                                                 <SettingToggle label="Remove Empty Lines" desc="Xóa các dòng trống" tooltip="Tự động xóa bỏ các dòng không có nội dung hoặc chỉ chứa bộ khoảng trắng." checked={textCompareRemoveEmptyLines} onChange={setTextCompareRemoveEmptyLines} />
 
                                                 <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">

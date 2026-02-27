@@ -71,8 +71,8 @@ export interface LabStatement {
 }
 
 export interface AppState {
-    activeTab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'revert-tk' | 'text-compare' | 'java-parser' | 'compare-suite';
-    setActiveTab: (tab: 'params' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'revert-tk' | 'text-compare' | 'java-parser' | 'compare-suite') => void;
+    activeTab: 'database' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'revert-tk' | 'text-compare' | 'java-parser' | 'compare-suite';
+    setActiveTab: (tab: 'database' | 'lab' | 'compare' | 'generate' | 'settings' | 'translate' | 'revert-tk' | 'text-compare' | 'java-parser' | 'compare-suite') => void;
 
     logFileContent: string;
     setLogFileContent: (content: string) => void;
@@ -110,6 +110,14 @@ export interface AppState {
     setRunShortcut: (shortcut: string) => void;
     focusSearchShortcut: string;
     setFocusSearchShortcut: (shortcut: string) => void;
+    globalSearchShortcut: string;
+    setGlobalSearchShortcut: (shortcut: string) => void;
+    quickSettingsShortcut: string;
+    setQuickSettingsShortcut: (shortcut: string) => void;
+    navPrevShortcut: string;
+    setNavPrevShortcut: (shortcut: string) => void;
+    navNextShortcut: string;
+    setNavNextShortcut: (shortcut: string) => void;
 
     formatRemoveSpaces: boolean;
     setFormatRemoveSpaces: (val: boolean) => void;
@@ -171,6 +179,9 @@ export interface AppState {
     translateStrict: boolean;
     setTranslateStrict: (val: boolean) => void;
 
+    translateIgnoreWords: string;
+    setTranslateIgnoreWords: (val: string) => void;
+
     globalSearchTerm: string;
     setGlobalSearchTerm: (term: string) => void;
 
@@ -194,6 +205,10 @@ export interface AppState {
     setTextCompareExpectedInput: (val: string) => void;
     textCompareCurrentInput: string;
     setTextCompareCurrentInput: (val: string) => void;
+    textCompareSideAName: string;
+    setTextCompareSideAName: (val: string) => void;
+    textCompareSideBName: string;
+    setTextCompareSideBName: (val: string) => void;
 
     // Shared RevertTK Inputs/State
     revertTKInputStore: string;
@@ -226,8 +241,11 @@ export interface AppState {
     translateDictionaryLimit: number;
     setTranslateDictionaryLimit: (val: number | ((prev: number) => number)) => void;
 
-    compareSubTab: 'data' | 'schema' | 'text' | 'generate';
-    setCompareSubTab: (tab: 'data' | 'schema' | 'text' | 'generate') => void;
+    compareSubTab: 'text';
+    setCompareSubTab: (tab: 'text') => void;
+
+    databaseSubTab: 'replace' | 'data' | 'schema' | 'generate';
+    setDatabaseSubTab: (tab: 'replace' | 'data' | 'schema' | 'generate') => void;
 
     javaParserSource: string;
     setJavaParserSource: (val: string) => void;
@@ -252,7 +270,7 @@ export interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-    activeTab: 'params',
+    activeTab: 'database',
     setActiveTab: (tab) => set({ activeTab: tab }),
 
     translateSubTab: 'dictionary',
@@ -264,8 +282,11 @@ export const useAppStore = create<AppState>((set) => ({
         translateDictionaryLimit: typeof val === 'function' ? val(state.translateDictionaryLimit) : val
     })),
 
-    compareSubTab: 'data',
+    compareSubTab: 'text',
     setCompareSubTab: (tab) => set({ compareSubTab: tab }),
+
+    databaseSubTab: 'replace',
+    setDatabaseSubTab: (tab) => set({ databaseSubTab: tab }),
 
     javaParserSource: '',
     setJavaParserSource: (val) => set({ javaParserSource: val }),
@@ -337,10 +358,18 @@ export const useAppStore = create<AppState>((set) => ({
     excelHeaderColor: '#4F46E5',
     setExcelHeaderColor: (val) => set({ excelHeaderColor: val }),
 
-    runShortcut: 'F5',
+    runShortcut: 'CTRL+ENTER',
     setRunShortcut: (val) => set({ runShortcut: val }),
     focusSearchShortcut: 'CTRL+F',
     setFocusSearchShortcut: (val) => set({ focusSearchShortcut: val }),
+    globalSearchShortcut: 'CTRL+F+F',
+    setGlobalSearchShortcut: (val) => set({ globalSearchShortcut: val }),
+    quickSettingsShortcut: 'CTRL+SHIFT+S',
+    setQuickSettingsShortcut: (val) => set({ quickSettingsShortcut: val }),
+    navPrevShortcut: 'CTRL+ARROWLEFT',
+    setNavPrevShortcut: (val) => set({ navPrevShortcut: val }),
+    navNextShortcut: 'CTRL+ARROWRIGHT',
+    setNavNextShortcut: (val) => set({ navNextShortcut: val }),
 
     formatRemoveSpaces: true,
     setFormatRemoveSpaces: (val) => set({ formatRemoveSpaces: val }),
@@ -435,6 +464,9 @@ export const useAppStore = create<AppState>((set) => ({
     translateStrict: false,
     setTranslateStrict: (val) => set({ translateStrict: val }),
 
+    translateIgnoreWords: '',
+    setTranslateIgnoreWords: (val) => set({ translateIgnoreWords: val }),
+
     globalSearchTerm: '',
     setGlobalSearchTerm: (term) => set({ globalSearchTerm: term }),
 
@@ -456,6 +488,10 @@ export const useAppStore = create<AppState>((set) => ({
     setTextCompareExpectedInput: (val) => set({ textCompareExpectedInput: val }),
     textCompareCurrentInput: '',
     setTextCompareCurrentInput: (val) => set({ textCompareCurrentInput: val }),
+    textCompareSideAName: 'Side A',
+    setTextCompareSideAName: (val) => set({ textCompareSideAName: val }),
+    textCompareSideBName: 'Side B',
+    setTextCompareSideBName: (val) => set({ textCompareSideBName: val }),
 
     revertTKInputStore: '',
     setRevertTKInputStore: (val) => set({ revertTKInputStore: val }),

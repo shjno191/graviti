@@ -81,6 +81,13 @@ pub struct AppSettings {
     pub search_strict: Option<bool>,
     pub ui_highlight_copied: Option<bool>,
     pub gemini_api_key: Option<String>,
+    pub translate_ignore_words: Option<String>,
+    pub global_search_shortcut: Option<String>,
+    pub quick_settings_shortcut: Option<String>,
+    pub nav_prev_shortcut: Option<String>,
+    pub nav_next_shortcut: Option<String>,
+    pub text_compare_side_a_name: Option<String>,
+    pub text_compare_side_b_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -422,6 +429,13 @@ fn load_db_settings() -> Result<AppSettings, String> {
         search_strict: None,
         ui_highlight_copied: None,
         gemini_api_key: None,
+        translate_ignore_words: None,
+        global_search_shortcut: Some("CTRL+F+F".to_string()),
+        quick_settings_shortcut: Some("CTRL+SHIFT+S".to_string()),
+        nav_prev_shortcut: Some("CTRL+ARROWLEFT".to_string()),
+        nav_next_shortcut: Some("CTRL+ARROWRIGHT".to_string()),
+        text_compare_side_a_name: Some("Side A".to_string()),
+        text_compare_side_b_name: Some("Side B".to_string()),
     };
 
     if !config_path.exists() {

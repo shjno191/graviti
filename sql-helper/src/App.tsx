@@ -7,26 +7,28 @@ import { useRef, Suspense, lazy, useDeferredValue } from 'react';
 import { HighlightText } from './utils/uiHelpers';
 
 // Lazy load heavy components for faster initial load
-const ParamsTab = lazy(() => import('./components/ParamsTab'));
+const DatabaseTab = lazy(() => import('./components/DatabaseTab'));
 const JavaParserTab = lazy(() => import('./components/JavaParserTab'));
 const SettingsTab = lazy(() => import('./components/SettingsTab'));
 const CompareSuiteTab = lazy(() => import('./components/CompareSuiteTab'));
 const TranslateTab = lazy(() => import('./components/TranslateTab'));
 
 const TABS_CONFIG = [
-    // Main Tabs
-    { id: 'params', label: '📝 Parameter Replacement', keywords: ['param', 'replacement', 'query', 'sql', '📝'], type: 'main' },
-    { id: 'compare-suite', label: '📊 Compare Suite', keywords: ['compare', 'database', 'suite', '📊'], type: 'main' },
+    { id: 'database', label: '🛡️ Database', keywords: ['database', 'param', 'replacement', 'query', 'sql', '🛡️'], type: 'main' },
+    { id: 'compare-suite', label: '📊 Text Compare', keywords: ['compare', 'suite', 'text', 'diff', '📊'], type: 'main' },
     { id: 'translate', label: '🇯🇵 Translate', keywords: ['translate', 'jap', 'jp', '🇯🇵'], type: 'main' },
     { id: 'revert-tk', label: '🔄 Revert TK', keywords: ['revert', 'tk', 'code', 'converter', '🔄'], type: 'main' },
     { id: 'java-parser', label: '☕ Java Parser', keywords: ['java', 'parser', 'class', 'dto', '☕'], type: 'main' },
     { id: 'settings', label: '⚙️ Settings', keywords: ['settings', 'config', 'setup', 'database connection', '⚙️'], type: 'main' },
 
-    // Sub Tabs for Compare
-    { id: 'compare-data', label: '📊 Compare Data (Lab)', keywords: ['compare', 'data', 'lab', 'database', 'sql', '📊'], type: 'sub', parent: 'compare-suite', subId: 'data' },
-    { id: 'compare-schema', label: '🔍 Schema Comparator', keywords: ['compare', 'schema', 'table', 'structure', 'database', '🔍'], type: 'sub', parent: 'compare-suite', subId: 'schema' },
+    // Sub Tabs for Database
+    { id: 'database-replace', label: '📝 Parameter Replacement', keywords: ['param', 'replacement', 'query', 'sql', '📝'], type: 'sub', parent: 'database', subId: 'replace' },
+    { id: 'database-data', label: '📊 Compare Data (Lab)', keywords: ['compare', 'data', 'lab', 'database', 'sql', '📊'], type: 'sub', parent: 'database', subId: 'data' },
+    { id: 'database-schema', label: '🔍 Schema Comparator', keywords: ['compare', 'schema', 'table', 'structure', 'database', '🔍'], type: 'sub', parent: 'database', subId: 'schema' },
+    { id: 'database-generate', label: '⚡ Generate SELECT', keywords: ['compare', 'generate', 'select', 'sql', '⚡'], type: 'sub', parent: 'database', subId: 'generate' },
+
+    // No sub tabs for Compare (it's unified now)
     { id: 'compare-text', label: '📝 Text Compare', keywords: ['compare', 'text', 'diff', 'string', '📝'], type: 'sub', parent: 'compare-suite', subId: 'text' },
-    { id: 'compare-generate', label: '⚡ Generate SELECT', keywords: ['compare', 'generate', 'select', 'sql', '⚡'], type: 'sub', parent: 'compare-suite', subId: 'generate' },
 
     // Sub Tabs for Translate
     { id: 'translate-dictionary', label: '📖 Dictionary', keywords: ['translate', 'dictionary', 'search', 'words', '📖'], type: 'sub', parent: 'translate', subId: 'dictionary' },
@@ -38,7 +40,10 @@ function App() {
         activeTab, setActiveTab,
         globalSearchTerm, setGlobalSearchTerm,
         translateSubTab, setTranslateSubTab,
-        compareSubTab, setCompareSubTab
+        compareSubTab, setCompareSubTab,
+        setDatabaseSubTab,
+        focusSearchShortcut, globalSearchShortcut, quickSettingsShortcut,
+        navPrevShortcut, navNextShortcut
     } = useAppStore(useShallow(state => ({
         activeTab: state.activeTab,
         setActiveTab: state.setActiveTab,
@@ -47,7 +52,14 @@ function App() {
         translateSubTab: state.translateSubTab,
         setTranslateSubTab: state.setTranslateSubTab,
         compareSubTab: state.compareSubTab,
-        setCompareSubTab: state.setCompareSubTab
+        setCompareSubTab: state.setCompareSubTab,
+        databaseSubTab: state.databaseSubTab,
+        setDatabaseSubTab: state.setDatabaseSubTab,
+        focusSearchShortcut: state.focusSearchShortcut,
+        globalSearchShortcut: state.globalSearchShortcut,
+        quickSettingsShortcut: state.quickSettingsShortcut,
+        navPrevShortcut: state.navPrevShortcut,
+        navNextShortcut: state.navNextShortcut
     })));
 
     const searchInputRef = useRef<HTMLInputElement>(null);
@@ -63,6 +75,7 @@ function App() {
         setActiveTab(sug.jumpTab || sug.parent || sug.id);
         if (sug.tSub) setTranslateSubTab(sug.tSub);
         if (sug.cSub) setCompareSubTab(sug.cSub);
+        if (sug.dSub) setDatabaseSubTab(sug.dSub);
         if (sug.settingsSection) useAppStore.getState().setSettingsSection(sug.settingsSection);
 
         if (sug.type?.startsWith('tab')) {
@@ -116,6 +129,10 @@ function App() {
                     if (settings.excel_header_color) store.setExcelHeaderColor(settings.excel_header_color);
                     if (settings.run_shortcut) store.setRunShortcut(settings.run_shortcut);
                     if (settings.focus_search_shortcut) store.setFocusSearchShortcut(settings.focus_search_shortcut);
+                    if (settings.global_search_shortcut) store.setGlobalSearchShortcut(settings.global_search_shortcut);
+                    if (settings.quick_settings_shortcut) store.setQuickSettingsShortcut(settings.quick_settings_shortcut);
+                    if (settings.nav_prev_shortcut) store.setNavPrevShortcut(settings.nav_prev_shortcut);
+                    if (settings.nav_next_shortcut) store.setNavNextShortcut(settings.nav_next_shortcut);
 
                     if (settings.text_compare_delete_chars) store.setTextCompareDeleteChars(settings.text_compare_delete_chars);
                     if (settings.text_compare_remove_append !== undefined) store.setTextCompareRemoveAppend(settings.text_compare_remove_append);
@@ -125,11 +142,18 @@ function App() {
                     if (settings.text_compare_ignore_case !== undefined) store.setTextCompareIgnoreCase(settings.text_compare_ignore_case);
                     if (settings.text_compare_trim_whitespace !== undefined) store.setTextCompareTrimWhitespace(settings.text_compare_trim_whitespace);
                     if (settings.text_compare_auto_compare !== undefined) store.setTextCompareAutoCompare(settings.text_compare_auto_compare);
+                    if (settings.text_compare_side_a_name) store.setTextCompareSideAName(settings.text_compare_side_a_name);
+                    if (settings.text_compare_side_b_name) store.setTextCompareSideBName(settings.text_compare_side_b_name);
 
                     if (settings.translate_strict !== undefined) store.setTranslateStrict(settings.translate_strict);
                     if (settings.translate_input) store.setTranslateInputStore(settings.translate_input);
                     if (settings.revert_tk_input) store.setRevertTKInputStore(settings.revert_tk_input);
                     if (settings.java_parser_auto_analyze !== undefined) store.setJavaParserAutoAnalyze(settings.java_parser_auto_analyze);
+                    if (settings.translate_delete_chars) store.setTranslateDeleteChars(settings.translate_delete_chars);
+                    if (settings.translate_truncate_duplicate !== undefined) store.setTranslateTruncateDuplicate(settings.translate_truncate_duplicate);
+                    if (settings.translate_ignore_words) store.setTranslateIgnoreWords(settings.translate_ignore_words);
+                    if (settings.gemini_api_key) store.setGeminiApiKey(settings.gemini_api_key);
+                    if (settings.ui_highlight_copied !== undefined) store.setUiHighlightCopied(settings.ui_highlight_copied);
                 }
             } catch (err) {
                 console.error('Failed to load DB settings:', err);
@@ -161,7 +185,7 @@ function App() {
                 combo += e.key.toUpperCase();
             }
 
-            if (combo === 'CTRL+F') {
+            if (combo === focusSearchShortcut) {
                 e.preventDefault();
                 const now = Date.now();
                 const isDoubleTap = now - lastSearchKeyTime.current < 500;
@@ -180,25 +204,34 @@ function App() {
                 }
             }
 
-            // Tab Navigation: Ctrl + Left/Right (Back/Forward)
-            if (e.ctrlKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+            if (combo === globalSearchShortcut) {
                 e.preventDefault();
-                const tabs = ['params', 'compare-suite', 'translate', 'revert-tk', 'java-parser', 'settings'] as const;
+                setTimeout(() => {
+                    searchInputRef.current?.focus();
+                    searchInputRef.current?.select();
+                }, 50);
+            }
+
+            // Tab Navigation: Configurable Shortcuts
+            if (combo === navNextShortcut || combo === navPrevShortcut) {
+                e.preventDefault();
+                const tabs = ['database', 'compare-suite', 'translate', 'revert-tk', 'java-parser', 'settings'] as const;
                 const currentIndex = tabs.indexOf(activeTab as any);
                 if (currentIndex !== -1) {
-                    const direction = e.key === 'ArrowRight' ? 1 : -1;
+                    const direction = combo === navNextShortcut ? 1 : -1;
                     const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
                     setActiveTab(tabs[nextIndex]);
                 }
             }
 
-            // Quick Settings Shortcut: Ctrl + Shift + S
-            if (combo === 'CTRL+SHIFT+S') {
+            // Quick Settings Shortcut: Configurable
+            if (combo === quickSettingsShortcut) {
                 e.preventDefault();
                 let section: any = 'database';
                 if (activeTab === 'translate') section = 'translate';
                 else if (activeTab === 'revert-tk') section = 'revertTK';
-                else if (activeTab === 'compare-suite' || activeTab === 'lab' || activeTab === 'compare' || activeTab === 'text-compare' || activeTab === 'generate') section = 'compare';
+                else if (activeTab === 'compare-suite') section = 'compare';
+                else if (activeTab === 'database') section = 'database';
 
                 useAppStore.getState().setSettingsSection(section);
                 setActiveTab('settings');
@@ -246,47 +279,11 @@ function App() {
             jumpTab: t.parent || t.id,
             tSub: t.parent === 'translate' ? t.subId : undefined,
             cSub: t.parent === 'compare-suite' ? t.subId : undefined,
-            desc: t.type === 'sub' ? `Part of ${t.parent?.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}` : 'Main Navigation'
+            dSub: t.parent === 'database' ? t.subId : undefined,
+            desc: t.type === 'main' ? 'Main Navigation' : 'Tab Navigation'
         }));
 
-        const store = useAppStore.getState();
-
-        // Query Groups (Params)
-        const paramMatches = store.queryGroups.filter(q =>
-            q.statementId?.toLowerCase().includes(term) || q.sql?.toLowerCase().includes(term)
-        ).map(q => ({
-            id: `param-${q.id}`,
-            label: `📝 ${q.statementId || 'SQL Fragment'}`,
-            type: 'param',
-            jumpTab: 'params',
-            desc: `Found in Parameter Replacement`
-        }));
-
-        // Database Connections (Settings)
-        const connMatches = store.connections.filter(c =>
-            c.name.toLowerCase().includes(term) || c.host.toLowerCase().includes(term) || c.database.toLowerCase().includes(term)
-        ).map(c => ({
-            id: `conn-${c.id}`,
-            label: `⚙️ ${c.name}`,
-            type: 'conn',
-            jumpTab: 'settings',
-            settingsSection: 'database' as const,
-            desc: `Found in Database Settings: ${c.host}`
-        }));
-
-        // Schema Tables (Compare Suite -> Schema)
-        const schemaMatches = store.compareTables.filter(t =>
-            t.tableName?.toLowerCase().includes(term) || t.content?.toLowerCase().includes(term)
-        ).map(t => ({
-            id: `schema-${t.id}`,
-            label: `🔍 Table: ${t.tableName || 'Unnamed'}`,
-            type: 'schema',
-            jumpTab: 'compare-suite',
-            cSub: 'schema' as const,
-            desc: `Found in Schema Comparator`
-        }));
-
-        const combined = [...tabMatches, ...paramMatches, ...connMatches, ...schemaMatches].slice(0, 8);
+        const combined = [...tabMatches].slice(0, 8);
 
         setSuggestions(combined);
         setSelectedSugIdx(combined.length > 0 ? 0 : -1);
@@ -317,7 +314,7 @@ function App() {
 
             <div className="flex items-center border-b border-gray-200 bg-white sticky top-0 z-[100] shadow-sm px-5 mt-3 mx-5 rounded-xl border">
                 <div className="flex flex-1 overflow-x-auto custom-scrollbar-hidden scroll-smooth">
-                    {(['params', 'compare-suite', 'translate', 'revert-tk', 'java-parser', 'settings'] as const).map((tab) => (
+                    {(['database', 'compare-suite', 'translate', 'revert-tk', 'java-parser', 'settings'] as const).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
@@ -328,8 +325,8 @@ function App() {
                                     : 'text-gray-400 border-transparent hover:text-gray-600 hover:bg-gray-50'
                             )}
                         >
-                            {tab === 'params' && <><span>📝</span> Params</>}
-                            {tab === 'compare-suite' && <><span>📊</span> Compare</>}
+                            {tab === 'database' && <><span>🛡️</span> Database</>}
+                            {tab === 'compare-suite' && <><span>📊</span> Text Compare</>}
                             {tab === 'translate' && <><span>🇯🇵</span> Translate</>}
                             {tab === 'revert-tk' && <><span>🔄</span> Revert</>}
                             {tab === 'java-parser' && <><span>☕</span> Java</>}
@@ -407,10 +404,10 @@ function App() {
 
             <main className="flex-1 container mx-auto max-w-full px-5 overflow-hidden flex flex-col">
                 <Suspense fallback={<div className="flex-1 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-200 border-b-indigo-600"></div></div>}>
-                    <div className={`flex-1 flex flex-col h-full ${activeTab === 'params' ? '' : 'hidden'}`}>
-                        <ParamsTab />
+                    <div className={`flex-1 flex flex-col h-full ${activeTab === 'database' ? '' : 'hidden'}`}>
+                        <DatabaseTab />
                     </div>
-                    <div className={`flex-1 flex flex-col h-full ${(activeTab === 'compare-suite' || activeTab === 'lab' || activeTab === 'compare' || activeTab === 'text-compare' || activeTab === 'generate') ? '' : 'hidden'}`}>
+                    <div className={`flex-1 flex flex-col h-full ${activeTab === 'compare-suite' ? '' : 'hidden'}`}>
                         <CompareSuiteTab />
                     </div>
                     <div className={`flex-1 flex flex-col h-full ${(activeTab === 'translate' || activeTab === 'revert-tk') ? '' : 'hidden'}`}>

@@ -191,7 +191,8 @@ const getSegmentsFromText = (
     translationDict: any[],
     selections: Record<string, string>,
     prefix: string = 't',
-    strict: boolean = false
+    strict: boolean = false,
+    ignoreWords: string[] = []
 ): TranslatedSegment[] => {
     if (!line) return [];
 
@@ -199,7 +200,10 @@ const getSegmentsFromText = (
     const normLine = normalizeText(line);
     const lowerNormLine = normLine.toLowerCase();
 
+    const lowerIgnoreWords = ignoreWords.map(w => w.trim().toLowerCase()).filter(Boolean);
+
     for (const item of translationDict) {
+        if (lowerIgnoreWords.includes(item.phrase.toLowerCase())) continue;
         if (!lowerNormLine.includes(item.phrase)) continue;
         if (strict && lowerNormLine !== item.phrase) continue;
 
@@ -695,7 +699,8 @@ const RevertTKGrid = React.memo((props: {
     hoveredKey: string | null,
     onHover: (uid: string | null, key: string | null) => void,
     copiedKey: string | null,
-    onCopySegment: (key: string) => void
+    onCopySegment: (key: string) => void,
+    ignoreWordsArray: string[]
 }) => {
     if (!props.content) return null;
 
@@ -763,10 +768,10 @@ const RevertTKGrid = React.memo((props: {
             row.map((cellText, cIdx) => {
                 const text = cellText || '';
                 if (!text) return null;
-                return getSegmentsFromText(text, `${rIdx}-${cIdx}`, props.translationDict, props.selections, 'rg');
+                return getSegmentsFromText(text, `${rIdx}-${cIdx}`, props.translationDict, props.selections, 'rg', false, props.ignoreWordsArray);
             })
         );
-    }, [dataRows, props.translationDict, props.selections]);
+    }, [dataRows, props.translationDict, props.selections, props.ignoreWordsArray]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -1049,7 +1054,7 @@ const TranslateTab: React.FC = React.memo(() => {
         selections, setSelections,
         data, setData,
         dictionaryLimit, setDictionaryLimit,
-        translateStrict
+        translateStrict, ignoreWords
     } = useAppStore(useShallow(state => ({
         activeTab: state.activeTab,
         setActiveTab: state.setActiveTab,
@@ -1100,7 +1105,8 @@ const TranslateTab: React.FC = React.memo(() => {
         data: state.translateDataStore,
         setData: state.setTranslateDataStore,
         dictionaryLimit: state.translateDictionaryLimit,
-        setDictionaryLimit: state.setTranslateDictionaryLimit
+        setDictionaryLimit: state.setTranslateDictionaryLimit,
+        ignoreWords: state.translateIgnoreWords
     })));
 
     const deferredGlobalSearchTerm = React.useDeferredValue(globalSearchTerm);
@@ -1129,6 +1135,9 @@ const TranslateTab: React.FC = React.memo(() => {
     const deferredRevertTKInput = useDeferredValue(revertTKInput);
     const deferredSearchTerm = useDeferredValue(searchTerm);
     const deferredRevertTKResult = useDeferredValue(revertTKResult);
+    const ignoreWordsArray = useMemo(() => {
+        return ignoreWords.split(/,|\n/).map((w: string) => w.trim()).filter(Boolean);
+    }, [ignoreWords]);
 
     // Memoize the dictionary transformation
     const translationDict = useMemo(() => {
@@ -1175,23 +1184,23 @@ const TranslateTab: React.FC = React.memo(() => {
     const translatedLines = useMemo(() => {
         if (!deferredBulkInput) return [];
         return deferredBulkInput.split('\n').map((line, lIdx) => ({
-            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 't', translateStrict)
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 't', translateStrict, ignoreWordsArray)
         }));
-    }, [deferredBulkInput, translationDict, selections, translateStrict]);
+    }, [deferredBulkInput, translationDict, selections, translateStrict, ignoreWordsArray]);
 
     const revertTKTranslatedLines = useMemo(() => {
         if (!deferredRevertTKInput) return [];
         return deferredRevertTKInput.split('\n').map((line, lIdx) => ({
-            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rt', translateStrict)
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rt', translateStrict, ignoreWordsArray)
         }));
-    }, [deferredRevertTKInput, translationDict, selections, translateStrict]);
+    }, [deferredRevertTKInput, translationDict, selections, translateStrict, ignoreWordsArray]);
 
     const revertTKResultTranslatedLines = useMemo(() => {
         if (!deferredRevertTKResult) return [];
         return deferredRevertTKResult.split('\n').map((line, lIdx) => ({
-            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rr', translateStrict)
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rr', translateStrict, ignoreWordsArray)
         }));
-    }, [deferredRevertTKResult, translationDict, selections, translateStrict]);
+    }, [deferredRevertTKResult, translationDict, selections, translateStrict, ignoreWordsArray]);
     const defaultColWidth = 100;
     const parsedCustomWidths = useMemo<Record<number, number>>(() => {
         const widths: Record<number, number> = {};
@@ -2153,6 +2162,7 @@ const TranslateTab: React.FC = React.memo(() => {
                                                 setSegmentCopyFeedback(key);
                                                 setTimeout(() => setSegmentCopyFeedback(null), 1000);
                                             }}
+                                            ignoreWordsArray={ignoreWordsArray}
                                         />
                                     ) : (
                                         <div className="flex-1 overflow-hidden relative flex">

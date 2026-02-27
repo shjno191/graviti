@@ -3,19 +3,18 @@ import { clsx } from 'clsx';
 import { compareOrdered, compareUnordered } from '../utils/diffLogic';
 import { useAppStore } from '../store/useAppStore';
 import { HighlightText } from '../utils/uiHelpers';
+import { invoke } from '@tauri-apps/api/tauri';
 
 const InputWithLineNumbers = ({
     value,
     onChange,
     placeholder,
     label,
-    globalTerm
 }: {
     value: string,
     onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void,
     placeholder: string,
     label: string,
-    globalTerm?: string
 }) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const lineNumbersRef = useRef<HTMLDivElement>(null);
@@ -61,7 +60,7 @@ const InputWithLineNumbers = ({
                         className="absolute inset-0 p-3 pointer-events-none font-mono text-xs whitespace-pre overflow-hidden leading-6 text-transparent z-0 break-all"
                         aria-hidden="true"
                     >
-                        <HighlightText text={value} globalTerm={globalTerm} />
+                        <HighlightText text={value} />
                     </div>
 
                     <textarea
@@ -86,7 +85,6 @@ export function TextCompareTab() {
     const textCompareTruncateDuplicate = useAppStore(state => state.textCompareTruncateDuplicate);
     const textCompareRemoveEmptyLines = useAppStore(state => state.textCompareRemoveEmptyLines);
     const uiHighlightCopied = useAppStore(state => state.uiHighlightCopied);
-    const globalSearchTerm = useAppStore(state => state.globalSearchTerm);
 
     // Shared text compare settings
     const isOrdered = useAppStore(state => state.textCompareOrdered);
@@ -101,11 +99,68 @@ export function TextCompareTab() {
     const setCurrentInput = useAppStore(state => state.setTextCompareCurrentInput);
     const setActiveTab = useAppStore(state => state.setActiveTab);
     const setTranslateSubTab = useAppStore(state => state.setTranslateSubTab);
-
-    const deferredGlobalSearchTerm = React.useDeferredValue(globalSearchTerm);
+    const sideAName = useAppStore(state => state.textCompareSideAName);
+    const sideBName = useAppStore(state => state.textCompareSideBName);
+    const setSideAName = useAppStore(state => state.setTextCompareSideAName);
+    const setSideBName = useAppStore(state => state.setTextCompareSideBName);
 
     const [diffInputs, setDiffInputs] = useState({ expected: '', current: '' });
     const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+    const [editingSide, setEditingSide] = useState<'A' | 'B' | null>(null);
+
+    const handleRenameBlur = async () => {
+        setEditingSide(null);
+        // Persist to backend
+        const state = useAppStore.getState();
+        try {
+            await invoke('save_db_settings', {
+                settings: {
+                    connections: state.connections,
+                    translate_file_path: state.translateFilePath,
+                    column_split_enabled: state.columnSplitEnabled,
+                    column_split_keywords: state.columnSplitKeywords,
+                    revert_tk_col_config: state.revertTKColConfig,
+                    column_split_apply_to_text: state.columnSplitApplyToText,
+                    column_split_apply_to_table: state.columnSplitApplyToTable,
+                    revert_tk_delete_chars: state.revertTKDeleteChars,
+                    revert_tk_mapping: state.revertTKMapping,
+                    revert_rules: state.revertRules,
+                    text_compare_delete_chars: state.textCompareDeleteChars,
+                    text_compare_remove_append: state.textCompareRemoveAppend,
+                    text_compare_truncate_duplicate: state.textCompareTruncateDuplicate,
+                    text_compare_remove_empty_lines: state.textCompareRemoveEmptyLines,
+                    text_compare_sort: state.textCompareSort,
+                    text_compare_ordered: state.textCompareOrdered,
+                    text_compare_ignore_case: state.textCompareIgnoreCase,
+                    text_compare_trim_whitespace: state.textCompareTrimWhitespace,
+                    text_compare_auto_compare: state.textCompareAutoCompare,
+                    translate_delete_chars: state.translateDeleteChars,
+                    translate_truncate_duplicate: state.translateTruncateDuplicate,
+                    translate_strict: state.translateStrict,
+                    excel_header_color: state.excelHeaderColor,
+                    run_shortcut: state.runShortcut,
+                    focus_search_shortcut: state.focusSearchShortcut,
+                    global_search_shortcut: state.globalSearchShortcut,
+                    quick_settings_shortcut: state.quickSettingsShortcut,
+                    nav_prev_shortcut: state.navPrevShortcut,
+                    nav_next_shortcut: state.navNextShortcut,
+                    format_remove_spaces: state.formatRemoveSpaces,
+                    format_sql_append: state.formatSqlAppend,
+                    search_strict: state.searchStrict,
+                    java_parser_auto_analyze: state.javaParserAutoAnalyze,
+                    ui_highlight_copied: state.uiHighlightCopied,
+                    gemini_api_key: state.geminiApiKey,
+                    translate_input: state.translateInputStore,
+                    revert_tk_input: state.revertTKInputStore,
+                    translate_ignore_words: state.translateIgnoreWords,
+                    text_compare_side_a_name: state.textCompareSideAName,
+                    text_compare_side_b_name: state.textCompareSideBName
+                }
+            });
+        } catch (e) {
+            console.error('Failed to auto-save name:', e);
+        }
+    };
 
     // Processing Logic
     const preprocessText = (text: string) => {
@@ -190,9 +245,12 @@ export function TextCompareTab() {
     };
 
     const handleSwap = () => {
-        const temp = expectedInput;
+        const tempText = expectedInput;
+        const tempName = sideAName;
         setExpectedInput(currentInput);
-        setCurrentInput(temp);
+        setSideAName(sideBName);
+        setCurrentInput(tempText);
+        setSideBName(tempName);
     };
 
     const handleClear = () => {
@@ -232,18 +290,16 @@ export function TextCompareTab() {
             {/* Top Inputs Section - More compact height */}
             <div className="flex gap-4 min-h-0 basis-[30%] shrink-0">
                 <InputWithLineNumbers
-                    label="Side A"
+                    label={sideAName}
                     value={expectedInput}
                     onChange={(e) => setExpectedInput(e.target.value)}
-                    placeholder="Paste text A here..."
-                    globalTerm={deferredGlobalSearchTerm}
+                    placeholder={`Paste ${sideAName} here...`}
                 />
                 <InputWithLineNumbers
-                    label="Side B"
+                    label={sideBName}
                     value={currentInput}
                     onChange={(e) => setCurrentInput(e.target.value)}
-                    placeholder="Paste text B here..."
-                    globalTerm={deferredGlobalSearchTerm}
+                    placeholder={`Paste ${sideBName} here...`}
                 />
             </div>
 
@@ -258,28 +314,14 @@ export function TextCompareTab() {
 
                 <div className="h-6 w-px bg-gray-200 mx-2"></div>
 
-                <button
-                    onClick={handleSwap}
-                    className="p-2 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors border border-gray-100"
-                    title="Swap A & B"
-                >
-                    🔄
-                </button>
-
-                <button
-                    onClick={handleClear}
-                    className="p-2 bg-gray-50 text-red-500 rounded-lg hover:bg-red-50 transition-colors border border-gray-100"
-                    title="Clear All"
-                >
-                    🗑️
-                </button>
+                <div className="h-6 w-px bg-gray-200 mx-2"></div>
 
                 <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-tighter text-gray-400 ml-4">
                     <span className="flex items-center gap-1.5 bg-red-50 text-red-600 px-2 py-1 rounded-md border border-red-100">
-                        MISSING A: {diffResult.missingLines.length}
+                        MISSING {sideAName}: {diffResult.missingLines.length}
                     </span>
                     <span className="flex items-center gap-1.5 bg-green-50 text-green-600 px-2 py-1 rounded-md border border-green-100">
-                        EXTRA B: {diffResult.extraLines.length}
+                        EXTRA {sideBName}: {diffResult.extraLines.length}
                     </span>
                     {copyFeedback && (
                         <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded animate-pulse">
@@ -288,7 +330,25 @@ export function TextCompareTab() {
                     )}
                 </div>
 
-                <div className="ml-auto flex items-center gap-3">
+                <div className="ml-auto flex items-center gap-2">
+                    <button
+                        onClick={handleSwap}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors border border-gray-100 text-[10px] font-black uppercase"
+                        title="Swap A & B"
+                    >
+                        🔄 SWAP
+                    </button>
+
+                    <button
+                        onClick={handleClear}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 text-red-500 rounded-lg hover:bg-red-50 transition-colors border border-gray-100 text-[10px] font-black uppercase"
+                        title="Clear All"
+                    >
+                        🗑️ CLEAR
+                    </button>
+
+                    <div className="w-px h-6 bg-gray-200 mx-1"></div>
+
                     <button
                         onClick={() => {
                             setActiveTab('translate');
@@ -308,13 +368,47 @@ export function TextCompareTab() {
             <div className="flex-1 flex gap-4 min-h-0 min-w-0">
                 <div className="flex-1 border border-gray-200 rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden">
                     <div className="flex bg-gray-50/80 backdrop-blur-sm border-b border-gray-200 text-[10px] font-black text-gray-400 uppercase tracking-widest sticky top-0 z-10">
-                        <div className="w-1/2 px-4 py-2 border-r border-gray-100 flex items-center justify-between min-w-0">
-                            <span className="cursor-help" data-tooltip="Kết quả xử lý từ Side A (Nội dung mong đợi)">SIDE A</span>
-                            <button onClick={(e) => handleCopy(e, diffInputs.expected, 'A')} className="text-[9px] text-indigo-400 hover:text-indigo-600 bg-white px-1.5 rounded border border-gray-100 shadow-xs shrink-0">COPY ALL</button>
+                        <div className="w-1/2 px-4 py-2 border-r border-gray-100 flex items-center justify-between min-w-0 h-10">
+                            {editingSide === 'A' ? (
+                                <input
+                                    autoFocus
+                                    className="bg-white border border-indigo-300 rounded px-2 py-0.5 text-indigo-600 focus:ring-1 focus:ring-indigo-500 outline-none w-full mr-4"
+                                    value={sideAName}
+                                    onChange={(e) => setSideAName(e.target.value)}
+                                    onBlur={handleRenameBlur}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleRenameBlur()}
+                                />
+                            ) : (
+                                <span
+                                    className="cursor-pointer hover:text-indigo-600 transition-colors truncate pr-4 flex-1"
+                                    onClick={() => setEditingSide('A')}
+                                    title="Click to rename"
+                                >
+                                    {sideAName}
+                                </span>
+                            )}
+                            <button onClick={(e) => handleCopy(e, diffInputs.expected, sideAName)} className="text-[9px] text-indigo-400 hover:text-indigo-600 bg-white px-1.5 rounded border border-gray-100 shadow-xs shrink-0">COPY ALL</button>
                         </div>
-                        <div className="w-1/2 px-4 py-2 flex items-center justify-between min-w-0">
-                            <span className="cursor-help" data-tooltip="Kết quả xử lý từ Side B (Nội dung thực tế)">SIDE B</span>
-                            <button onClick={(e) => handleCopy(e, diffInputs.current, 'B')} className="text-[9px] text-green-400 hover:text-green-600 bg-white px-1.5 rounded border border-gray-100 shadow-xs shrink-0">COPY ALL</button>
+                        <div className="w-1/2 px-4 py-2 flex items-center justify-between min-w-0 h-10">
+                            {editingSide === 'B' ? (
+                                <input
+                                    autoFocus
+                                    className="bg-white border border-indigo-300 rounded px-2 py-0.5 text-indigo-600 focus:ring-1 focus:ring-indigo-500 outline-none w-full mr-4"
+                                    value={sideBName}
+                                    onChange={(e) => setSideBName(e.target.value)}
+                                    onBlur={handleRenameBlur}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleRenameBlur()}
+                                />
+                            ) : (
+                                <span
+                                    className="cursor-pointer hover:text-green-600 transition-colors truncate pr-4 flex-1"
+                                    onClick={() => setEditingSide('B')}
+                                    title="Click to rename"
+                                >
+                                    {sideBName}
+                                </span>
+                            )}
+                            <button onClick={(e) => handleCopy(e, diffInputs.current, sideBName)} className="text-[9px] text-green-400 hover:text-green-600 bg-white px-1.5 rounded border border-gray-100 shadow-xs shrink-0">COPY ALL</button>
                         </div>
                     </div>
 
@@ -325,17 +419,17 @@ export function TextCompareTab() {
                                 <div
                                     className={clsx(
                                         'w-1/2 px-4 py-1.5 border-r border-gray-50 overflow-hidden relative cursor-copy transition-all active:bg-red-50 min-w-0',
-                                        line.type === 'removed' ? 'bg-red-50 text-red-900 border-l-4 border-l-red-400' : (line.type === 'same' ? 'text-gray-600' : 'bg-gray-50/30 opacity-40')
+                                        line.type === 'removed' ? 'bg-red-50 text-red-900 border-l-4 border-l-red-400' : (line.type === 'same' ? 'text-gray-600 bg-blue-50' : 'bg-gray-50/30 opacity-40')
                                     )}
-                                    title={line.type !== 'added' ? "Click to copy line A" : ""}
-                                    onClick={(e) => line.type !== 'added' && handleCopy(e, line.text || '', 'LINE A')}
+                                    title={line.type === 'same' ? "This line is identical in both sides" : (line.type !== 'added' ? `Click to copy line ${sideAName}` : "")}
+                                    onClick={(e) => line.type !== 'added' && handleCopy(e, line.text || '', `LINE ${sideAName}`)}
                                 >
                                     <div className="flex gap-3 min-w-0">
                                         <span className="w-8 text-[10px] text-gray-300 select-none text-right shrink-0 py-0.5">
                                             {line.originalIndex !== undefined ? line.originalIndex + 1 : ''}
                                         </span>
                                         <div className="flex-1 overflow-x-auto custom-scrollbar-hidden whitespace-pre leading-relaxed text-[11px]">
-                                            {line.type !== 'added' ? <HighlightText text={line.text || ''} globalTerm={deferredGlobalSearchTerm} /> : ''}
+                                            {line.type !== 'added' ? <HighlightText text={line.text || ''} /> : ''}
                                         </div>
                                     </div>
                                 </div>
@@ -344,17 +438,17 @@ export function TextCompareTab() {
                                 <div
                                     className={clsx(
                                         'w-1/2 px-4 py-1.5 overflow-hidden relative cursor-copy transition-all active:bg-green-50 min-w-0',
-                                        line.type === 'added' ? 'bg-green-50 text-green-900 border-l-4 border-l-green-400' : (line.type === 'same' ? 'text-gray-600' : 'bg-gray-50/30 opacity-40')
+                                        line.type === 'added' ? 'bg-green-50 text-green-900 border-l-4 border-l-green-400' : (line.type === 'same' ? 'text-gray-600 bg-blue-50' : 'bg-gray-50/30 opacity-40')
                                     )}
-                                    title={line.type !== 'removed' ? "Click to copy line B" : ""}
-                                    onClick={(e) => line.type !== 'removed' && handleCopy(e, line.currentText ?? line.text ?? '', 'LINE B')}
+                                    title={line.type === 'same' ? "This line is identical in both sides" : (line.type !== 'removed' ? `Click to copy line ${sideBName}` : "")}
+                                    onClick={(e) => line.type !== 'removed' && handleCopy(e, line.currentText ?? line.text ?? '', `LINE ${sideBName}`)}
                                 >
                                     <div className="flex gap-3 min-w-0">
                                         <span className="w-8 text-[10px] text-gray-300 select-none text-right shrink-0 py-0.5">
                                             {line.currentIndex !== undefined ? line.currentIndex + 1 : ''}
                                         </span>
                                         <div className="flex-1 overflow-x-auto custom-scrollbar-hidden whitespace-pre leading-relaxed text-[11px]">
-                                            {line.type !== 'removed' ? <HighlightText text={(line.currentText ?? line.text) || ''} globalTerm={deferredGlobalSearchTerm} /> : ''}
+                                            {line.type !== 'removed' ? <HighlightText text={(line.currentText ?? line.text) || ''} /> : ''}
                                         </div>
                                     </div>
                                 </div>
@@ -372,8 +466,8 @@ export function TextCompareTab() {
                 {/* Compact Analysis Panel */}
                 <div className="w-72 flex flex-col gap-4 overflow-hidden shrink-0">
                     <div className="flex-1 border border-gray-200 rounded-2xl bg-white shadow-lg overflow-hidden flex flex-col">
-                        <div className="p-3 bg-red-50 border-b border-red-100 font-black text-[10px] text-red-600 uppercase tracking-widest flex justify-between items-center cursor-help" data-tooltip="Danh sách các dòng chỉ xuất hiện ở Side A mà Side B không có.">
-                            MISSING IN B
+                        <div className="p-3 bg-red-50 border-b border-red-100 font-black text-[10px] text-red-600 uppercase tracking-widest flex justify-between items-center cursor-help" data-tooltip={`Danh sách các dòng chỉ xuất hiện ở ${sideAName} mà ${sideBName} không có.`}>
+                            MISSING IN {sideBName}
                             <span className="bg-red-600 text-white px-2 rounded-full">{diffResult.missingLines.length}</span>
                         </div>
                         <div className="flex-1 overflow-auto p-2 space-y-1 custom-scrollbar">
@@ -387,8 +481,8 @@ export function TextCompareTab() {
                     </div>
 
                     <div className="flex-1 border border-gray-200 rounded-2xl bg-white shadow-lg overflow-hidden flex flex-col">
-                        <div className="p-3 bg-green-50 border-b border-green-100 font-black text-[10px] text-green-600 uppercase tracking-widest flex justify-between items-center cursor-help" data-tooltip="Danh sách các dòng tăng thêm ở Side B so với Side A.">
-                            EXTRA IN B
+                        <div className="p-3 bg-green-50 border-b border-green-100 font-black text-[10px] text-green-600 uppercase tracking-widest flex justify-between items-center cursor-help" data-tooltip={`Danh sách các dòng tăng thêm ở ${sideBName} so với ${sideAName}.`}>
+                            EXTRA IN {sideBName}
                             <span className="bg-green-600 text-white px-2 rounded-full">{diffResult.extraLines.length}</span>
                         </div>
                         <div className="flex-1 overflow-auto p-2 space-y-1 custom-scrollbar">
