@@ -15,7 +15,7 @@ interface TranslateEntry {
 }
 
 interface TranslatedSegment {
-    type: 'text' | 'phrase';
+    type: 'text' | 'phrase' | 'ignored';
     text: string;
     original: string;
     key: string;
@@ -55,6 +55,19 @@ const MemoizedSegment = React.memo(({ seg, hoveredUid, hoveredKey, onHover, onCl
     globalTerm?: string
 }) => {
     if (seg.type === 'text') return <HighlightText text={seg.text} globalTerm={globalTerm} />;
+
+    if (seg.type === 'ignored') {
+        return (
+            <span key={seg.uid} className="inline-flex items-center group/ign relative mx-0.5">
+                <span className="text-gray-500 line-through decoration-gray-300 decoration-1"><HighlightText text={seg.text} globalTerm={globalTerm} /></span>
+                <span className="text-red-500 font-bold ml-[1px] cursor-help">*</span>
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 opacity-0 group-hover/ign:opacity-100 transition-opacity bg-gray-800 text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap z-[9999] pointer-events-none select-none font-bold">
+                    Ignore case
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                </div>
+            </span>
+        );
+    }
 
     const isCopied = copiedKey === seg.key;
     const elementRef = useRef<HTMLSpanElement>(null);
@@ -138,7 +151,7 @@ const HighlighterOverlay = React.memo(({
                                         ? 'text-indigo-900 underline decoration-2 underline-offset-4 bg-indigo-200/50'
                                         : 'text-indigo-500 underline decoration-1 underline-offset-4 bg-indigo-100/30')
                                     : 'text-indigo-600/40 underline decoration-px underline-offset-4 bg-indigo-50/10')
-                                : 'text-gray-800'}`}
+                                : seg.type === 'ignored' ? 'text-gray-400 bg-gray-100/30 line-through decoration-gray-300' : 'text-gray-800'}`}
                         >
                             <HighlightText text={seg.original} globalTerm={globalTerm} />
                         </span>
@@ -192,18 +205,37 @@ const getSegmentsFromText = (
     selections: Record<string, string>,
     prefix: string = 't',
     strict: boolean = false,
-    ignoreWords: string[] = []
+    ignoreItems: { word: string, regex: RegExp }[] = []
 ): TranslatedSegment[] => {
     if (!line) return [];
 
-    const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string }[] = [];
+    const matches: { start: number, end: number, replacements: string[], phrase: string, dictKey: string, isIgnored: boolean }[] = [];
     const normLine = normalizeText(line);
     const lowerNormLine = normLine.toLowerCase();
 
-    const lowerIgnoreWords = ignoreWords.map(w => w.trim().toLowerCase()).filter(Boolean);
+    // Search for ignored words first
+    for (const item of ignoreItems) {
+        item.regex.lastIndex = 0;
+        let match;
+        while ((match = item.regex.exec(normLine)) !== null) {
+            const start = match.index;
+            const end = start + item.word.length;
+            if (!matches.some(m => (start < m.end && end > m.start))) {
+                matches.push({
+                    start,
+                    end,
+                    replacements: [line.substring(start, end)],
+                    phrase: line.substring(start, end),
+                    dictKey: item.word,
+                    isIgnored: true
+                });
+            }
+            if (item.word.length === 0) break;
+        }
+    }
 
     for (const item of translationDict) {
-        if (lowerIgnoreWords.includes(item.phrase.toLowerCase())) continue;
+        if (ignoreItems.some(ig => ig.word === item.phrase.toLowerCase())) continue;
         if (!lowerNormLine.includes(item.phrase)) continue;
         if (strict && lowerNormLine !== item.phrase) continue;
 
@@ -218,7 +250,8 @@ const getSegmentsFromText = (
                     end,
                     replacements: item.replacements,
                     phrase: line.substring(start, end),
-                    dictKey: item.phrase
+                    dictKey: item.phrase,
+                    isIgnored: false
                 });
             }
             if (item.phrase.length === 0) break;
@@ -237,15 +270,27 @@ const getSegmentsFromText = (
         }
         const selectionKey = `vkey-${encodeURIComponent(match.dictKey || match.phrase)}`;
         const posKey = `${prefix}-phr-${lIdx}-${match.start}`;
-        segments.push({
-            type: 'phrase',
-            text: selections[selectionKey] || match.replacements[0],
-            original: match.phrase,
-            key: selectionKey,
-            uid: posKey,
-            isMultiple: match.replacements.length > 1,
-            options: match.replacements
-        });
+        if (match.isIgnored) {
+            segments.push({
+                type: 'ignored',
+                text: match.phrase,
+                original: match.phrase,
+                key: posKey,
+                uid: posKey,
+                isMultiple: false,
+                options: []
+            });
+        } else {
+            segments.push({
+                type: 'phrase',
+                text: selections[selectionKey] || match.replacements[0],
+                original: match.phrase,
+                key: selectionKey,
+                uid: posKey,
+                isMultiple: match.replacements.length > 1,
+                options: match.replacements
+            });
+        }
         lastIndex = match.end;
     });
 
@@ -700,7 +745,7 @@ const RevertTKGrid = React.memo((props: {
     onHover: (uid: string | null, key: string | null) => void,
     copiedKey: string | null,
     onCopySegment: (key: string) => void,
-    ignoreWordsArray: string[]
+    ignoreItems: { word: string, regex: RegExp }[]
 }) => {
     if (!props.content) return null;
 
@@ -768,10 +813,10 @@ const RevertTKGrid = React.memo((props: {
             row.map((cellText, cIdx) => {
                 const text = cellText || '';
                 if (!text) return null;
-                return getSegmentsFromText(text, `${rIdx}-${cIdx}`, props.translationDict, props.selections, 'rg', false, props.ignoreWordsArray);
+                return getSegmentsFromText(text, `${rIdx}-${cIdx}`, props.translationDict, props.selections, 'rg', false, props.ignoreItems);
             })
         );
-    }, [dataRows, props.translationDict, props.selections, props.ignoreWordsArray]);
+    }, [dataRows, props.translationDict, props.selections, props.ignoreItems]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -1135,8 +1180,15 @@ const TranslateTab: React.FC = React.memo(() => {
     const deferredRevertTKInput = useDeferredValue(revertTKInput);
     const deferredSearchTerm = useDeferredValue(searchTerm);
     const deferredRevertTKResult = useDeferredValue(revertTKResult);
-    const ignoreWordsArray = useMemo(() => {
-        return ignoreWords.split(/,|\n/).map((w: string) => w.trim()).filter(Boolean);
+    const ignoreItems = useMemo(() => {
+        return ignoreWords.split(/,|\n/)
+            .map((w: string) => w.trim().toLowerCase())
+            .filter(Boolean)
+            .map((word: string) => ({
+                word,
+                regex: new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+            }))
+            .sort((a, b) => b.word.length - a.word.length);
     }, [ignoreWords]);
 
     // Memoize the dictionary transformation
@@ -1184,23 +1236,23 @@ const TranslateTab: React.FC = React.memo(() => {
     const translatedLines = useMemo(() => {
         if (!deferredBulkInput) return [];
         return deferredBulkInput.split('\n').map((line, lIdx) => ({
-            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 't', translateStrict, ignoreWordsArray)
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 't', translateStrict, ignoreItems)
         }));
-    }, [deferredBulkInput, translationDict, selections, translateStrict, ignoreWordsArray]);
+    }, [deferredBulkInput, translationDict, selections, translateStrict, ignoreItems]);
 
     const revertTKTranslatedLines = useMemo(() => {
         if (!deferredRevertTKInput) return [];
         return deferredRevertTKInput.split('\n').map((line, lIdx) => ({
-            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rt', translateStrict, ignoreWordsArray)
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rt', translateStrict, ignoreItems)
         }));
-    }, [deferredRevertTKInput, translationDict, selections, translateStrict, ignoreWordsArray]);
+    }, [deferredRevertTKInput, translationDict, selections, translateStrict, ignoreItems]);
 
     const revertTKResultTranslatedLines = useMemo(() => {
         if (!deferredRevertTKResult) return [];
         return deferredRevertTKResult.split('\n').map((line, lIdx) => ({
-            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rr', translateStrict, ignoreWordsArray)
+            segments: getSegmentsFromText(line, lIdx, translationDict, selections, 'rr', translateStrict, ignoreItems)
         }));
-    }, [deferredRevertTKResult, translationDict, selections, translateStrict, ignoreWordsArray]);
+    }, [deferredRevertTKResult, translationDict, selections, translateStrict, ignoreItems]);
     const defaultColWidth = 100;
     const parsedCustomWidths = useMemo<Record<number, number>>(() => {
         const widths: Record<number, number> = {};
@@ -2162,7 +2214,7 @@ const TranslateTab: React.FC = React.memo(() => {
                                                 setSegmentCopyFeedback(key);
                                                 setTimeout(() => setSegmentCopyFeedback(null), 1000);
                                             }}
-                                            ignoreWordsArray={ignoreWordsArray}
+                                            ignoreItems={ignoreItems}
                                         />
                                     ) : (
                                         <div className="flex-1 overflow-hidden relative flex">

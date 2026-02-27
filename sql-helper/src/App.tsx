@@ -10,7 +10,7 @@ import { HighlightText } from './utils/uiHelpers';
 const DatabaseTab = lazy(() => import('./components/DatabaseTab'));
 const JavaParserTab = lazy(() => import('./components/JavaParserTab'));
 const SettingsTab = lazy(() => import('./components/SettingsTab'));
-const CompareSuiteTab = lazy(() => import('./components/CompareSuiteTab'));
+const TextCompareTab = lazy(() => import('./components/TextCompareTab'));
 const TranslateTab = lazy(() => import('./components/TranslateTab'));
 
 const TABS_CONFIG = [
@@ -26,9 +26,6 @@ const TABS_CONFIG = [
     { id: 'database-data', label: '📊 Compare Data (Lab)', keywords: ['compare', 'data', 'lab', 'database', 'sql', '📊'], type: 'sub', parent: 'database', subId: 'data' },
     { id: 'database-schema', label: '🔍 Schema Comparator', keywords: ['compare', 'schema', 'table', 'structure', 'database', '🔍'], type: 'sub', parent: 'database', subId: 'schema' },
     { id: 'database-generate', label: '⚡ Generate SELECT', keywords: ['compare', 'generate', 'select', 'sql', '⚡'], type: 'sub', parent: 'database', subId: 'generate' },
-
-    // No sub tabs for Compare (it's unified now)
-    { id: 'compare-text', label: '📝 Text Compare', keywords: ['compare', 'text', 'diff', 'string', '📝'], type: 'sub', parent: 'compare-suite', subId: 'text' },
 
     // Sub Tabs for Translate
     { id: 'translate-dictionary', label: '📖 Dictionary', keywords: ['translate', 'dictionary', 'search', 'words', '📖'], type: 'sub', parent: 'translate', subId: 'dictionary' },
@@ -408,7 +405,7 @@ function App() {
                         <DatabaseTab />
                     </div>
                     <div className={`flex-1 flex flex-col h-full ${activeTab === 'compare-suite' ? '' : 'hidden'}`}>
-                        <CompareSuiteTab />
+                        <TextCompareTab />
                     </div>
                     <div className={`flex-1 flex flex-col h-full ${(activeTab === 'translate' || activeTab === 'revert-tk') ? '' : 'hidden'}`}>
                         <TranslateTab />

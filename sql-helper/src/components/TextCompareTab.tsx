@@ -10,11 +10,19 @@ const InputWithLineNumbers = ({
     onChange,
     placeholder,
     label,
+    onLabelChange,
+    onLabelBlur,
+    isEditingLabel,
+    onLabelClick,
 }: {
     value: string,
     onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void,
     placeholder: string,
     label: string,
+    onLabelChange?: (newName: string) => void,
+    onLabelBlur?: () => void,
+    isEditingLabel?: boolean,
+    onLabelClick?: () => void,
 }) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const lineNumbersRef = useRef<HTMLDivElement>(null);
@@ -35,11 +43,27 @@ const InputWithLineNumbers = ({
 
     return (
         <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex justify-between items-center mb-2">
-                <label className="font-bold text-gray-700 cursor-help" data-tooltip="Dán nội dung gốc hoặc nội dung cần so sánh vào đây.">
-                    {label}
-                </label>
-                <span className="text-gray-400 text-xs font-mono">{lineCount} lines</span>
+            <div className="flex justify-between items-center mb-1">
+                <div className="flex-1">
+                    {isEditingLabel ? (
+                        <input
+                            autoFocus
+                            className="bg-white border border-indigo-300 rounded px-2 py-0.5 text-xs text-indigo-600 focus:ring-1 focus:ring-indigo-500 outline-none w-1/2"
+                            value={label}
+                            onChange={(e) => onLabelChange?.(e.target.value)}
+                            onBlur={onLabelBlur}
+                            onKeyDown={(e) => e.key === 'Enter' && onLabelBlur?.()}
+                        />
+                    ) : (
+                        <label
+                            className="font-black text-[10px] text-gray-400 uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors"
+                            onClick={onLabelClick}
+                        >
+                            {label}
+                        </label>
+                    )}
+                </div>
+                <span className="text-gray-400 text-[10px] font-mono whitespace-nowrap">{lineCount} lines</span>
             </div>
 
             <div className="flex-1 flex border border-gray-300 rounded overflow-hidden focus-within:ring-2 focus-within:ring-primary focus-within:border-primary min-h-0 bg-white shadow-sm relative">
@@ -106,7 +130,7 @@ export function TextCompareTab() {
 
     const [diffInputs, setDiffInputs] = useState({ expected: '', current: '' });
     const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
-    const [editingSide, setEditingSide] = useState<'A' | 'B' | null>(null);
+    const [editingSide, setEditingSide] = useState<'A' | 'B' | 'A_INPUT' | 'B_INPUT' | null>(null);
 
     const handleRenameBlur = async () => {
         setEditingSide(null);
@@ -294,12 +318,20 @@ export function TextCompareTab() {
                     value={expectedInput}
                     onChange={(e) => setExpectedInput(e.target.value)}
                     placeholder={`Paste ${sideAName} here...`}
+                    isEditingLabel={editingSide === 'A_INPUT'}
+                    onLabelChange={setSideAName}
+                    onLabelBlur={handleRenameBlur}
+                    onLabelClick={() => setEditingSide('A_INPUT')}
                 />
                 <InputWithLineNumbers
                     label={sideBName}
                     value={currentInput}
                     onChange={(e) => setCurrentInput(e.target.value)}
                     placeholder={`Paste ${sideBName} here...`}
+                    isEditingLabel={editingSide === 'B_INPUT'}
+                    onLabelChange={setSideBName}
+                    onLabelBlur={handleRenameBlur}
+                    onLabelClick={() => setEditingSide('B_INPUT')}
                 />
             </div>
 
@@ -322,6 +354,9 @@ export function TextCompareTab() {
                     </span>
                     <span className="flex items-center gap-1.5 bg-green-50 text-green-600 px-2 py-1 rounded-md border border-green-100">
                         EXTRA {sideBName}: {diffResult.extraLines.length}
+                    </span>
+                    <span className="flex items-center gap-1.5 bg-orange-50 text-orange-600 px-2 py-1 rounded-md border border-orange-100">
+                        DUP A: {diffResult.duplicateLinesA.length} | B: {diffResult.duplicateLinesB.length}
                     </span>
                     {copyFeedback && (
                         <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded animate-pulse">
@@ -382,7 +417,6 @@ export function TextCompareTab() {
                                 <span
                                     className="cursor-pointer hover:text-indigo-600 transition-colors truncate pr-4 flex-1"
                                     onClick={() => setEditingSide('A')}
-                                    title="Click to rename"
                                 >
                                     {sideAName}
                                 </span>
@@ -403,7 +437,6 @@ export function TextCompareTab() {
                                 <span
                                     className="cursor-pointer hover:text-green-600 transition-colors truncate pr-4 flex-1"
                                     onClick={() => setEditingSide('B')}
-                                    title="Click to rename"
                                 >
                                     {sideBName}
                                 </span>
@@ -419,9 +452,9 @@ export function TextCompareTab() {
                                 <div
                                     className={clsx(
                                         'w-1/2 px-4 py-1.5 border-r border-gray-50 overflow-hidden relative cursor-copy transition-all active:bg-red-50 min-w-0',
-                                        line.type === 'removed' ? 'bg-red-50 text-red-900 border-l-4 border-l-red-400' : (line.type === 'same' ? 'text-gray-600 bg-blue-50' : 'bg-gray-50/30 opacity-40')
+                                        line.isDuplicateA ? 'bg-orange-100 text-orange-900 border-l-4 border-l-orange-400' :
+                                            (line.type === 'removed' ? 'bg-red-50 text-red-900 border-l-4 border-l-red-400' : (line.type === 'same' ? 'text-gray-600 bg-blue-50' : 'bg-gray-50/30 opacity-40'))
                                     )}
-                                    title={line.type === 'same' ? "This line is identical in both sides" : (line.type !== 'added' ? `Click to copy line ${sideAName}` : "")}
                                     onClick={(e) => line.type !== 'added' && handleCopy(e, line.text || '', `LINE ${sideAName}`)}
                                 >
                                     <div className="flex gap-3 min-w-0">
@@ -438,9 +471,9 @@ export function TextCompareTab() {
                                 <div
                                     className={clsx(
                                         'w-1/2 px-4 py-1.5 overflow-hidden relative cursor-copy transition-all active:bg-green-50 min-w-0',
-                                        line.type === 'added' ? 'bg-green-50 text-green-900 border-l-4 border-l-green-400' : (line.type === 'same' ? 'text-gray-600 bg-blue-50' : 'bg-gray-50/30 opacity-40')
+                                        line.isDuplicateB ? 'bg-orange-100 text-orange-900 border-l-4 border-l-orange-400' :
+                                            (line.type === 'added' ? 'bg-green-50 text-green-900 border-l-4 border-l-green-400' : (line.type === 'same' ? 'text-gray-600 bg-blue-50' : 'bg-gray-50/30 opacity-40'))
                                     )}
-                                    title={line.type === 'same' ? "This line is identical in both sides" : (line.type !== 'removed' ? `Click to copy line ${sideBName}` : "")}
                                     onClick={(e) => line.type !== 'removed' && handleCopy(e, line.currentText ?? line.text ?? '', `LINE ${sideBName}`)}
                                 >
                                     <div className="flex gap-3 min-w-0">
@@ -466,7 +499,7 @@ export function TextCompareTab() {
                 {/* Compact Analysis Panel */}
                 <div className="w-72 flex flex-col gap-4 overflow-hidden shrink-0">
                     <div className="flex-1 border border-gray-200 rounded-2xl bg-white shadow-lg overflow-hidden flex flex-col">
-                        <div className="p-3 bg-red-50 border-b border-red-100 font-black text-[10px] text-red-600 uppercase tracking-widest flex justify-between items-center cursor-help" data-tooltip={`Danh sách các dòng chỉ xuất hiện ở ${sideAName} mà ${sideBName} không có.`}>
+                        <div className="p-3 bg-red-50 border-b border-red-100 font-black text-[10px] text-red-600 uppercase tracking-widest flex justify-between items-center">
                             MISSING IN {sideBName}
                             <span className="bg-red-600 text-white px-2 rounded-full">{diffResult.missingLines.length}</span>
                         </div>
@@ -481,7 +514,7 @@ export function TextCompareTab() {
                     </div>
 
                     <div className="flex-1 border border-gray-200 rounded-2xl bg-white shadow-lg overflow-hidden flex flex-col">
-                        <div className="p-3 bg-green-50 border-b border-green-100 font-black text-[10px] text-green-600 uppercase tracking-widest flex justify-between items-center cursor-help" data-tooltip={`Danh sách các dòng tăng thêm ở ${sideBName} so với ${sideAName}.`}>
+                        <div className="p-3 bg-green-50 border-b border-green-100 font-black text-[10px] text-green-600 uppercase tracking-widest flex justify-between items-center">
                             EXTRA IN {sideBName}
                             <span className="bg-green-600 text-white px-2 rounded-full">{diffResult.extraLines.length}</span>
                         </div>
@@ -494,9 +527,26 @@ export function TextCompareTab() {
                             {diffResult.extraLines.length === 0 && <p className="text-center py-4 text-gray-200 text-[10px] font-black">NONE</p>}
                         </div>
                     </div>
+
+                    {(diffResult.duplicateLinesA.length > 0 || diffResult.duplicateLinesB.length > 0) && (
+                        <div className="flex-1 border border-gray-200 rounded-2xl bg-white shadow-lg overflow-hidden flex flex-col">
+                            <div className="p-3 bg-orange-50 border-b border-orange-100 font-black text-[10px] text-orange-600 uppercase tracking-widest flex justify-between items-center">
+                                DUPLICATES
+                                <span className="bg-orange-600 text-white px-2 rounded-full">{diffResult.duplicateLinesA.length + diffResult.duplicateLinesB.length}</span>
+                            </div>
+                            <div className="flex-1 overflow-auto p-2 space-y-1 custom-scrollbar">
+                                {[...new Set([...diffResult.duplicateLinesA, ...diffResult.duplicateLinesB])].map((line, i) => (
+                                    <div key={i} className="text-[11px] font-mono p-1.5 text-orange-700 bg-orange-50/50 rounded border border-orange-50 truncate cursor-pointer hover:bg-orange-100/50 transition-colors" onClick={(e) => handleCopy(e, line, 'DUP LINE')} title={line}>
+                                        {line || '\u200B'}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
     );
 }
 
+export default TextCompareTab;
